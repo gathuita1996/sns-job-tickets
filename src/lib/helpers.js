@@ -11,6 +11,7 @@ export const JOB_TYPES = [
 
 export const STATUS_OPTIONS = ['Pending', 'In Progress', 'Completed']
 
+export const LOCATIONS = [ 'Darad', 'Nuru plaza', 'Babla', 'Dola', 'Dodoma', 'Darling', 'Posta', 'Markas', 'Kona Beach', 'Tsunami', 'Msikti Nuru', 'Diamond', 'Pepsi', 'Kona Musa', 'Mandingo', 'Ibiza', 'Kona Chief', 'Millennium', 'Last Moran', 'Kona Tamu', 'Ratinga', ]
 export const CHART_COLORS = ['#0E7C7B', '#C98A2C', '#4B7B5C', '#5B6472', '#0A5F5E', '#8993A1', '#B3432F', '#DCE1E4']
 
 export function formatDate(isoOrDate) {
@@ -31,7 +32,7 @@ export function formatKSh(amount) {
 export function defaultJobForm() {
   return {
     jobType: JOB_TYPES[0],
-    location: '',
+    location: LOCATIONS[0],
     requestedBy: '',
     requesterContact: '',
     visitDate: new Date().toISOString().slice(0, 10),

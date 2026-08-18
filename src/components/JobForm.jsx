@@ -48,9 +48,9 @@ export default function JobFormModal({ initialJob, onClose, onSave }) {
               {JOB_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
           </FormField>
-          <FormField label="Location / site" error={errors.location} hint="Where the job was carried out.">
-            <input className="sns-input" value={form.location} onChange={(e) => update('location', e.target.value)} placeholder="e.g. Eldoret CBD, ABC Plaza" />
-          </FormField>
+          
+ <FormField label="Location / site" error={errors.location}> <select className="sns-input" value={form.location} onChange={(e) => update('location', e.target.value)}> {LOCATIONS.map((loc) => <option key={loc} value={loc}>{loc}</option>)} </select> </FormField>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <FormField label="Requested by" error={errors.requestedBy}>
               <input className="sns-input" value={form.requestedBy} onChange={(e) => update('requestedBy', e.target.value)} placeholder="Client / contact name" />
@@ -69,7 +69,7 @@ export default function JobFormModal({ initialJob, onClose, onSave }) {
           </div>
           <FormField label="Status">
             <select className="sns-input" value={form.status} onChange={(e) => update('status', e.target.value)}>
-              {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+              {LOCATIONS, STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
           </FormField>
           <FormField label="Job details / notes">
