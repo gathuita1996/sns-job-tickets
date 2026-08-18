@@ -1,0 +1,11 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# Single-page app: any path that isn't a real file falls back to index.html.
+# Not strictly needed today (the app has no URL routing yet) but it's the
+# standard safety net if routing gets added later.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
