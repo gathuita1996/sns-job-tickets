@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { X } from 'lucide-react'
 import { FormField } from './shared'
-import { JOB_TYPES, STATUS_OPTIONS, defaultJobForm } from '../lib/helpers'
+import { JOB_TYPES, LOCATIONS, STATUS_OPTIONS, defaultJobForm } from '../lib/helpers'
 
 export default function JobFormModal({ initialJob, onClose, onSave }) {
   const [form, setForm] = useState(initialJob ? {
