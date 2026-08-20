@@ -22,7 +22,8 @@ body { margin: 0; }
 .sns-bg-card { background: var(--card); } .sns-bg-paper { background: var(--paper); }
 .sns-border { border: 1px solid var(--line); } .sns-border-t { border-top: 1px solid var(--line); } .sns-border-b { border-bottom: 1px solid var(--line); }
 .sns-card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
-.sns-brand-mark { width: 42px; height: 42px; border-radius: 10px; background: var(--ink); color: white; display: flex; align-items: center; justify-content: center; font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 0.95rem; transform: rotate(-2deg); flex-shrink: 0; }
+.sns-brand-mark { width: 42px; height: 42px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.sns-brand-mark img { width: 100%; height: 100%; object-fit: contain; display: block; }
 .sns-input { width: 100%; padding: 0.6rem 0.85rem; border: 1px solid var(--line); border-radius: 9px; font-size: 0.875rem; font-family: 'IBM Plex Sans', sans-serif; outline: none; background: white; color: var(--ink); transition: border-color 0.15s, box-shadow 0.15s; }
 .sns-input:focus { border-color: var(--signal); box-shadow: 0 0 0 3px var(--signal-pale); }
 .sns-input::placeholder { color: var(--ink-faint); }

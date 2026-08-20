@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, Calendar, Clipboard, Printer, Users, Wallet } from 'lucide-react'
+import { AlertCircle, Calendar, CheckCircle2, Clipboard, Printer, Users, Wallet } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import Header from './Header'
 import JobFormModal from './JobForm'
@@ -7,7 +7,7 @@ import JobsTable from './JobsTable'
 import TeamList from './TeamList'
 import { JobPrintView, BatchPrintView } from './PrintViews'
 import { ConfirmDialog, EmptyState, PeriodToggle, SearchInput, StatCard, StatusFilterSelect } from './shared'
-import { JOB_TYPES, PRIORITY_OPTIONS, CHART_COLORS, formatKSh, isOverdue, isInPeriod, PERIODS } from '../lib/helpers'
+import { JOB_TYPES, PRIORITY_OPTIONS, CHART_COLORS, formatKSh, formatDate, isOverdue, isInPeriod } from '../lib/helpers'
 
 export default function AdminDashboard({ currentUser, users, jobs, onLogout, onUpdateJob, onDeleteJob, onPromote }) {
   const [tab, setTab] = useState('overview')
@@ -43,13 +43,13 @@ export default function AdminDashboard({ currentUser, users, jobs, onLogout, onU
   }, [jobs, search, statusFilter, memberFilter, typeFilter, priorityFilter, overdueOnly, userMap])
 
   const periodJobs = useMemo(() => jobs.filter((j) => isInPeriod(j.createdAt, period)), [jobs, period])
-  const periodLabel = (PERIODS.find((p) => p.key === period) || {}).label || ''
 
   const stats = useMemo(() => {
     const byType = JOB_TYPES.map((t) => ({ type: t, count: jobs.filter((j) => j.jobType === t).length })).filter((x) => x.count > 0)
     return {
       periodCount: periodJobs.length,
       periodTransport: periodJobs.reduce((s, j) => s + (Number(j.transportAmount) || 0), 0),
+      periodCompleted: periodJobs.filter((j) => j.status === 'Completed').length,
       activeMembers: members.length,
       overdue: overdueJobs.length,
       byType,
@@ -61,7 +61,7 @@ export default function AdminDashboard({ currentUser, users, jobs, onLogout, onU
 
   return (
     <div className="sns-shell">
-      <Header currentUser={currentUser} onLogout={onLogout} subtitle="Admin Portal" />
+      <Header currentUser={currentUser} onLogout={onLogout} subtitle="Ticketing System" />
       <main className="max-w-6xl mx-auto px-4 sm:px-6" style={{ paddingTop: '1.5rem', paddingBottom: '3rem' }}>
 
         {stats.overdue > 0 && (
@@ -83,13 +83,15 @@ export default function AdminDashboard({ currentUser, users, jobs, onLogout, onU
 
         {tab === 'overview' && (
           <div>
-            <div className="flex items-center justify-between" style={{ marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div className="flex items-center justify-between" style={{ marginBottom: '0.15rem', flexWrap: 'wrap', gap: '0.5rem' }}>
               <h2 className="sns-display" style={{ fontSize: '1.05rem', fontWeight: 700 }}>Overview</h2>
               <PeriodToggle value={period} onChange={setPeriod} />
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3" style={{ marginBottom: '1.5rem' }}>
-              <StatCard label={`Total Jobs — ${periodLabel}`} value={stats.periodCount} icon={Clipboard} />
-              <StatCard label={`Transport — ${periodLabel}`} value={formatKSh(stats.periodTransport)} icon={Wallet} />
+            <p className="sns-eyebrow sns-text-faint" style={{ marginBottom: '1rem' }}>{formatDate(new Date())}</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3" style={{ marginBottom: '1.5rem' }}>
+              <StatCard label="Total Jobs" value={stats.periodCount} icon={Clipboard} />
+              <StatCard label="Transport" value={formatKSh(stats.periodTransport)} icon={Wallet} masked />
+              <StatCard label="Completed" value={stats.periodCompleted} icon={CheckCircle2} />
               <StatCard label="Active Members" value={stats.activeMembers} icon={Users} />
               <StatCard label="Overdue" value={stats.overdue} icon={AlertCircle} />
             </div>

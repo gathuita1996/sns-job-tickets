@@ -1,6 +1,7 @@
 import { ArrowLeft, Printer } from 'lucide-react'
 import { StatusBadge } from './shared'
 import { formatDate, formatDateTime, formatKSh } from '../lib/helpers'
+import logoIcon from '../assets/logo-icon.png'
 
 function PrintField({ label, value, full }) {
   return (
@@ -21,7 +22,7 @@ export function JobPrintView({ job, filedByUser, onBack }) {
       <div className="sns-card mx-auto" style={{ maxWidth: '38rem', padding: '2rem' }}>
         <div className="flex items-center justify-between" style={{ borderBottom: '2px solid var(--ink)', paddingBottom: '1.1rem', marginBottom: '1.5rem' }}>
           <div className="flex items-center gap-3">
-            <div className="sns-brand-mark">SNS</div>
+            <div className="sns-brand-mark"><img src={logoIcon} alt="Swahili Net Solution" /></div>
             <div>
               <p className="sns-display" style={{ fontWeight: 700, fontSize: '1.05rem' }}>Swahili Net Solution</p>
               <p className="sns-eyebrow sns-text-faint">Job Card</p>
@@ -68,7 +69,7 @@ export function BatchPrintView({ jobs, userMap, onBack, generatedBy }) {
       <div className="sns-card mx-auto" style={{ maxWidth: '56rem', padding: '2rem' }}>
         <div className="flex items-center justify-between" style={{ borderBottom: '2px solid var(--ink)', paddingBottom: '1.1rem', marginBottom: '1.5rem' }}>
           <div className="flex items-center gap-3">
-            <div className="sns-brand-mark">SNS</div>
+            <div className="sns-brand-mark"><img src={logoIcon} alt="Swahili Net Solution" /></div>
             <div>
               <p className="sns-display" style={{ fontWeight: 700, fontSize: '1.05rem' }}>Swahili Net Solution</p>
               <p className="sns-eyebrow sns-text-faint">Job Card Report</p>

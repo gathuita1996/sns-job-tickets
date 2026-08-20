@@ -1,5 +1,5 @@
-import { useEffect } from 'react'
-import { AlertCircle, Check, Clipboard, Search } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { AlertCircle, Check, Clipboard, Eye, EyeOff, Search } from 'lucide-react'
 import { STATUS_OPTIONS, PERIODS } from '../lib/helpers'
 
 export function FormField({ label, children, hint, error }) {
@@ -43,14 +43,28 @@ export function PriorityBadge({ priority }) {
   return <span className={`sns-badge ${cls}`}>{priority}</span>
 }
 
-export function StatCard({ label, value, icon: Icon }) {
+export function StatCard({ label, value, icon: Icon, masked }) {
+  const [revealed, setRevealed] = useState(false)
+  const showValue = !masked || revealed
+  function toggle() { setRevealed((r) => !r) }
   return (
-    <div className="sns-card" style={{ padding: '1rem' }}>
-      <div className="flex items-center gap-2" style={{ color: 'var(--ink-faint)', marginBottom: '0.5rem' }}>
-        <Icon size={15} />
-        <span className="sns-eyebrow">{label}</span>
+    <div
+      className="sns-card"
+      style={{ padding: '1rem', cursor: masked ? 'pointer' : 'default', userSelect: masked ? 'none' : 'auto' }}
+      onClick={masked ? toggle : undefined}
+      onKeyDown={masked ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle() } } : undefined}
+      role={masked ? 'button' : undefined}
+      tabIndex={masked ? 0 : undefined}
+      title={masked ? (revealed ? 'Click to hide' : 'Click to reveal') : undefined}
+    >
+      <div className="flex items-center justify-between" style={{ marginBottom: '0.5rem' }}>
+        <div className="flex items-center gap-2" style={{ color: 'var(--ink-faint)' }}>
+          <Icon size={15} />
+          <span className="sns-eyebrow">{label}</span>
+        </div>
+        {masked && (revealed ? <EyeOff size={13} style={{ color: 'var(--ink-faint)' }} /> : <Eye size={13} style={{ color: 'var(--ink-faint)' }} />)}
       </div>
-      <p className="sns-display" style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--ink)' }}>{value}</p>
+      <p className="sns-display" style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--ink)' }}>{showValue ? value : '••••••'}</p>
     </div>
   )
 }

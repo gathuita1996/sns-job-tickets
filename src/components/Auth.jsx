@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 import { FormField, ErrorBanner, SuccessBanner } from './shared'
+import logoIcon from '../assets/logo-icon.png'
 
 export function AuthLayout({ children }) {
   return (
@@ -8,7 +9,7 @@ export function AuthLayout({ children }) {
       <div className="flex flex-col sm:flex-row" style={{ minHeight: '100vh' }}>
         <div className="w-full sm:w-2/5 flex flex-col justify-between p-8 sm:p-10" style={{ background: 'var(--ink)', color: 'white' }}>
           <div className="flex items-center gap-3">
-            <div className="sns-brand-mark">SNS</div>
+            <div className="sns-brand-mark"><img src={logoIcon} alt="Swahili Net Solution" /></div>
             <div>
               <p className="sns-display" style={{ fontSize: '1.05rem', fontWeight: 700, lineHeight: 1.15 }}>Swahili Net Solution</p>
               <p className="sns-eyebrow" style={{ color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>Job Card System</p>
