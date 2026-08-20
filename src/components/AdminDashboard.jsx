@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, CheckCircle2, Clipboard, Printer, Users, Wallet } from 'lucide-react'
+import { AlertCircle, Check, CheckCircle2, Clipboard, Copy, Eye, EyeOff, Printer, Users, Wallet } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import Header from './Header'
 import JobFormModal from './JobForm'
 import JobsTable from './JobsTable'
 import TeamList from './TeamList'
 import { JobPrintView, BatchPrintView } from './PrintViews'
-import { ConfirmDialog, EmptyState, PeriodSelector, SearchInput, StatCard, StatusFilterSelect } from './shared'
+import { ConfirmDialog, EmptyState, FormField, PeriodSelector, SearchInput, StatCard, StatusFilterSelect } from './shared'
 import { JOB_TYPES, PRIORITY_OPTIONS, CHART_COLORS, formatKSh, isOverdue, getPeriodRange, isInRange } from '../lib/helpers'
 
-export default function AdminDashboard({ currentUser, users, jobs, onLogout, onUpdateJob, onDeleteJob, onPromote }) {
+export default function AdminDashboard({ currentUser, users, jobs, onLogout, onUpdateJob, onDeleteJob, onPromote, accessCode, onUpdateAccessCode }) {
   const [tab, setTab] = useState('overview')
   const [periodGranularity, setPeriodGranularity] = useState('day')
   const [periodAnchor, setPeriodAnchor] = useState(() => new Date())
@@ -81,6 +81,7 @@ export default function AdminDashboard({ currentUser, users, jobs, onLogout, onU
           <button className={`sns-tab ${tab === 'overview' ? 'active' : ''}`} onClick={() => setTab('overview')}>Overview</button>
           <button className={`sns-tab ${tab === 'jobs' ? 'active' : ''}`} onClick={() => setTab('jobs')}>All Jobs</button>
           <button className={`sns-tab ${tab === 'team' ? 'active' : ''}`} onClick={() => setTab('team')}>Team</button>
+          <button className={`sns-tab ${tab === 'settings' ? 'active' : ''}`} onClick={() => setTab('settings')}>Settings</button>
         </div>
 
         {tab === 'overview' && (
@@ -158,6 +159,7 @@ export default function AdminDashboard({ currentUser, users, jobs, onLogout, onU
         )}
 
         {tab === 'team' && <TeamList users={users} jobs={jobs} onPromote={onPromote} />}
+        {tab === 'settings' && <AccessCodeSettings accessCode={accessCode} onUpdate={onUpdateAccessCode} />}
       </main>
 
       {editingJob && (
@@ -176,6 +178,65 @@ export default function AdminDashboard({ currentUser, users, jobs, onLogout, onU
           onConfirm={async () => { await onDeleteJob(confirmDelete.id); setConfirmDelete(null) }}
         />
       )}
+    </div>
+  )
+}
+
+function AccessCodeSettings({ accessCode, onUpdate }) {
+  const [revealed, setRevealed] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [draft, setDraft] = useState(accessCode || '')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => { setDraft(accessCode || '') }, [accessCode])
+
+  function copy() {
+    navigator.clipboard.writeText(accessCode)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1800)
+  }
+
+  async function save() {
+    if (!draft.trim() || draft === accessCode) return
+    setSaving(true)
+    await onUpdate(draft.trim())
+    setSaving(false)
+  }
+
+  return (
+    <div className="sns-card" style={{ padding: '1.5rem', maxWidth: '30rem' }}>
+      <h3 className="sns-display" style={{ fontWeight: 700, marginBottom: '0.4rem' }}>Team access code</h3>
+      <p style={{ fontSize: '0.85rem', color: 'var(--ink-soft)', marginBottom: '1.3rem' }}>
+        New members need this to sign up. Only share it with people who should be able to join — anyone who has it can create an account.
+      </p>
+
+      <FormField label="Current code">
+        <div className="flex items-center gap-2">
+          <input
+            readOnly
+            className="sns-input sns-mono"
+            style={{ flex: 1 }}
+            value={accessCode ? (revealed ? accessCode : '•'.repeat(Math.max(accessCode.length, 8))) : 'Loading…'}
+          />
+          <button type="button" className="sns-icon-btn" title={revealed ? 'Hide' : 'Reveal'} onClick={() => setRevealed((r) => !r)} disabled={!accessCode}>
+            {revealed ? <EyeOff size={16} /> : <Eye size={16} />}
+          </button>
+          <button type="button" className="sns-icon-btn" title="Copy" onClick={copy} disabled={!accessCode}>
+            {copied ? <Check size={16} /> : <Copy size={16} />}
+          </button>
+        </div>
+      </FormField>
+
+      <div style={{ marginTop: '1.1rem' }}>
+        <FormField label="Change it" hint="Existing members are unaffected — this only changes what new signups need to enter.">
+          <div className="flex items-center gap-2">
+            <input className="sns-input" style={{ flex: 1 }} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="New access code" />
+            <button type="button" className="sns-btn-primary" disabled={saving || !draft.trim() || draft === accessCode} onClick={save}>
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        </FormField>
+      </div>
     </div>
   )
 }

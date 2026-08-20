@@ -11,6 +11,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(null)
   const [jobs, setJobs] = useState([])
   const [allUsers, setAllUsers] = useState([])
+  const [accessCode, setAccessCode] = useState('')
   const [authView, setAuthView] = useState('login')
   const [authError, setAuthError] = useState('')
   const [authNotice, setAuthNotice] = useState('')
@@ -35,7 +36,7 @@ export default function App() {
     currentUserRef.current = profile
     setCurrentUser(profile)
     await refreshJobs()
-    if (profile.role === 'admin') await refreshUsers()
+    if (profile.role === 'admin') { await refreshUsers(); await refreshAccessCode() }
     setBooting(false)
   }
 
@@ -49,6 +50,19 @@ export default function App() {
     const { data, error } = await supabase.from('profiles').select('*')
     if (error) return
     setAllUsers((data || []).map(mapProfile))
+  }
+
+  async function refreshAccessCode() {
+    const { data, error } = await supabase.from('app_settings').select('signup_access_code').eq('id', true).single()
+    if (error) return
+    setAccessCode(data?.signup_access_code || '')
+  }
+
+  async function handleUpdateAccessCode(newCode) {
+    const { error } = await supabase.from('app_settings').update({ signup_access_code: newCode }).eq('id', true)
+    if (error) { showToast('Failed to update access code.', 'error'); return }
+    showToast('Access code updated.')
+    await refreshAccessCode()
   }
 
   // Single source of truth for auth state. Handles first load, sign-in,
@@ -220,7 +234,7 @@ export default function App() {
   return (<>
     {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     {currentUser.role === 'admin'
-      ? <AdminDashboard currentUser={currentUser} users={allUsers} jobs={jobs} onLogout={handleLogout} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onPromote={handlePromote} />
+      ? <AdminDashboard currentUser={currentUser} users={allUsers} jobs={jobs} onLogout={handleLogout} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onPromote={handlePromote} accessCode={accessCode} onUpdateAccessCode={handleUpdateAccessCode} />
       : <MemberDashboard currentUser={currentUser} jobs={jobs.filter((j) => j.memberId === currentUser.id)} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} />}
   </>)
 }
