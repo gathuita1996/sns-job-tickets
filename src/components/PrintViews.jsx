@@ -34,14 +34,16 @@ export function JobPrintView({ job, filedByUser, onBack }) {
         </div>
         <div style={{ borderBottom: '1px dashed var(--line)', marginBottom: '1.5rem' }} />
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4" style={{ marginBottom: '1.5rem' }}>
-          <PrintField label="Job Type" value={job.jobType} />
+          <PrintField label="Job Type" value={job.jobType === 'Other' && job.jobTypeOther ? `Other — ${job.jobTypeOther}` : job.jobType} />
+          <PrintField label="Priority" value={job.priority || 'Normal'} />
           <PrintField label="Status" value={job.status} />
-          <PrintField label="Location / Site" value={job.location} full />
+          <PrintField label="Location / Site" value={job.location} />
           <PrintField label="Requested By" value={job.requestedBy} />
           <PrintField label="Requester Contact" value={job.requesterContact || '—'} />
           <PrintField label="Date of Visit" value={formatDate(job.visitDate)} />
-          <PrintField label="Transport Amount" value={formatKSh(job.transportAmount)} />
+          <PrintField label="Transport Amount (round trip)" value={formatKSh(job.transportAmount)} />
           <PrintField label="Job Details" value={job.notes || '—'} full />
+          {job.overdueReason && <PrintField label="Overdue — Reason for Delay" value={job.overdueReason} full />}
         </div>
         <p className="sns-text-faint" style={{ fontSize: '0.75rem', borderTop: '1px solid var(--line)', paddingTop: '1rem', marginBottom: '2.5rem' }}>
           Filed by {filedByUser?.fullName || 'Unknown'} on {formatDateTime(job.createdAt)}

@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { AlertCircle, Check, Clipboard, Search } from 'lucide-react'
-import { STATUS_OPTIONS } from '../lib/helpers'
+import { STATUS_OPTIONS, PERIODS } from '../lib/helpers'
 
 export function FormField({ label, children, hint, error }) {
   return (
@@ -31,9 +31,16 @@ export function SuccessBanner({ message }) {
   )
 }
 
-export function StatusBadge({ status }) {
+export function StatusBadge({ status, overdue }) {
+  if (overdue) return <span className="sns-badge sns-badge-overdue">Overdue</span>
   const cls = status === 'Completed' ? 'sns-badge-done' : status === 'In Progress' ? 'sns-badge-progress' : 'sns-badge-pending'
   return <span className={`sns-badge ${cls}`}>{status}</span>
+}
+
+export function PriorityBadge({ priority }) {
+  if (!priority || priority === 'Normal' || priority === 'Low') return null
+  const cls = priority === 'Urgent' ? 'sns-badge-priority-urgent' : 'sns-badge-priority-high'
+  return <span className={`sns-badge ${cls}`}>{priority}</span>
 }
 
 export function StatCard({ label, value, icon: Icon }) {
@@ -110,5 +117,32 @@ export function StatusFilterSelect({ value, onChange }) {
       <option value="all">All statuses</option>
       {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
     </select>
+  )
+}
+
+export function PeriodToggle({ value, onChange }) {
+  return (
+    <div className="sns-period-toggle">
+      {PERIODS.map((p) => (
+        <button key={p.key} type="button" className={`sns-period-btn ${value === p.key ? 'active' : ''}`} onClick={() => onChange(p.key)}>
+          {p.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+export function NavCard({ icon: Icon, label, description, onClick, badge }) {
+  return (
+    <button type="button" className="sns-nav-card" onClick={onClick}>
+      <div className="flex items-center justify-between" style={{ width: '100%' }}>
+        <div className="sns-nav-icon"><Icon size={19} /></div>
+        {badge != null && badge > 0 && <span className="sns-badge sns-badge-overdue">{badge}</span>}
+      </div>
+      <div>
+        <p style={{ fontWeight: 700, fontSize: '0.95rem', marginBottom: '0.15rem' }}>{label}</p>
+        <p style={{ fontSize: '0.78rem', color: 'var(--ink-faint)' }}>{description}</p>
+      </div>
+    </button>
   )
 }

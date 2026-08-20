@@ -11,4 +11,13 @@ if (!supabaseUrl || !supabaseAnonKey) {
   )
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, { auth: { storage: window.sessionStorage, persistSession: true, autoRefreshToken: true, }, })
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    // sessionStorage instead of the default localStorage: the session survives
+    // a page refresh, but is cleared the moment the tab/browser is closed —
+    // so closing the page always requires logging in again next time.
+    storage: window.sessionStorage,
+    persistSession: true,
+    autoRefreshToken: true,
+  },
+})

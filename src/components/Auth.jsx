@@ -82,7 +82,7 @@ export function LoginView({ onLogin, onSwitch, onForgot, error, notice }) {
 }
 
 export function SignupView({ onSignup, onSwitch, error }) {
-	const [form, setForm] = useState({ fullName: '', username: '', email: '', contact: '', password: '', confirmPassword: '', title: '', accessCode: '' })
+  const [form, setForm] = useState({ fullName: '', username: '', email: '', contact: '', password: '', confirmPassword: '', title: '', accessCode: '' })
   const [fieldErrors, setFieldErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
 
@@ -103,7 +103,7 @@ export function SignupView({ onSignup, onSwitch, error }) {
     if (!form.password) fe.password = 'Password is required.'
     else if (form.password.length < 6) fe.password = 'At least 6 characters.'
     if (form.confirmPassword !== form.password) fe.confirmPassword = 'Passwords do not match.'
-	if (!form.accessCode.trim()) fe.accessCode = 'Ask your admin for the team access code.'
+    if (!form.accessCode.trim()) fe.accessCode = 'Ask your admin for the team access code.'
     setFieldErrors(fe)
     return Object.keys(fe).length === 0
   }
@@ -145,13 +145,15 @@ export function SignupView({ onSignup, onSwitch, error }) {
         <FormField label="Title (optional)" hint="e.g. Director, Operations Manager — relevant if you end up as an admin.">
           <input className="sns-input" value={form.title} onChange={(e) => update('title', e.target.value)} placeholder="Director" />
         </FormField>
-	<FormField label="Team access code" error={fieldErrors.accessCode} hint="Ask an admin if you don't have this."> <input className="sns-input" value={form.accessCode} onChange={(e) => update('accessCode', e.target.value)} placeholder="Enter the code" autoComplete="off" /> </FormField>
+        <FormField label="Team access code" error={fieldErrors.accessCode} hint="Ask an admin if you don't have this.">
+          <input className="sns-input" value={form.accessCode} onChange={(e) => update('accessCode', e.target.value)} placeholder="Enter the code" autoComplete="off" />
+        </FormField>
         <button type="submit" disabled={submitting} className="sns-btn-primary" style={{ width: '100%', marginTop: '0.25rem' }}>
           {submitting ? 'Creating account…' : 'Create account'}
         </button>
       </form>
       <p style={{ fontSize: '0.72rem', color: 'var(--ink-faint)', marginTop: '1rem', textAlign: 'center', lineHeight: 1.5 }}>
-        The very first account created becomes the admin automatically. Everyone after that starts as a Member — admins can promote teammates from the Team tab.
+        This is a members-only system — you'll need the team access code to sign up. The very first account created becomes the admin automatically; everyone after that starts as a Member, and admins can promote teammates from the Team tab.
       </p>
       <p style={{ fontSize: '0.85rem', color: 'var(--ink-faint)', marginTop: '1rem', textAlign: 'center' }}>
         Already have an account?{' '}

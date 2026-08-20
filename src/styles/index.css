@@ -1,12 +1,13 @@
 @import "tailwindcss";
 
 :root {
-  --ink: #1B2430; --ink-soft: #5B6472; --ink-faint: #8993A1;
-  --signal: #0E7C7B; --signal-deep: #0A5F5E; --signal-pale: #E4F2F1;
-  --stamp: #C98A2C; --stamp-pale: #FBF1DF;
-  --confirmed: #4B7B5C; --confirmed-pale: #E9F2EA;
+  --ink: #16232E; --ink-soft: #4C5F72; --ink-faint: #8494A3;
+  --signal: #1A4C93; --signal-deep: #123870; --signal-pale: #E7EFFA;
+  --stamp: #F0781E; --stamp-deep: #D1620F; --stamp-pale: #FDF1E4;
+  --confirmed: #1DA851; --confirmed-pale: #E6F7EC;
   --danger: #B3432F; --danger-pale: #FBEAE6;
-  --paper: #F4F6F7; --card: #FFFFFF; --line: #DCE1E4; --line-soft: #EBEEEF;
+  --overdue: #C0392B; --overdue-pale: #FBE4E1;
+  --paper: #F7F9FC; --card: #FFFFFF; --line: #E1E7F0; --line-soft: #EEF2F8;
 }
 
 * { box-sizing: border-box; }
@@ -37,9 +38,23 @@ body { margin: 0; }
 .sns-btn-link { background: none; border: none; padding: 0; color: var(--signal-deep); font-weight: 600; font-size: 0.8rem; cursor: pointer; font-family: 'IBM Plex Sans', sans-serif; text-decoration: underline; }
 .sns-badge { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.2rem 0.6rem; border-radius: 999px; font-size: 0.72rem; font-weight: 600; }
 .sns-badge-pending { background: var(--line-soft); color: var(--ink-soft); }
-.sns-badge-progress { background: var(--stamp-pale); color: var(--stamp); }
+.sns-badge-progress { background: var(--stamp-pale); color: var(--stamp-deep); }
 .sns-badge-done { background: var(--confirmed-pale); color: var(--confirmed); }
+.sns-badge-overdue { background: var(--overdue-pale); color: var(--overdue); }
 .sns-badge-role { background: var(--signal-pale); color: var(--signal-deep); }
+.sns-badge-priority-low { background: var(--line-soft); color: var(--ink-soft); }
+.sns-badge-priority-normal { background: var(--signal-pale); color: var(--signal-deep); }
+.sns-badge-priority-high { background: var(--stamp-pale); color: var(--stamp-deep); }
+.sns-badge-priority-urgent { background: var(--overdue-pale); color: var(--overdue); }
+.sns-select-placeholder { font-style: italic; color: var(--ink-faint) !important; }
+.sns-select-placeholder option { font-style: normal; color: var(--ink); }
+.sns-period-toggle { display: inline-flex; background: var(--signal-pale); border-radius: 8px; padding: 3px; gap: 2px; }
+.sns-period-btn { border: none; background: none; padding: 0.35rem 0.7rem; border-radius: 6px; font-size: 0.74rem; font-weight: 700; color: var(--signal-deep); cursor: pointer; font-family: 'IBM Plex Sans', sans-serif; }
+.sns-period-btn.active { background: var(--signal); color: white; }
+.sns-nav-card { display: flex; flex-direction: column; align-items: flex-start; gap: 0.6rem; padding: 1.2rem; border-radius: 14px; border: 1px solid var(--line); background: var(--card); text-align: left; cursor: pointer; transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s; width: 100%; }
+.sns-nav-card:hover { transform: translateY(-3px); box-shadow: 0 14px 28px -16px rgba(20,40,60,0.25); border-color: var(--signal); }
+.sns-nav-card .sns-nav-icon { width: 40px; height: 40px; border-radius: 10px; background: var(--signal-pale); color: var(--signal-deep); display: flex; align-items: center; justify-content: center; }
+.sns-alert-banner { display: flex; align-items: center; gap: 0.7rem; background: var(--overdue-pale); color: var(--overdue); border: 1px solid rgba(192,57,43,0.25); border-radius: 12px; padding: 0.85rem 1.1rem; font-size: 0.85rem; font-weight: 600; }
 .sns-chip-id { font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 0.8rem; color: var(--signal-deep); background: var(--signal-pale); padding: 0.15rem 0.5rem; border-radius: 6px; display: inline-block; }
 .sns-icon-btn { padding: 0.4rem; border-radius: 7px; border: none; background: transparent; cursor: pointer; color: var(--ink-faint); transition: background 0.15s, color 0.15s; display: inline-flex; }
 .sns-icon-btn:hover { background: var(--line-soft); color: var(--ink); }
