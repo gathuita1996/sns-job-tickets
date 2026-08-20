@@ -103,11 +103,13 @@ export default function App() {
             full_name: form.fullName.trim(),
             contact: form.contact.trim(),
             title: form.title.trim() || null,
+		access_code: form.accessCode.trim(),
           },
         },
       })
       if (error) {
         const msg = (error.message || '').toLowerCase()
+	 if (msg.includes('invalid_access_code')) setAuthError('That access code is incorrect. Ask an admin for the current one.')
         if (msg.includes('username')) setAuthError('That username is already taken. Please choose another.')
         else if (msg.includes('already registered') || msg.includes('already been registered')) setAuthError('An account with that email already exists.')
         else if (msg.includes('duplicate') || msg.includes('unique constraint')) setAuthError('That username is already taken. Please choose another.')

@@ -82,7 +82,7 @@ export function LoginView({ onLogin, onSwitch, onForgot, error, notice }) {
 }
 
 export function SignupView({ onSignup, onSwitch, error }) {
-  const [form, setForm] = useState({ fullName: '', username: '', email: '', contact: '', password: '', confirmPassword: '', title: '' })
+	const [form, setForm] = useState({ fullName: '', username: '', email: '', contact: '', password: '', confirmPassword: '', title: '', accessCode: '' })
   const [fieldErrors, setFieldErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
 
@@ -103,6 +103,7 @@ export function SignupView({ onSignup, onSwitch, error }) {
     if (!form.password) fe.password = 'Password is required.'
     else if (form.password.length < 6) fe.password = 'At least 6 characters.'
     if (form.confirmPassword !== form.password) fe.confirmPassword = 'Passwords do not match.'
+	if (!form.accessCode.trim()) fe.accessCode = 'Ask your admin for the team access code.'
     setFieldErrors(fe)
     return Object.keys(fe).length === 0
   }
@@ -144,6 +145,7 @@ export function SignupView({ onSignup, onSwitch, error }) {
         <FormField label="Title (optional)" hint="e.g. Director, Operations Manager — relevant if you end up as an admin.">
           <input className="sns-input" value={form.title} onChange={(e) => update('title', e.target.value)} placeholder="Director" />
         </FormField>
+	<FormField label="Team access code" error={fieldErrors.accessCode} hint="Ask an admin if you don't have this."> <input className="sns-input" value={form.accessCode} onChange={(e) => update('accessCode', e.target.value)} placeholder="Enter the code" autoComplete="off" /> </FormField>
         <button type="submit" disabled={submitting} className="sns-btn-primary" style={{ width: '100%', marginTop: '0.25rem' }}>
           {submitting ? 'Creating account…' : 'Create account'}
         </button>
