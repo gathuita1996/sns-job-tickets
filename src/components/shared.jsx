@@ -173,7 +173,11 @@ export function PeriodSelector({ granularity, anchor, onGranularityChange, onAnc
 
   function goPrev() { onAnchorChange(shiftAnchor(anchor, granularity, -1)) }
   function goNext() { onAnchorChange(shiftAnchor(anchor, granularity, 1)) }
-  function goToday() { onAnchorChange(new Date()) }
+  function goToday() {
+    onGranularityChange('day')
+    onAnchorChange(new Date())
+    setOpen(false)
+  }
 
   return (
     <div style={{ position: 'relative' }}>
