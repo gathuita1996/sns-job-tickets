@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, Calendar, CheckCircle2, Clipboard, Printer, Users, Wallet } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Clipboard, Printer, Users, Wallet } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import Header from './Header'
 import JobFormModal from './JobForm'
 import JobsTable from './JobsTable'
 import TeamList from './TeamList'
 import { JobPrintView, BatchPrintView } from './PrintViews'
-import { ConfirmDialog, EmptyState, PeriodToggle, SearchInput, StatCard, StatusFilterSelect } from './shared'
-import { JOB_TYPES, PRIORITY_OPTIONS, CHART_COLORS, formatKSh, formatDate, isOverdue, isInPeriod } from '../lib/helpers'
+import { ConfirmDialog, EmptyState, PeriodSelector, SearchInput, StatCard, StatusFilterSelect } from './shared'
+import { JOB_TYPES, PRIORITY_OPTIONS, CHART_COLORS, formatKSh, isOverdue, getPeriodRange, isInRange } from '../lib/helpers'
 
 export default function AdminDashboard({ currentUser, users, jobs, onLogout, onUpdateJob, onDeleteJob, onPromote }) {
   const [tab, setTab] = useState('overview')
-  const [period, setPeriod] = useState('day')
+  const [periodGranularity, setPeriodGranularity] = useState('day')
+  const [periodAnchor, setPeriodAnchor] = useState(() => new Date())
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [memberFilter, setMemberFilter] = useState('all')
@@ -42,7 +43,8 @@ export default function AdminDashboard({ currentUser, users, jobs, onLogout, onU
     }).sort((a, b) => new Date(b.visitDate) - new Date(a.visitDate))
   }, [jobs, search, statusFilter, memberFilter, typeFilter, priorityFilter, overdueOnly, userMap])
 
-  const periodJobs = useMemo(() => jobs.filter((j) => isInPeriod(j.createdAt, period)), [jobs, period])
+  const { start: periodStart, end: periodEnd } = useMemo(() => getPeriodRange(periodGranularity, periodAnchor), [periodGranularity, periodAnchor])
+  const periodJobs = useMemo(() => jobs.filter((j) => isInRange(j.createdAt, periodStart, periodEnd)), [jobs, periodStart, periodEnd])
 
   const stats = useMemo(() => {
     const byType = JOB_TYPES.map((t) => ({ type: t, count: jobs.filter((j) => j.jobType === t).length })).filter((x) => x.count > 0)
@@ -83,11 +85,10 @@ export default function AdminDashboard({ currentUser, users, jobs, onLogout, onU
 
         {tab === 'overview' && (
           <div>
-            <div className="flex items-center justify-between" style={{ marginBottom: '0.15rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div className="flex items-center justify-between" style={{ marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
               <h2 className="sns-display" style={{ fontSize: '1.05rem', fontWeight: 700 }}>Overview</h2>
-              <PeriodToggle value={period} onChange={setPeriod} />
+              <PeriodSelector granularity={periodGranularity} anchor={periodAnchor} onGranularityChange={setPeriodGranularity} onAnchorChange={setPeriodAnchor} />
             </div>
-            <p className="sns-eyebrow sns-text-faint" style={{ marginBottom: '1rem' }}>{formatDate(new Date())}</p>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3" style={{ marginBottom: '1.5rem' }}>
               <StatCard label="Total Jobs" value={stats.periodCount} icon={Clipboard} />
               <StatCard label="Transport" value={formatKSh(stats.periodTransport)} icon={Wallet} masked />

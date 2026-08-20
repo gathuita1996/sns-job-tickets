@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { AlertCircle, Check, Clipboard, Eye, EyeOff, Search } from 'lucide-react'
-import { STATUS_OPTIONS, PERIODS } from '../lib/helpers'
+import { AlertCircle, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, Clipboard, Eye, EyeOff, Search } from 'lucide-react'
+import { STATUS_OPTIONS, PERIODS, formatPeriodLabel, shiftAnchor, toDateInputValue } from '../lib/helpers'
 
 export function FormField({ label, children, hint, error }) {
   return (
@@ -134,14 +134,46 @@ export function StatusFilterSelect({ value, onChange }) {
   )
 }
 
-export function PeriodToggle({ value, onChange }) {
+export function PeriodSelector({ granularity, anchor, onGranularityChange, onAnchorChange }) {
+  const [open, setOpen] = useState(false)
+  const label = formatPeriodLabel(granularity, anchor)
+
+  function goPrev() { onAnchorChange(shiftAnchor(anchor, granularity, -1)) }
+  function goNext() { onAnchorChange(shiftAnchor(anchor, granularity, 1)) }
+  function goToday() { onAnchorChange(new Date()) }
+
   return (
-    <div className="sns-period-toggle">
-      {PERIODS.map((p) => (
-        <button key={p.key} type="button" className={`sns-period-btn ${value === p.key ? 'active' : ''}`} onClick={() => onChange(p.key)}>
-          {p.label}
-        </button>
-      ))}
+    <div style={{ position: 'relative' }}>
+      <button type="button" className="sns-btn-secondary" onClick={() => setOpen((o) => !o)} style={{ fontSize: '0.82rem' }}>
+        <Calendar size={14} /> {label} <ChevronDown size={13} style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
+      </button>
+      {open && (
+        <>
+          <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 39 }} />
+          <div className="sns-card sns-fade-in" style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 40, padding: '0.85rem', minWidth: '18rem' }}>
+            <div className="sns-period-toggle" style={{ width: '100%', marginBottom: '0.75rem' }}>
+              {PERIODS.map((p) => (
+                <button key={p.key} type="button" className={`sns-period-btn ${granularity === p.key ? 'active' : ''}`} style={{ flex: 1 }} onClick={() => onGranularityChange(p.key)}>
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center justify-between" style={{ marginBottom: '0.75rem' }}>
+              <button type="button" onClick={goPrev} className="sns-icon-btn" title="Previous"><ChevronLeft size={16} /></button>
+              <button type="button" onClick={goToday} className="sns-btn-link" style={{ fontSize: '0.78rem' }}>Jump to today</button>
+              <button type="button" onClick={goNext} className="sns-icon-btn" title="Next"><ChevronRight size={16} /></button>
+            </div>
+            <FormField label="Or pick a specific date">
+              <input
+                type="date"
+                className="sns-input"
+                value={toDateInputValue(anchor)}
+                onChange={(e) => e.target.value && onAnchorChange(new Date(e.target.value + 'T00:00:00'))}
+              />
+            </FormField>
+          </div>
+        </>
+      )}
     </div>
   )
 }

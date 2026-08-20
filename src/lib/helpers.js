@@ -115,3 +115,83 @@ export function isInPeriod(iso, period) {
 export function isToday(iso) {
   return isInPeriod(iso, 'day')
 }
+
+// ---------------------------------------------------------------------------
+// Navigable period system for the Overview date selector — unlike isInPeriod
+// above (always "from now"), this computes a range anchored at any date, so
+// the user can browse previous weeks/months/years, not just the current one.
+// ---------------------------------------------------------------------------
+
+// The [start, end) range for a given granularity, anchored at any date.
+export function getPeriodRange(granularity, anchorDate) {
+  const d = new Date(anchorDate)
+  d.setHours(0, 0, 0, 0)
+  let start, end
+  if (granularity === 'week') {
+    const day = d.getDay()
+    const diff = day === 0 ? 6 : day - 1
+    start = new Date(d)
+    start.setDate(start.getDate() - diff)
+    end = new Date(start)
+    end.setDate(end.getDate() + 7)
+  } else if (granularity === 'month') {
+    start = new Date(d.getFullYear(), d.getMonth(), 1)
+    end = new Date(d.getFullYear(), d.getMonth() + 1, 1)
+  } else if (granularity === 'year') {
+    start = new Date(d.getFullYear(), 0, 1)
+    end = new Date(d.getFullYear() + 1, 0, 1)
+  } else {
+    // day
+    start = new Date(d)
+    end = new Date(d)
+    end.setDate(end.getDate() + 1)
+  }
+  return { start, end }
+}
+
+export function isInRange(iso, start, end) {
+  if (!iso) return false
+  const t = new Date(iso).getTime()
+  return t >= start.getTime() && t < end.getTime()
+}
+
+// Move the anchor one unit of the given granularity forward (+1) or back (-1).
+export function shiftAnchor(anchorDate, granularity, direction) {
+  const d = new Date(anchorDate)
+  if (granularity === 'week') d.setDate(d.getDate() + direction * 7)
+  else if (granularity === 'month') d.setMonth(d.getMonth() + direction)
+  else if (granularity === 'year') d.setFullYear(d.getFullYear() + direction)
+  else d.setDate(d.getDate() + direction)
+  return d
+}
+
+// Human label for the current granularity + anchor, e.g. "Today",
+// "17 – 23 Aug 2026", "August 2026", or "2026".
+export function formatPeriodLabel(granularity, anchorDate) {
+  const { start, end } = getPeriodRange(granularity, anchorDate)
+  const endInclusive = new Date(end.getTime() - 1)
+  if (granularity === 'day') {
+    const today = startOfToday()
+    if (start.getTime() === today.getTime()) return 'Today'
+    return formatDate(start)
+  }
+  if (granularity === 'week') {
+    const sameMonth = start.getMonth() === endInclusive.getMonth()
+    const startStr = start.toLocaleDateString('en-KE', { day: 'numeric', month: sameMonth ? undefined : 'short' })
+    const endStr = endInclusive.toLocaleDateString('en-KE', { day: 'numeric', month: 'short', year: 'numeric' })
+    return `${startStr} – ${endStr}`
+  }
+  if (granularity === 'month') {
+    return start.toLocaleDateString('en-KE', { month: 'long', year: 'numeric' })
+  }
+  return String(start.getFullYear())
+}
+
+// 'YYYY-MM-DD' for use as an <input type="date"> value.
+export function toDateInputValue(date) {
+  const d = new Date(date)
+  const yyyy = d.getFullYear()
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd}`
+}

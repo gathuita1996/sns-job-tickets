@@ -4,12 +4,13 @@ import Header from './Header'
 import JobFormModal from './JobForm'
 import JobsTable from './JobsTable'
 import { JobPrintView } from './PrintViews'
-import { ConfirmDialog, NavCard, PeriodToggle, SearchInput, StatCard, StatusFilterSelect } from './shared'
-import { formatKSh, formatDate, isOverdue, isInPeriod } from '../lib/helpers'
+import { ConfirmDialog, NavCard, PeriodSelector, SearchInput, StatCard, StatusFilterSelect } from './shared'
+import { formatKSh, isOverdue, isInPeriod, getPeriodRange, isInRange } from '../lib/helpers'
 
 export default function MemberDashboard({ currentUser, jobs, onLogout, onAddJob, onUpdateJob, onDeleteJob }) {
   const [view, setView] = useState('home') // 'home' | 'all' | 'pending' | 'today'
-  const [period, setPeriod] = useState('day')
+  const [periodGranularity, setPeriodGranularity] = useState('day')
+  const [periodAnchor, setPeriodAnchor] = useState(() => new Date())
   const [showForm, setShowForm] = useState(false)
   const [editingJob, setEditingJob] = useState(null)
   const [printing, setPrinting] = useState(null)
@@ -21,7 +22,8 @@ export default function MemberDashboard({ currentUser, jobs, onLogout, onAddJob,
   const overdueJobs = useMemo(() => jobs.filter(isOverdue), [jobs])
   const todayJobs = useMemo(() => jobs.filter((j) => isInPeriod(j.createdAt, 'day')), [jobs])
 
-  const periodJobs = useMemo(() => jobs.filter((j) => isInPeriod(j.createdAt, period)), [jobs, period])
+  const { start: periodStart, end: periodEnd } = useMemo(() => getPeriodRange(periodGranularity, periodAnchor), [periodGranularity, periodAnchor])
+  const periodJobs = useMemo(() => jobs.filter((j) => isInRange(j.createdAt, periodStart, periodEnd)), [jobs, periodStart, periodEnd])
   const stats = useMemo(() => ({
     periodCount: periodJobs.length,
     periodTransport: periodJobs.reduce((s, j) => s + (Number(j.transportAmount) || 0), 0),
@@ -62,11 +64,10 @@ export default function MemberDashboard({ currentUser, jobs, onLogout, onAddJob,
 
         {view === 'home' ? (
           <>
-            <div className="flex items-center justify-between" style={{ marginBottom: '0.15rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div className="flex items-center justify-between" style={{ marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
               <h2 className="sns-display" style={{ fontSize: '1.05rem', fontWeight: 700 }}>Overview</h2>
-              <PeriodToggle value={period} onChange={setPeriod} />
+              <PeriodSelector granularity={periodGranularity} anchor={periodAnchor} onGranularityChange={setPeriodGranularity} onAnchorChange={setPeriodAnchor} />
             </div>
-            <p className="sns-eyebrow sns-text-faint" style={{ marginBottom: '1rem' }}>{formatDate(new Date())}</p>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3" style={{ marginBottom: '2rem' }}>
               <StatCard label="Total Jobs" value={stats.periodCount} icon={Clipboard} />
               <StatCard label="Transport" value={formatKSh(stats.periodTransport)} icon={Wallet} masked />
