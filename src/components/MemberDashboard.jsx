@@ -70,10 +70,10 @@ export default function MemberDashboard({ currentUser, jobs, onLogout, onAddJob,
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3" style={{ marginBottom: '2rem' }}>
               <StatCard label="Total Jobs" value={stats.periodCount} icon={Clipboard} />
-              <StatCard label="Transport" value={formatKSh(stats.periodTransport)} icon={Wallet} masked />
-              <StatCard label="Completed" value={stats.periodCompleted} icon={CheckCircle2} />
+              <StatCard label="Transport" value={formatKSh(stats.periodTransport)} icon={Wallet} masked tone="warning" />
+              <StatCard label="Completed" value={stats.periodCompleted} icon={CheckCircle2} tone="success" />
               <StatCard label="Pending" value={stats.pending} icon={Clock} />
-              <StatCard label="Overdue" value={stats.overdue} icon={AlertCircle} />
+              <StatCard label="Overdue" value={stats.overdue} icon={AlertCircle} tone="danger" />
             </div>
 
             <h2 className="sns-display" style={{ fontSize: '1.05rem', fontWeight: 700, marginBottom: '0.75rem' }}>Quick actions</h2>

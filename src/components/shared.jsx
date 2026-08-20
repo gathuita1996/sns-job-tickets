@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AlertCircle, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, Clipboard, Eye, EyeOff, Search } from 'lucide-react'
 import { STATUS_OPTIONS, PERIODS, formatPeriodLabel, shiftAnchor, toDateInputValue } from '../lib/helpers'
 
@@ -43,13 +43,46 @@ export function PriorityBadge({ priority }) {
   return <span className={`sns-badge ${cls}`}>{priority}</span>
 }
 
-export function StatCard({ label, value, icon: Icon, masked }) {
+// Animates a number counting up (or down) to its new value whenever it
+// changes -- e.g. a stat card ticking from 4 to 7 rather than just jumping.
+// Non-numeric values (strings like "KSh 2,000", or the masked "••••••")
+// pass straight through untouched.
+function useCountUp(value, duration = 650) {
+  const [display, setDisplay] = useState(value)
+  const prevRef = useRef(value)
+  const rafRef = useRef(null)
+
+  useEffect(() => {
+    const isNumeric = typeof value === 'number' && typeof prevRef.current === 'number'
+    if (!isNumeric || value === prevRef.current) {
+      setDisplay(value)
+      prevRef.current = value
+      return undefined
+    }
+    const start = prevRef.current
+    const startTime = performance.now()
+    function tick(now) {
+      const progress = Math.min((now - startTime) / duration, 1)
+      const eased = 1 - Math.pow(1 - progress, 3)
+      setDisplay(Math.round(start + (value - start) * eased))
+      if (progress < 1) rafRef.current = requestAnimationFrame(tick)
+      else prevRef.current = value
+    }
+    rafRef.current = requestAnimationFrame(tick)
+    return () => rafRef.current && cancelAnimationFrame(rafRef.current)
+  }, [value, duration])
+
+  return display
+}
+
+export function StatCard({ label, value, icon: Icon, masked, tone = 'default' }) {
   const [revealed, setRevealed] = useState(false)
   const showValue = !masked || revealed
+  const animatedValue = useCountUp(showValue ? value : null)
   function toggle() { setRevealed((r) => !r) }
   return (
     <div
-      className="sns-card"
+      className="sns-card sns-stat-card"
       style={{ padding: '1rem', cursor: masked ? 'pointer' : 'default', userSelect: masked ? 'none' : 'auto' }}
       onClick={masked ? toggle : undefined}
       onKeyDown={masked ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle() } } : undefined}
@@ -57,14 +90,14 @@ export function StatCard({ label, value, icon: Icon, masked }) {
       tabIndex={masked ? 0 : undefined}
       title={masked ? (revealed ? 'Click to hide' : 'Click to reveal') : undefined}
     >
-      <div className="flex items-center justify-between" style={{ marginBottom: '0.5rem' }}>
-        <div className="flex items-center gap-2" style={{ color: 'var(--ink-faint)' }}>
-          <Icon size={15} />
-          <span className="sns-eyebrow">{label}</span>
+      <div className="flex items-center justify-between" style={{ marginBottom: '0.6rem' }}>
+        <div className="flex items-center gap-2">
+          <span className={`sns-stat-icon tone-${tone}`}><Icon size={14} /></span>
+          <span className="sns-eyebrow sns-text-faint">{label}</span>
         </div>
         {masked && (revealed ? <EyeOff size={13} style={{ color: 'var(--ink-faint)' }} /> : <Eye size={13} style={{ color: 'var(--ink-faint)' }} />)}
       </div>
-      <p className="sns-display" style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--ink)' }}>{showValue ? value : '••••••'}</p>
+      <p className="sns-display" style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--ink)' }}>{showValue ? animatedValue : '••••••'}</p>
     </div>
   )
 }

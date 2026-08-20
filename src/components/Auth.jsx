@@ -7,15 +7,19 @@ export function AuthLayout({ children }) {
   return (
     <div className="sns-shell">
       <div className="flex flex-col sm:flex-row" style={{ minHeight: '100vh' }}>
-        <div className="w-full sm:w-2/5 flex flex-col justify-between p-8 sm:p-10" style={{ background: 'var(--ink)', color: 'white' }}>
-          <div className="flex items-center gap-3">
+        <div className="w-full sm:w-2/5 flex flex-col justify-between p-8 sm:p-10" style={{ background: 'var(--ink)', color: 'white', position: 'relative', overflow: 'hidden' }}>
+          <svg viewBox="0 0 400 400" preserveAspectRatio="xMaxYMax slice" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0.5, pointerEvents: 'none' }}>
+            <path d="M400,120 C300,180 340,300 250,400 L400,400 Z" fill="var(--signal-deep)" opacity="0.55" />
+            <path d="M400,220 C330,260 360,330 300,400 L400,400 Z" fill="var(--stamp)" opacity="0.28" />
+          </svg>
+          <div className="flex items-center gap-3" style={{ position: 'relative' }}>
             <div className="sns-brand-mark"><img src={logoIcon} alt="Swahili Net Solution" /></div>
             <div>
               <p className="sns-display" style={{ fontSize: '1.05rem', fontWeight: 700, lineHeight: 1.15 }}>Swahili Net Solution</p>
               <p className="sns-eyebrow" style={{ color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>Job Card System</p>
             </div>
           </div>
-          <div className="hidden sm:block">
+          <div className="hidden sm:block" style={{ position: 'relative' }}>
             <p className="sns-display" style={{ fontSize: '1.7rem', lineHeight: 1.3, fontWeight: 600, marginBottom: '0.75rem' }}>
               Every site visit,<br />logged and accounted for.
             </p>
@@ -23,7 +27,7 @@ export function AuthLayout({ children }) {
               File job cards from the field, track transport costs, and give the office a clean paper trail — digitally.
             </p>
           </div>
-          <div className="sns-eyebrow" style={{ color: 'rgba(255,255,255,0.4)' }}>Internal tool · Members &amp; Admin</div>
+          <div className="sns-eyebrow" style={{ color: 'rgba(255,255,255,0.4)', position: 'relative' }}>Internal tool · Members &amp; Admin</div>
         </div>
         <div className="w-full sm:w-3/5 flex items-center justify-center p-6 sm:p-12">
           <div className="w-full sns-fade-in" style={{ maxWidth: '26rem' }}>

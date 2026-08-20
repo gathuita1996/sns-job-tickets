@@ -92,10 +92,10 @@ export default function AdminDashboard({ currentUser, users, jobs, onLogout, onU
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3" style={{ marginBottom: '1.5rem' }}>
               <StatCard label="Total Jobs" value={stats.periodCount} icon={Clipboard} />
-              <StatCard label="Transport" value={formatKSh(stats.periodTransport)} icon={Wallet} masked />
-              <StatCard label="Completed" value={stats.periodCompleted} icon={CheckCircle2} />
+              <StatCard label="Transport" value={formatKSh(stats.periodTransport)} icon={Wallet} masked tone="warning" />
+              <StatCard label="Completed" value={stats.periodCompleted} icon={CheckCircle2} tone="success" />
               <StatCard label="Active Members" value={stats.activeMembers} icon={Users} />
-              <StatCard label="Overdue" value={stats.overdue} icon={AlertCircle} />
+              <StatCard label="Overdue" value={stats.overdue} icon={AlertCircle} tone="danger" />
             </div>
             <div className="sns-card" style={{ padding: '1.25rem' }}>
               <h3 className="sns-display" style={{ fontWeight: 700, marginBottom: '1rem', fontSize: '0.95rem' }}>Jobs by type</h3>

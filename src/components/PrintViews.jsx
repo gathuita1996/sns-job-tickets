@@ -19,7 +19,8 @@ export function JobPrintView({ job, filedByUser, onBack }) {
         <button onClick={onBack} className="sns-btn-secondary"><ArrowLeft size={16} /> Back</button>
         <button onClick={() => window.print()} className="sns-btn-primary"><Printer size={16} /> Print / Save as PDF</button>
       </div>
-      <div className="sns-card mx-auto" style={{ maxWidth: '38rem', padding: '2rem' }}>
+      <div className="sns-card mx-auto" style={{ maxWidth: '38rem', padding: '2rem', position: 'relative', overflow: 'hidden' }}>
+        {job.priority === 'Urgent' && <span className="sns-ribbon">URGENT</span>}
         <div className="flex items-center justify-between" style={{ borderBottom: '2px solid var(--ink)', paddingBottom: '1.1rem', marginBottom: '1.5rem' }}>
           <div className="flex items-center gap-3">
             <div className="sns-brand-mark"><img src={logoIcon} alt="Swahili Net Solution" /></div>

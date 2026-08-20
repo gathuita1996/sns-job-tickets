@@ -65,8 +65,29 @@ body { margin: 0; }
 .sns-tab { padding: 0.65rem 1rem; font-size: 0.875rem; font-weight: 600; border: none; background: transparent; cursor: pointer; border-bottom: 2px solid transparent; color: var(--ink-faint); font-family: 'IBM Plex Sans', sans-serif; }
 .sns-tab.active { color: var(--signal-deep); border-bottom-color: var(--signal); }
 .sns-table th { text-align: left; padding: 0.7rem; font-size: 0.68rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-faint); font-family: 'IBM Plex Mono', monospace; border-bottom: 1px solid var(--line); }
-.sns-table td { padding: 0.7rem; font-size: 0.85rem; border-bottom: 1px solid var(--line-soft); color: var(--ink); }
-.sns-table tr:hover td { background: var(--paper); }
+.sns-table td { padding: 0.7rem; font-size: 0.85rem; border-bottom: 1px solid var(--line-soft); color: var(--ink); transition: background 0.18s ease; }
+.sns-table tbody tr td { position: relative; }
+.sns-table tbody tr:hover td { background: var(--signal-pale); }
+.sns-table tbody tr:hover td:first-child { box-shadow: inset 3px 0 0 var(--signal); }
+.sns-th-sortable { cursor: pointer; user-select: none; transition: color 0.15s ease; }
+.sns-th-sortable:hover { color: var(--signal-deep); }
+.sns-th-sortable .sns-sort-ic { opacity: 0.3; transition: opacity 0.15s ease; }
+.sns-th-sortable.active .sns-sort-ic { opacity: 1; }
+
+/* Stat card icon circles, color-coded by tone -- echoes the icon-in-circle
+   language from the print flyers (blue/orange/green accents per tier). */
+.sns-stat-icon { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: transform 0.2s ease; }
+.sns-stat-icon.tone-default { background: var(--signal-pale); color: var(--signal-deep); }
+.sns-stat-icon.tone-success { background: var(--confirmed-pale); color: var(--confirmed); }
+.sns-stat-icon.tone-warning { background: var(--stamp-pale); color: var(--stamp-deep); }
+.sns-stat-icon.tone-danger { background: var(--overdue-pale); color: var(--overdue); }
+.sns-stat-card:hover .sns-stat-icon { transform: scale(1.08); }
+.sns-stat-card { transition: transform 0.18s ease, box-shadow 0.18s ease; }
+.sns-stat-card:hover { transform: translateY(-2px); box-shadow: 0 12px 24px -14px rgba(20,40,60,0.2); }
+
+/* Diagonal ribbon badge, echoing the "MOST POPULAR" / flame corner tags
+   from the flyers -- used for Urgent-priority job cards on print. */
+.sns-ribbon { position: absolute; top: 14px; right: -34px; width: 150px; transform: rotate(45deg); background: var(--overdue); color: #fff; text-align: center; font-family: 'IBM Plex Mono', monospace; font-size: 0.66rem; font-weight: 700; letter-spacing: 0.08em; padding: 0.3rem 0; box-shadow: 0 2px 6px rgba(0,0,0,0.15); }
 
 /* Focus visibility floor, on top of the focus rings already on inputs/buttons */
 a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
