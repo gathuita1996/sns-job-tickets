@@ -11,7 +11,31 @@ export function mapProfile(row) {
     contact: row.contact,
     role: row.role,
     title: row.title || '',
+    department: row.department || 'technical',
     createdAt: row.created_at,
+  }
+}
+
+export function mapCustomer(row) {
+  return {
+    id: row.id,
+    fullName: row.full_name,
+    contact: row.contact,
+    location: row.location,
+    interestedPackage: row.interested_package || '',
+    notes: row.notes || '',
+    recordedBy: row.recorded_by,
+    createdAt: row.created_at,
+  }
+}
+
+export function customerToDbFields(data) {
+  return {
+    full_name: data.fullName,
+    contact: data.contact,
+    location: data.location,
+    interested_package: data.interestedPackage || null,
+    notes: data.notes || null,
   }
 }
 

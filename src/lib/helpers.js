@@ -26,6 +26,27 @@ export const CHART_COLORS = ['#1A4C93', '#F0781E', '#1DA851', '#4C5F72', '#12387
 // without being acted on.
 export const OVERDUE_HOURS = 24
 
+// Logistics cap: KSh 60 each way, 120 KSh round trip maximum per job.
+export const MAX_TRANSPORT = 120
+
+export const DEPARTMENTS = [
+  { key: 'sales', label: 'Sales & Marketing' },
+  { key: 'technical', label: 'Technical' },
+  { key: 'admin', label: 'Admin' },
+]
+
+export function departmentLabel(key) {
+  return (DEPARTMENTS.find((d) => d.key === key) || {}).label || key || '—'
+}
+
+// Real product names from the marketing site -- kept as a plain list here
+// rather than importing across the two separate projects.
+export const PACKAGES = ['Swahili 10 Unlimited', 'Swahili 15 Unlimited', 'Swahili 20 Unlimited', 'Not sure yet']
+
+export const COMMISSION_PER_CUSTOMER = 500
+// Departments whose members earn a commission for recording a new customer.
+export const COMMISSION_DEPARTMENTS = ['sales', 'technical']
+
 export function formatDate(isoOrDate) {
   if (!isoOrDate) return '—'
   return new Date(isoOrDate).toLocaleDateString('en-KE', { year: 'numeric', month: 'short', day: 'numeric' })
@@ -52,6 +73,16 @@ export function defaultJobForm() {
     transportAmount: '',
     status: '',
     priority: 'Normal',
+    notes: '',
+  }
+}
+
+export function defaultCustomerForm() {
+  return {
+    fullName: '',
+    contact: '',
+    location: '',
+    interestedPackage: PACKAGES[0],
     notes: '',
   }
 }

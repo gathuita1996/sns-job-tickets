@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { X } from 'lucide-react'
 import { FormField } from './shared'
-import { JOB_TYPES, LOCATIONS, STATUS_OPTIONS, PRIORITY_OPTIONS, defaultJobForm, isOverdue } from '../lib/helpers'
+import { JOB_TYPES, LOCATIONS, STATUS_OPTIONS, PRIORITY_OPTIONS, MAX_TRANSPORT, defaultJobForm, isOverdue, toDateInputValue } from '../lib/helpers'
 
 export default function JobFormModal({ initialJob, onClose, onSave }) {
   const editingOverdue = Boolean(initialJob) && isOverdue(initialJob)
@@ -27,7 +27,9 @@ export default function JobFormModal({ initialJob, onClose, onSave }) {
     if (!form.location) e.location = 'Please select a location'
     if (!form.requestedBy.trim()) e.requestedBy = 'Required'
     if (!form.visitDate) e.visitDate = 'Required'
+    else if (form.visitDate > toDateInputValue(new Date())) e.visitDate = "You can't file a job for a future date — please choose today or an earlier date."
     if (form.transportAmount === '' || isNaN(Number(form.transportAmount)) || Number(form.transportAmount) < 0) e.transportAmount = 'Enter a valid amount'
+    else if (Number(form.transportAmount) > MAX_TRANSPORT) e.transportAmount = `Transport can't exceed KSh ${MAX_TRANSPORT} — that's the maximum round trip (KSh 60 there, KSh 60 back).`
     if (!form.status) e.status = 'Please select a status'
     if (!form.notes.trim()) e.notes = 'Job details are required'
     if (editingOverdue) {
@@ -93,7 +95,7 @@ export default function JobFormModal({ initialJob, onClose, onSave }) {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <FormField label="Date of visit" error={errors.visitDate}>
-              <input type="date" className="sns-input" value={form.visitDate} onChange={(e) => update('visitDate', e.target.value)} />
+              <input type="date" max={toDateInputValue(new Date())} className="sns-input" value={form.visitDate} onChange={(e) => update('visitDate', e.target.value)} />
             </FormField>
             <FormField label="Priority">
               <select className="sns-input" value={form.priority} onChange={(e) => update('priority', e.target.value)}>
@@ -102,8 +104,8 @@ export default function JobFormModal({ initialJob, onClose, onSave }) {
             </FormField>
           </div>
 
-          <FormField label="Transport amount (KSh)" error={errors.transportAmount} hint="Total for the round trip — to the site and back, combined into one figure.">
-            <input type="number" min="0" step="1" className="sns-input" value={form.transportAmount} onChange={(e) => update('transportAmount', e.target.value)} placeholder="0" />
+          <FormField label="Transport amount (KSh)" error={errors.transportAmount} hint="Total for the round trip — to the site and back, combined into one figure. Maximum KSh 120 (60 there, 60 back).">
+            <input type="number" min="0" max={MAX_TRANSPORT} step="1" className="sns-input" value={form.transportAmount} onChange={(e) => update('transportAmount', e.target.value)} placeholder="0" />
           </FormField>
 
           <FormField label="Status" error={errors.status}>

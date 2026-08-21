@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, Check, CheckCircle2, Clipboard, Copy, Eye, EyeOff, Printer, Users, Wallet } from 'lucide-react'
+import { AlertCircle, Award, Check, CheckCircle2, Clipboard, Copy, Eye, EyeOff, Printer, Users, Wallet } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import Header from './Header'
 import JobFormModal from './JobForm'
@@ -7,9 +7,9 @@ import JobsTable from './JobsTable'
 import TeamList from './TeamList'
 import { JobPrintView, BatchPrintView } from './PrintViews'
 import { ConfirmDialog, EmptyState, FormField, PeriodSelector, SearchInput, StatCard, StatusFilterSelect } from './shared'
-import { JOB_TYPES, PRIORITY_OPTIONS, CHART_COLORS, formatKSh, isOverdue, getPeriodRange, isInRange } from '../lib/helpers'
+import { JOB_TYPES, PRIORITY_OPTIONS, CHART_COLORS, COMMISSION_PER_CUSTOMER, COMMISSION_DEPARTMENTS, departmentLabel, formatKSh, isOverdue, getPeriodRange, isInRange } from '../lib/helpers'
 
-export default function AdminDashboard({ currentUser, users, jobs, onLogout, onUpdateJob, onDeleteJob, onPromote, accessCode, onUpdateAccessCode }) {
+export default function AdminDashboard({ currentUser, users, jobs, customers, onLogout, onUpdateJob, onDeleteJob, onPromote, onUpdateDepartment, accessCode, onUpdateAccessCode }) {
   const [tab, setTab] = useState('overview')
   const [periodGranularity, setPeriodGranularity] = useState('day')
   const [periodAnchor, setPeriodAnchor] = useState(() => new Date())
@@ -46,6 +46,19 @@ export default function AdminDashboard({ currentUser, users, jobs, onLogout, onU
   const { start: periodStart, end: periodEnd } = useMemo(() => getPeriodRange(periodGranularity, periodAnchor), [periodGranularity, periodAnchor])
   const periodJobs = useMemo(() => jobs.filter((j) => isInRange(j.createdAt, periodStart, periodEnd)), [jobs, periodStart, periodEnd])
 
+  // Commission is never stored — always derived from the customers table so
+  // it can never drift out of sync with the underlying records.
+  const commissionRows = useMemo(() => {
+    return members
+      .filter((m) => COMMISSION_DEPARTMENTS.includes(m.department))
+      .map((m) => {
+        const count = customers.filter((c) => c.recordedBy === m.id).length
+        return { member: m, count, commission: count * COMMISSION_PER_CUSTOMER }
+      })
+      .sort((a, b) => b.commission - a.commission)
+  }, [members, customers])
+  const totalCommission = useMemo(() => commissionRows.reduce((s, r) => s + r.commission, 0), [commissionRows])
+
   const stats = useMemo(() => {
     const byType = JOB_TYPES.map((t) => ({ type: t, count: jobs.filter((j) => j.jobType === t).length })).filter((x) => x.count > 0)
     return {
@@ -81,6 +94,7 @@ export default function AdminDashboard({ currentUser, users, jobs, onLogout, onU
           <button className={`sns-tab ${tab === 'overview' ? 'active' : ''}`} onClick={() => setTab('overview')}>Overview</button>
           <button className={`sns-tab ${tab === 'jobs' ? 'active' : ''}`} onClick={() => setTab('jobs')}>All Jobs</button>
           <button className={`sns-tab ${tab === 'team' ? 'active' : ''}`} onClick={() => setTab('team')}>Team</button>
+          <button className={`sns-tab ${tab === 'commissions' ? 'active' : ''}`} onClick={() => setTab('commissions')}>Commissions</button>
           <button className={`sns-tab ${tab === 'settings' ? 'active' : ''}`} onClick={() => setTab('settings')}>Settings</button>
         </div>
 
@@ -158,7 +172,38 @@ export default function AdminDashboard({ currentUser, users, jobs, onLogout, onU
           </div>
         )}
 
-        {tab === 'team' && <TeamList users={users} jobs={jobs} onPromote={onPromote} />}
+        {tab === 'team' && <TeamList users={users} jobs={jobs} onPromote={onPromote} onUpdateDepartment={onUpdateDepartment} />}
+        {tab === 'commissions' && (
+          <div>
+            <div className="grid grid-cols-2 gap-3" style={{ marginBottom: '1.5rem', maxWidth: '24rem' }}>
+              <StatCard label="Sales & Technical" value={commissionRows.length} icon={Users} />
+              <StatCard label="Total commission owed" value={formatKSh(totalCommission)} icon={Award} tone="success" />
+            </div>
+            {commissionRows.length === 0 ? (
+              <EmptyState message="No Sales or Technical members yet." />
+            ) : (
+              <div className="sns-card" style={{ overflow: 'hidden' }}>
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="sns-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr><th>Member</th><th>Department</th><th>Customers recorded</th><th>Commission owed</th></tr>
+                    </thead>
+                    <tbody>
+                      {commissionRows.map((r) => (
+                        <tr key={r.member.id}>
+                          <td style={{ fontWeight: 600 }}>{r.member.fullName}</td>
+                          <td className="sns-text-soft">{departmentLabel(r.member.department)}</td>
+                          <td className="sns-mono">{r.count}</td>
+                          <td className="sns-mono" style={{ fontWeight: 700, color: 'var(--confirmed)' }}>{formatKSh(r.commission)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
         {tab === 'settings' && <AccessCodeSettings accessCode={accessCode} onUpdate={onUpdateAccessCode} />}
       </main>
 

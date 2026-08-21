@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from './lib/supabaseClient'
-import { mapProfile, mapJob, jobToDbFields } from './lib/mappers'
+import { mapProfile, mapJob, jobToDbFields, mapCustomer, customerToDbFields } from './lib/mappers'
+import { COMMISSION_PER_CUSTOMER, COMMISSION_DEPARTMENTS } from './lib/helpers'
 import { LoadingScreen, Toast } from './components/shared'
 import { LoginView, SignupView, ForgotPasswordView, ResetPasswordView } from './components/Auth'
 import MemberDashboard from './components/MemberDashboard'
@@ -10,6 +11,7 @@ export default function App() {
   const [booting, setBooting] = useState(true)
   const [currentUser, setCurrentUser] = useState(null)
   const [jobs, setJobs] = useState([])
+  const [customers, setCustomers] = useState([])
   const [allUsers, setAllUsers] = useState([])
   const [accessCode, setAccessCode] = useState('')
   const [authView, setAuthView] = useState('login')
@@ -36,6 +38,7 @@ export default function App() {
     currentUserRef.current = profile
     setCurrentUser(profile)
     await refreshJobs()
+    await refreshCustomers()
     if (profile.role === 'admin') { await refreshUsers(); await refreshAccessCode() }
     setBooting(false)
   }
@@ -44,6 +47,12 @@ export default function App() {
     const { data, error } = await supabase.from('jobs').select('*')
     if (error) { showToast('Failed to load job cards.', 'error'); return }
     setJobs((data || []).map(mapJob))
+  }
+
+  async function refreshCustomers() {
+    const { data, error } = await supabase.from('customers').select('*')
+    if (error) return
+    setCustomers((data || []).map(mapCustomer))
   }
 
   async function refreshUsers() {
@@ -118,6 +127,7 @@ export default function App() {
             contact: form.contact.trim(),
             title: form.title.trim() || null,
             access_code: form.accessCode.trim(),
+            department: form.department,
           },
         },
       })
@@ -180,6 +190,14 @@ export default function App() {
     await refreshJobs()
   }
 
+  async function handleAddCustomer(formData) {
+    const { error } = await supabase.from('customers').insert({ ...customerToDbFields(formData), recorded_by: currentUserRef.current.id })
+    if (error) { showToast('Failed to save customer.', 'error'); return }
+    const earnsCommission = COMMISSION_DEPARTMENTS.includes(currentUserRef.current.department)
+    showToast(earnsCommission ? `Customer recorded — KSh ${COMMISSION_PER_CUSTOMER} commission added.` : 'Customer recorded.')
+    await refreshCustomers()
+  }
+
   async function handleUpdateJob(id, formData) {
     const { error } = await supabase.from('jobs').update(jobToDbFields(formData)).eq('id', id)
     if (error) { showToast('Failed to update job card.', 'error'); return }
@@ -198,6 +216,13 @@ export default function App() {
     const { error } = await supabase.from('profiles').update({ role: 'admin' }).eq('id', member.id)
     if (error) { showToast('Failed to promote. Please try again.', 'error'); return }
     showToast(`${member.fullName} is now an admin.`)
+    await refreshUsers()
+  }
+
+  async function handleUpdateDepartment(member, department) {
+    const { error } = await supabase.from('profiles').update({ department }).eq('id', member.id)
+    if (error) { showToast('Failed to update department.', 'error'); return }
+    showToast(`${member.fullName}'s department updated.`)
     await refreshUsers()
   }
 
@@ -234,7 +259,7 @@ export default function App() {
   return (<>
     {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     {currentUser.role === 'admin'
-      ? <AdminDashboard currentUser={currentUser} users={allUsers} jobs={jobs} onLogout={handleLogout} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onPromote={handlePromote} accessCode={accessCode} onUpdateAccessCode={handleUpdateAccessCode} />
-      : <MemberDashboard currentUser={currentUser} jobs={jobs.filter((j) => j.memberId === currentUser.id)} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} />}
+      ? <AdminDashboard currentUser={currentUser} users={allUsers} jobs={jobs} customers={customers} onLogout={handleLogout} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onPromote={handlePromote} onUpdateDepartment={handleUpdateDepartment} accessCode={accessCode} onUpdateAccessCode={handleUpdateAccessCode} />
+      : <MemberDashboard currentUser={currentUser} jobs={jobs.filter((j) => j.memberId === currentUser.id)} customers={customers.filter((c) => c.recordedBy === currentUser.id)} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAddCustomer={handleAddCustomer} />}
   </>)
 }

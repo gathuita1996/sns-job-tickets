@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 import { FormField, ErrorBanner, SuccessBanner } from './shared'
+import { DEPARTMENTS } from '../lib/helpers'
 import logoIcon from '../assets/logo-icon.png'
 
 export function AuthLayout({ children }) {
@@ -87,7 +88,7 @@ export function LoginView({ onLogin, onSwitch, onForgot, error, notice }) {
 }
 
 export function SignupView({ onSignup, onSwitch, error }) {
-  const [form, setForm] = useState({ fullName: '', username: '', email: '', contact: '', password: '', confirmPassword: '', title: '', accessCode: '' })
+  const [form, setForm] = useState({ fullName: '', username: '', email: '', contact: '', password: '', confirmPassword: '', title: '', accessCode: '', department: '' })
   const [fieldErrors, setFieldErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
 
@@ -107,6 +108,7 @@ export function SignupView({ onSignup, onSwitch, error }) {
     else if (!/^(\+?254|0)\d{9}$/.test(form.contact.replace(/\s/g, ''))) fe.contact = 'Enter a valid Kenyan number, e.g. 0712 345 678.'
     if (!form.password) fe.password = 'Password is required.'
     else if (form.password.length < 6) fe.password = 'At least 6 characters.'
+    if (!form.department) fe.department = 'Please select your department.'
     if (form.confirmPassword !== form.password) fe.confirmPassword = 'Passwords do not match.'
     if (!form.accessCode.trim()) fe.accessCode = 'Ask your admin for the team access code.'
     setFieldErrors(fe)
@@ -149,6 +151,12 @@ export function SignupView({ onSignup, onSwitch, error }) {
         </div>
         <FormField label="Title (optional)" hint="e.g. Director, Operations Manager — relevant if you end up as an admin.">
           <input className="sns-input" value={form.title} onChange={(e) => update('title', e.target.value)} placeholder="Director" />
+        </FormField>
+        <FormField label="Department" error={fieldErrors.department} hint="Which team you're part of — this decides what you'll see in your portal.">
+          <select className={`sns-input${form.department === '' ? ' sns-select-placeholder' : ''}`} value={form.department} onChange={(e) => update('department', e.target.value)}>
+            <option value="" disabled>select-department</option>
+            {DEPARTMENTS.map((d) => <option key={d.key} value={d.key}>{d.label}</option>)}
+          </select>
         </FormField>
         <FormField label="Team access code" error={fieldErrors.accessCode} hint="Ask an admin if you don't have this.">
           <input className="sns-input" value={form.accessCode} onChange={(e) => update('accessCode', e.target.value)} placeholder="Enter the code" autoComplete="off" />
