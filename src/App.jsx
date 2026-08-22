@@ -117,6 +117,11 @@ export default function App() {
   async function handleSignup(form) {
     setAuthError('')
     try {
+      const { data: codeOk, error: codeCheckErr } = await supabase.rpc('check_access_code', { candidate: form.accessCode.trim() })
+      if (!codeCheckErr && codeOk === false) {
+        setAuthError('That access code is incorrect. Ask an admin for the current one.')
+        return
+      }
       const { data, error } = await supabase.auth.signUp({
         email: form.email.trim(),
         password: form.password,
