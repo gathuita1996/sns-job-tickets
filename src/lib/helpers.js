@@ -26,8 +26,17 @@ export const CHART_COLORS = ['#1A4C93', '#F0781E', '#1DA851', '#4C5F72', '#12387
 // without being acted on.
 export const OVERDUE_HOURS = 24
 
-// Logistics cap: KSh 60 each way, 120 KSh round trip maximum per job.
-export const MAX_TRANSPORT = 120
+// Logistics cap: KSh 60 per leg. Previously this was a combined 120
+// round-trip figure; now that transport is tracked as a specific From -> To
+// journey, the cap applies to that one leg.
+export const MAX_TRANSPORT = 60
+
+// "Office" is the default starting point for transport, but isn't a real
+// job site or customer location, so it's a separate list rather than
+// something added to LOCATIONS itself.
+export const TRANSPORT_LOCATIONS = ['Office', ...LOCATIONS]
+
+export const CUSTOMER_STATUSES = ['New', 'Contacted', 'Converted', 'Not Interested']
 
 export const DEPARTMENTS = [
   { key: 'sales', label: 'Sales & Marketing' },
@@ -43,7 +52,8 @@ export function departmentLabel(key) {
 // rather than importing across the two separate projects.
 export const PACKAGES = ['Swahili 10 Unlimited', 'Swahili 15 Unlimited', 'Swahili 20 Unlimited', 'Not sure yet']
 
-export const COMMISSION_PER_CUSTOMER = 500
+// Commission rate itself now lives in app_settings.commission_per_customer
+// (admin-editable from Settings) rather than being hardcoded here.
 // Departments whose members earn a commission for recording a new customer.
 export const COMMISSION_DEPARTMENTS = ['sales', 'technical']
 
@@ -70,6 +80,10 @@ export function defaultJobForm() {
     requestedBy: '',
     requesterContact: '',
     visitDate: new Date().toISOString().slice(0, 10),
+    transportFrom: 'Office',
+    transportFromOther: '',
+    transportTo: '',
+    transportToOther: '',
     transportAmount: '',
     status: '',
     priority: 'Normal',
@@ -79,7 +93,8 @@ export function defaultJobForm() {
 
 export function defaultCustomerForm() {
   return {
-    fullName: '',
+    firstName: '',
+    lastName: '',
     contact: '',
     location: '',
     interestedPackage: PACKAGES[0],

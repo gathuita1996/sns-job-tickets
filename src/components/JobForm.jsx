@@ -1,15 +1,30 @@
 import { useState } from 'react'
 import { X } from 'lucide-react'
 import { FormField } from './shared'
-import { JOB_TYPES, LOCATIONS, STATUS_OPTIONS, PRIORITY_OPTIONS, MAX_TRANSPORT, defaultJobForm, isOverdue, toDateInputValue } from '../lib/helpers'
+import { JOB_TYPES, LOCATIONS, TRANSPORT_LOCATIONS, STATUS_OPTIONS, PRIORITY_OPTIONS, MAX_TRANSPORT, defaultJobForm, isOverdue, toDateInputValue } from '../lib/helpers'
+
+// A saved job's transport_from/to is just resolved text -- this figures out
+// whether that text matches a known location (so the dropdown can show it
+// directly) or was custom-typed via "Other" (so "Other" should be selected
+// and the typed text restored into the accompanying text field).
+function resolveTransportField(storedValue) {
+  if (!storedValue) return { selected: '', other: '' }
+  if (TRANSPORT_LOCATIONS.includes(storedValue)) return { selected: storedValue, other: '' }
+  return { selected: 'Other', other: storedValue }
+}
 
 export default function JobFormModal({ initialJob, onClose, onSave }) {
   const editingOverdue = Boolean(initialJob) && isOverdue(initialJob)
+  const fromResolved = initialJob ? resolveTransportField(initialJob.transportFrom) : null
+  const toResolved = initialJob ? resolveTransportField(initialJob.transportTo) : null
 
   const [form, setForm] = useState(initialJob ? {
     jobType: initialJob.jobType, jobTypeOther: initialJob.jobTypeOther || '', location: initialJob.location,
     requestedBy: initialJob.requestedBy, requesterContact: initialJob.requesterContact || '',
-    visitDate: initialJob.visitDate, transportAmount: initialJob.transportAmount, status: initialJob.status,
+    visitDate: initialJob.visitDate,
+    transportFrom: fromResolved.selected, transportFromOther: fromResolved.other,
+    transportTo: toResolved.selected, transportToOther: toResolved.other,
+    transportAmount: initialJob.transportAmount, status: initialJob.status,
     priority: initialJob.priority || 'Normal', notes: initialJob.notes || '', overdueReason: initialJob.overdueReason || '',
   } : defaultJobForm())
   const [errors, setErrors] = useState({})
@@ -28,8 +43,12 @@ export default function JobFormModal({ initialJob, onClose, onSave }) {
     if (!form.requestedBy.trim()) e.requestedBy = 'Required'
     if (!form.visitDate) e.visitDate = 'Required'
     else if (form.visitDate > toDateInputValue(new Date())) e.visitDate = "You can't file a job for a future date — please choose today or an earlier date."
+    if (!form.transportFrom) e.transportFrom = 'Please select a starting point'
+    else if (form.transportFrom === 'Other' && !form.transportFromOther.trim()) e.transportFromOther = 'Please specify the starting location'
+    if (!form.transportTo) e.transportTo = 'Please select a destination'
+    else if (form.transportTo === 'Other' && !form.transportToOther.trim()) e.transportToOther = 'Please specify the destination'
     if (form.transportAmount === '' || isNaN(Number(form.transportAmount)) || Number(form.transportAmount) < 0) e.transportAmount = 'Enter a valid amount'
-    else if (Number(form.transportAmount) > MAX_TRANSPORT) e.transportAmount = `Transport can't exceed KSh ${MAX_TRANSPORT} — that's the maximum round trip (KSh 60 there, KSh 60 back).`
+    else if (Number(form.transportAmount) > MAX_TRANSPORT) e.transportAmount = `Transport can't exceed KSh ${MAX_TRANSPORT} for this leg.`
     if (!form.status) e.status = 'Please select a status'
     if (!form.notes.trim()) e.notes = 'Job details are required'
     if (editingOverdue) {
@@ -44,7 +63,12 @@ export default function JobFormModal({ initialJob, onClose, onSave }) {
     ev.preventDefault()
     if (!validate()) return
     setSubmitting(true)
-    await onSave({ ...form, transportAmount: Number(form.transportAmount) })
+    await onSave({
+      ...form,
+      transportFrom: form.transportFrom === 'Other' ? form.transportFromOther.trim() : form.transportFrom,
+      transportTo: form.transportTo === 'Other' ? form.transportToOther.trim() : form.transportTo,
+      transportAmount: Number(form.transportAmount),
+    })
     setSubmitting(false)
   }
 
@@ -104,7 +128,34 @@ export default function JobFormModal({ initialJob, onClose, onSave }) {
             </FormField>
           </div>
 
-          <FormField label="Transport amount (KSh)" error={errors.transportAmount} hint="Total for the round trip — to the site and back, combined into one figure. Maximum KSh 120 (60 there, 60 back).">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <FormField label="From" error={errors.transportFrom}>
+              <select className="sns-input" value={form.transportFrom} onChange={(e) => update('transportFrom', e.target.value)}>
+                {TRANSPORT_LOCATIONS.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
+                <option value="Other">Other</option>
+              </select>
+            </FormField>
+            <FormField label="To" error={errors.transportTo}>
+              <select className={`sns-input${form.transportTo === '' ? ' sns-select-placeholder' : ''}`} value={form.transportTo} onChange={(e) => update('transportTo', e.target.value)}>
+                <option value="" disabled>select-destination</option>
+                {TRANSPORT_LOCATIONS.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
+                <option value="Other">Other</option>
+              </select>
+            </FormField>
+          </div>
+
+          {form.transportFrom === 'Other' && (
+            <FormField label="Specify starting location" error={errors.transportFromOther}>
+              <input className="sns-input" value={form.transportFromOther} onChange={(e) => update('transportFromOther', e.target.value)} placeholder="Where did the trip start?" />
+            </FormField>
+          )}
+          {form.transportTo === 'Other' && (
+            <FormField label="Specify destination" error={errors.transportToOther}>
+              <input className="sns-input" value={form.transportToOther} onChange={(e) => update('transportToOther', e.target.value)} placeholder="Where did the trip end?" />
+            </FormField>
+          )}
+
+          <FormField label="Transport amount (KSh)" error={errors.transportAmount} hint={`Cost for this leg only, ${form.transportFrom === 'Other' ? (form.transportFromOther || '—') : form.transportFrom} to ${form.transportTo === 'Other' ? (form.transportToOther || '—') : (form.transportTo || '—')}. Maximum KSh ${MAX_TRANSPORT}.`}>
             <input type="number" min="0" max={MAX_TRANSPORT} step="1" className="sns-input" value={form.transportAmount} onChange={(e) => update('transportAmount', e.target.value)} placeholder="0" />
           </FormField>
 

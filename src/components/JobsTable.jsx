@@ -79,7 +79,12 @@ export default function JobsTable({ jobs, showFiledBy, userMap, onView, onEdit, 
                   <td className="sns-text-soft">{j.location}</td>
                   <td className="sns-text-soft">{j.requestedBy}</td>
                   {showFiledBy && <td className="sns-text-soft">{userMap?.[j.memberId]?.fullName || '—'}</td>}
-                  <td className="sns-mono" style={{ fontWeight: 600 }}>{formatKSh(j.transportAmount)}</td>
+                  <td className="sns-mono">
+                    <div style={{ fontWeight: 600 }}>{formatKSh(j.transportAmount)}</div>
+                    {(j.transportFrom || j.transportTo) && (
+                      <div className="sns-text-faint" style={{ fontSize: '0.7rem', fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 500 }}>{j.transportFrom || '—'} → {j.transportTo || '—'}</div>
+                    )}
+                  </td>
                   <td><StatusBadge status={j.status} overdue={overdue} /></td>
                   <td>{j.priority && j.priority !== 'Normal' && j.priority !== 'Low' ? <PriorityBadge priority={j.priority} /> : <span className="sns-text-faint">{j.priority || 'Normal'}</span>}</td>
                   <td>

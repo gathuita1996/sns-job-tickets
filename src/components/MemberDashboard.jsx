@@ -6,9 +6,9 @@ import JobsTable from './JobsTable'
 import CustomerFormModal from './CustomerForm'
 import { JobPrintView } from './PrintViews'
 import { ConfirmDialog, EmptyState, NavCard, PeriodSelector, SearchInput, StatCard, StatusFilterSelect } from './shared'
-import { formatKSh, formatDate, isOverdue, isInPeriod, getPeriodRange, isInRange, COMMISSION_PER_CUSTOMER, COMMISSION_DEPARTMENTS } from '../lib/helpers'
+import { formatKSh, formatDate, isOverdue, isInPeriod, getPeriodRange, isInRange, COMMISSION_DEPARTMENTS } from '../lib/helpers'
 
-export default function MemberDashboard({ currentUser, jobs, customers, onLogout, onAddJob, onUpdateJob, onDeleteJob, onAddCustomer }) {
+export default function MemberDashboard({ currentUser, jobs, customers, onLogout, onAddJob, onUpdateJob, onDeleteJob, onAddCustomer, commissionRate }) {
   const [view, setView] = useState('home') // 'home' | 'all' | 'pending' | 'today' | 'customers'
   const [periodGranularity, setPeriodGranularity] = useState('day')
   const [periodAnchor, setPeriodAnchor] = useState(() => new Date())
@@ -88,7 +88,7 @@ export default function MemberDashboard({ currentUser, jobs, customers, onLogout
               <NavCard icon={Clipboard} label="All my jobs" description={`${jobs.length} total`} onClick={() => setView('all')} />
               <NavCard icon={Clock} label="Pending jobs" description={`${pendingJobs.length} waiting`} onClick={() => setView('pending')} badge={stats.overdue} />
               <NavCard icon={Calendar} label="Jobs today" description={`${todayJobs.length} filed today`} onClick={() => setView('today')} />
-              <NavCard icon={UserPlus} label="Record new customer" description={COMMISSION_DEPARTMENTS.includes(currentUser.department) ? `Earn KSh ${COMMISSION_PER_CUSTOMER} commission` : 'Log a lead for follow-up'} onClick={() => setShowCustomerForm(true)} />
+              <NavCard icon={UserPlus} label="Record new customer" description={COMMISSION_DEPARTMENTS.includes(currentUser.department) ? `Earn KSh ${commissionRate} commission` : 'Log a lead for follow-up'} onClick={() => setShowCustomerForm(true)} />
               {isSales && (
                 <NavCard icon={Users} label="My customers" description={`${customers.length} recorded`} onClick={() => setView('customers')} />
               )}
@@ -102,7 +102,7 @@ export default function MemberDashboard({ currentUser, jobs, customers, onLogout
             </div>
             <div className="grid grid-cols-2 gap-3" style={{ marginBottom: '1rem', maxWidth: '24rem' }}>
               <StatCard label="Customers recorded" value={customers.length} icon={Users} />
-              <StatCard label="Commission earned" value={formatKSh(customers.length * COMMISSION_PER_CUSTOMER)} icon={Wallet} tone="success" />
+              <StatCard label="Commission earned" value={formatKSh(customers.length * commissionRate)} icon={Wallet} tone="success" />
             </div>
             <div className="flex justify-end" style={{ marginBottom: '1rem' }}>
               <button onClick={() => setShowCustomerForm(true)} className="sns-btn-primary"><UserPlus size={17} /> Record new customer</button>

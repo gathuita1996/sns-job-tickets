@@ -86,17 +86,29 @@ before update on public.jobs
 for each row execute function public.touch_updated_at();
 
 -- ----------------------------------------------------------------------------
--- 5. AUTO-CREATE PROFILE ON SIGNUP + FIRST USER = ADMIN
+-- 5. AUTO-CREATE PROFILE ON SIGNUP + FIRST USER = ADMIN + TEAM ACCESS CODE
 -- Supabase Auth creates the auth.users row when someone signs up; this
 -- trigger creates the matching profiles row from the metadata the app sends
 -- (username/full_name/contact/title), and makes the very first signup an
 -- admin so there's always a way in.
+--
+-- It also rejects any signup whose access_code doesn't match the value
+-- below — this is what keeps random visitors from signing up. Change
+-- 'SNS-TEAM-2026' to something only your team knows, then re-run this
+-- CREATE OR REPLACE FUNCTION block (just this block, not the whole file)
+-- in the Supabase SQL Editor any time you want to rotate the code. This
+-- check lives in the database, not in the website's code, so someone
+-- inspecting the site's JavaScript cannot find the real code here.
 -- ----------------------------------------------------------------------------
 create or replace function public.handle_new_user()
 returns trigger as $$
 declare
   first_user boolean;
 begin
+  if new.raw_user_meta_data->>'access_code' is distinct from 'SNS-TEAM-2026' then
+    raise exception 'invalid_access_code';
+  end if;
+
   select not exists(select 1 from public.profiles) into first_user;
 
   insert into public.profiles (id, username, full_name, contact, role, title)
@@ -195,6 +207,180 @@ create policy "jobs_update_own_or_admin"
 create policy "jobs_delete_own_or_admin"
   on public.jobs for delete
   using (member_id = auth.uid() or public.is_admin());
+
+-- ============================================================================
+-- MIGRATION — added later: ticketing-system fields (Other job type detail,
+-- priority, overdue reason). Safe to run on an existing, populated database:
+-- purely additive, existing rows just get NULL / the default for these.
+-- ============================================================================
+alter table public.jobs add column if not exists job_type_other text;
+alter table public.jobs add column if not exists overdue_reason text;
+alter table public.jobs add column if not exists priority text not null default 'Normal'
+  check (priority in ('Low', 'Normal', 'High', 'Urgent'));
+
+-- ============================================================================
+-- MIGRATION — added later: move the signup access code into a real,
+-- admin-manageable table instead of a hardcoded value inside the trigger
+-- function. Only admins can read or change it (enforced by RLS below), so
+-- it's still invisible to members and to anyone outside the app entirely —
+-- but now an admin can actually find and rotate it from the Settings tab
+-- instead of needing to come back to the SQL Editor every time.
+--
+-- IMPORTANT: change 'SNS-TEAM-2026' in the insert below to whatever you
+-- ACTUALLY set your access code to earlier. If you never changed it from
+-- the original placeholder, leave it as SNS-TEAM-2026.
+-- ============================================================================
+create table public.app_settings (
+  id boolean primary key default true,
+  signup_access_code text not null,
+  constraint app_settings_single_row check (id)
+);
+
+alter table public.app_settings enable row level security;
+
+create policy "app_settings_select_admin"
+  on public.app_settings for select
+  using (public.is_admin());
+
+create policy "app_settings_update_admin"
+  on public.app_settings for update
+  using (public.is_admin());
+
+insert into public.app_settings (id, signup_access_code) values (true, 'SNS-TEAM-2026');
+
+create or replace function public.handle_new_user()
+returns trigger as $$
+declare
+  first_user boolean;
+  required_code text;
+begin
+  select signup_access_code into required_code from public.app_settings where id = true;
+
+  if new.raw_user_meta_data->>'access_code' is distinct from required_code then
+    raise exception 'invalid_access_code';
+  end if;
+
+  select not exists(select 1 from public.profiles) into first_user;
+
+  insert into public.profiles (id, username, full_name, contact, role, title)
+  values (
+    new.id,
+    new.raw_user_meta_data->>'username',
+    new.raw_user_meta_data->>'full_name',
+    new.raw_user_meta_data->>'contact',
+    case when first_user then 'admin' else 'member' end,
+    new.raw_user_meta_data->>'title'
+  );
+  return new;
+end;
+$$ language plpgsql security definer set search_path = public;
+
+-- ============================================================================
+-- MIGRATION — added later: departments, new-customer tracking, commissions.
+--
+-- Every member now belongs to a department (Sales & Marketing, Technical,
+-- or Admin), chosen at signup. This is purely descriptive/organisational —
+-- it has no effect on system permissions (that's still the separate `role`
+-- column, controlled only by the first-signup-is-admin rule and admin
+-- promotion). Existing profiles default to 'technical' since that's what
+-- this system was originally built around; an admin can correct any
+-- member's department afterwards from the Team tab.
+--
+-- Sales & Marketing and Technical members both earn a KSh 500 commission
+-- per new customer they record — there's no separate "commission" balance
+-- stored anywhere; it's always computed as (customer count × 500), so it
+-- can never drift out of sync with the underlying customer records.
+-- ============================================================================
+alter table public.profiles add column if not exists department text not null default 'technical'
+  check (department in ('sales', 'technical', 'admin'));
+
+create table public.customers (
+  id                 bigint generated always as identity primary key,
+  full_name          text not null,
+  contact            text not null,
+  location           text not null,
+  interested_package text,
+  notes              text,
+  recorded_by        uuid not null references public.profiles(id) on delete cascade,
+  created_at         timestamptz not null default now()
+);
+
+create index customers_recorded_by_idx on public.customers(recorded_by);
+
+alter table public.customers enable row level security;
+
+-- Same shape as the jobs policies: see/manage your own records, admins see/manage all.
+create policy "customers_select_own_or_admin"
+  on public.customers for select
+  using (recorded_by = auth.uid() or public.is_admin());
+
+create policy "customers_insert_self"
+  on public.customers for insert
+  with check (recorded_by = auth.uid());
+
+create policy "customers_update_own_or_admin"
+  on public.customers for update
+  using (recorded_by = auth.uid() or public.is_admin());
+
+create policy "customers_delete_own_or_admin"
+  on public.customers for delete
+  using (recorded_by = auth.uid() or public.is_admin());
+
+-- Signup trigger now also captures department (defaults to 'technical' if
+-- somehow missing from the signup payload, rather than failing the signup).
+create or replace function public.handle_new_user()
+returns trigger as $$
+declare
+  first_user boolean;
+  required_code text;
+begin
+  select signup_access_code into required_code from public.app_settings where id = true;
+
+  if new.raw_user_meta_data->>'access_code' is distinct from required_code then
+    raise exception 'invalid_access_code';
+  end if;
+
+  select not exists(select 1 from public.profiles) into first_user;
+
+  insert into public.profiles (id, username, full_name, contact, role, title, department)
+  values (
+    new.id,
+    new.raw_user_meta_data->>'username',
+    new.raw_user_meta_data->>'full_name',
+    new.raw_user_meta_data->>'contact',
+    case when first_user then 'admin' else 'member' end,
+    new.raw_user_meta_data->>'title',
+    coalesce(new.raw_user_meta_data->>'department', 'technical')
+  );
+  return new;
+end;
+$$ language plpgsql security definer set search_path = public;
+
+-- ============================================================================
+-- MIGRATION — added later: a way for the signup form to check the access
+-- code BEFORE attempting signup, with a clear answer either way.
+--
+-- Why this is needed: when the trigger's own check rejects a bad code,
+-- Supabase's Auth API only ever returns a generic "Database error saving
+-- new user" to the browser — it does not forward the specific reason. That
+-- meant a wrong access code and an unrelated database problem looked
+-- identical to the person signing up.
+--
+-- This function fixes that by letting the app ask "is this code right?"
+-- as a normal, clean call — returning only true/false, never the actual
+-- stored code — so a wrong code can be caught and explained clearly
+-- before signup is ever attempted. The trigger's own check (above) still
+-- does the real enforcement; this is purely for a better error message.
+-- ============================================================================
+create or replace function public.check_access_code(candidate text)
+returns boolean as $$
+  select exists (
+    select 1 from public.app_settings
+    where id = true and signup_access_code = candidate
+  );
+$$ language sql security definer stable set search_path = public;
+
+grant execute on function public.check_access_code(text) to anon, authenticated;
 
 -- ============================================================================
 -- Done. Next: Authentication -> Providers -> make sure Email is enabled,

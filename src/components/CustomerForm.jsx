@@ -15,7 +15,8 @@ export default function CustomerFormModal({ onClose, onSave }) {
 
   function validate() {
     const e = {}
-    if (!form.fullName.trim()) e.fullName = 'Required'
+    if (!form.firstName.trim()) e.firstName = 'Required'
+    if (!form.lastName.trim()) e.lastName = 'Required'
     if (!form.contact.trim()) e.contact = 'Required'
     if (!form.location) e.location = 'Please select a location'
     setErrors(e)
@@ -40,9 +41,14 @@ export default function CustomerFormModal({ onClose, onSave }) {
           <button onClick={onClose} className="sns-icon-btn"><X size={18} /></button>
         </div>
         <form onSubmit={handleSubmit} style={{ padding: '1.4rem' }} className="space-y-4">
-          <FormField label="Customer name" error={errors.fullName}>
-            <input className="sns-input" value={form.fullName} onChange={(e) => update('fullName', e.target.value)} placeholder="Full name" />
-          </FormField>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <FormField label="First name" error={errors.firstName}>
+              <input className="sns-input" value={form.firstName} onChange={(e) => update('firstName', e.target.value)} placeholder="First name" />
+            </FormField>
+            <FormField label="Last name" error={errors.lastName}>
+              <input className="sns-input" value={form.lastName} onChange={(e) => update('lastName', e.target.value)} placeholder="Last name" />
+            </FormField>
+          </div>
           <FormField label="Contact number" error={errors.contact}>
             <input className="sns-input" value={form.contact} onChange={(e) => update('contact', e.target.value)} placeholder="e.g. 0712 345 678" />
           </FormField>

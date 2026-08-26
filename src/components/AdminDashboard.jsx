@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { AlertCircle, Award, Check, CheckCircle2, Clipboard, Copy, Eye, EyeOff, Printer, Users, Wallet } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import Header from './Header'
@@ -7,9 +7,9 @@ import JobsTable from './JobsTable'
 import TeamList from './TeamList'
 import { JobPrintView, BatchPrintView } from './PrintViews'
 import { ConfirmDialog, EmptyState, FormField, PeriodSelector, SearchInput, StatCard, StatusFilterSelect } from './shared'
-import { JOB_TYPES, PRIORITY_OPTIONS, CHART_COLORS, COMMISSION_PER_CUSTOMER, COMMISSION_DEPARTMENTS, departmentLabel, formatKSh, isOverdue, getPeriodRange, isInRange } from '../lib/helpers'
+import { JOB_TYPES, PRIORITY_OPTIONS, CUSTOMER_STATUSES, CHART_COLORS, COMMISSION_DEPARTMENTS, departmentLabel, formatKSh, formatDate, formatDateTime, isOverdue, isInPeriod, getPeriodRange, isInRange } from '../lib/helpers'
 
-export default function AdminDashboard({ currentUser, users, jobs, customers, onLogout, onUpdateJob, onDeleteJob, onPromote, onUpdateDepartment, accessCode, onUpdateAccessCode }) {
+export default function AdminDashboard({ currentUser, users, jobs, customers, onLogout, onUpdateJob, onDeleteJob, onPromote, onUpdateDepartment, accessCode, onUpdateAccessCode, commissionRate, onUpdateCommissionRate, onClearCommission, onUpdateCustomerStatus }) {
   const [tab, setTab] = useState('overview')
   const [periodGranularity, setPeriodGranularity] = useState('day')
   const [periodAnchor, setPeriodAnchor] = useState(() => new Date())
@@ -23,6 +23,9 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, on
   const [printing, setPrinting] = useState(null)
   const [editingJob, setEditingJob] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState(null)
+  const [expandedMemberId, setExpandedMemberId] = useState(null)
+  const [confirmClear, setConfirmClear] = useState(null)
+  const [customerSearch, setCustomerSearch] = useState('')
 
   const members = users.filter((u) => u.role === 'member')
   const userMap = useMemo(() => { const m = {}; users.forEach((u) => (m[u.id] = u)); return m }, [users])
@@ -46,18 +49,35 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, on
   const { start: periodStart, end: periodEnd } = useMemo(() => getPeriodRange(periodGranularity, periodAnchor), [periodGranularity, periodAnchor])
   const periodJobs = useMemo(() => jobs.filter((j) => isInRange(j.createdAt, periodStart, periodEnd)), [jobs, periodStart, periodEnd])
 
-  // Commission is never stored — always derived from the customers table so
-  // it can never drift out of sync with the underlying records.
+  // Commission is never stored — always derived from customers whose
+  // commission hasn't been cleared yet, so it can never drift out of sync.
+  // Members with nothing currently owed are left out entirely.
   const commissionRows = useMemo(() => {
     return members
       .filter((m) => COMMISSION_DEPARTMENTS.includes(m.department))
       .map((m) => {
-        const count = customers.filter((c) => c.recordedBy === m.id).length
-        return { member: m, count, commission: count * COMMISSION_PER_CUSTOMER }
+        const unpaidCustomers = customers.filter((c) => c.recordedBy === m.id && !c.commissionPaidAt)
+        return { member: m, unpaidCustomers, count: unpaidCustomers.length, commission: unpaidCustomers.length * commissionRate }
       })
+      .filter((r) => r.count > 0)
       .sort((a, b) => b.commission - a.commission)
-  }, [members, customers])
-  const totalCommission = useMemo(() => commissionRows.reduce((s, r) => s + r.commission, 0), [commissionRows])
+  }, [members, customers, commissionRate])
+
+  const totalCommissionThisMonth = useMemo(() => {
+    const count = customers.filter((c) =>
+      !c.commissionPaidAt &&
+      isInPeriod(c.createdAt, 'month') &&
+      COMMISSION_DEPARTMENTS.includes(userMap[c.recordedBy]?.department)
+    ).length
+    return count * commissionRate
+  }, [customers, userMap, commissionRate])
+
+  const filteredCustomers = useMemo(() => {
+    const q = customerSearch.toLowerCase()
+    return [...customers]
+      .filter((c) => !q || [c.fullName, c.contact, c.location].some((f) => (f || '').toLowerCase().includes(q)))
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+  }, [customers, customerSearch])
 
   const stats = useMemo(() => {
     const byType = JOB_TYPES.map((t) => ({ type: t, count: jobs.filter((j) => j.jobType === t).length })).filter((x) => x.count > 0)
@@ -90,11 +110,12 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, on
           </button>
         )}
 
-        <div className="no-print flex gap-1 sns-border-b" style={{ marginBottom: '1.5rem' }}>
+        <div className="no-print flex gap-1 sns-border-b" style={{ marginBottom: '1.5rem', flexWrap: 'wrap' }}>
           <button className={`sns-tab ${tab === 'overview' ? 'active' : ''}`} onClick={() => setTab('overview')}>Overview</button>
           <button className={`sns-tab ${tab === 'jobs' ? 'active' : ''}`} onClick={() => setTab('jobs')}>All Jobs</button>
           <button className={`sns-tab ${tab === 'team' ? 'active' : ''}`} onClick={() => setTab('team')}>Team</button>
           <button className={`sns-tab ${tab === 'commissions' ? 'active' : ''}`} onClick={() => setTab('commissions')}>Commissions</button>
+          <button className={`sns-tab ${tab === 'customers' ? 'active' : ''}`} onClick={() => setTab('customers')}>Customers</button>
           <button className={`sns-tab ${tab === 'settings' ? 'active' : ''}`} onClick={() => setTab('settings')}>Settings</button>
         </div>
 
@@ -173,28 +194,95 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, on
         )}
 
         {tab === 'team' && <TeamList users={users} jobs={jobs} onPromote={onPromote} onUpdateDepartment={onUpdateDepartment} />}
+
         {tab === 'commissions' && (
           <div>
             <div className="grid grid-cols-2 gap-3" style={{ marginBottom: '1.5rem', maxWidth: '24rem' }}>
-              <StatCard label="Sales & Technical" value={commissionRows.length} icon={Users} />
-              <StatCard label="Total commission owed" value={formatKSh(totalCommission)} icon={Award} tone="success" />
+              <StatCard label="Members owed" value={commissionRows.length} icon={Users} />
+              <StatCard label="Owed this month" value={formatKSh(totalCommissionThisMonth)} icon={Award} tone="success" />
             </div>
             {commissionRows.length === 0 ? (
-              <EmptyState message="No Sales or Technical members yet." />
+              <EmptyState message="No commission currently owed." />
             ) : (
               <div className="sns-card" style={{ overflow: 'hidden' }}>
                 <div style={{ overflowX: 'auto' }}>
                   <table className="sns-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
-                      <tr><th>Member</th><th>Department</th><th>Customers recorded</th><th>Commission owed</th></tr>
+                      <tr><th>Member</th><th>Department</th><th>Customers</th><th>Commission owed</th><th style={{ textAlign: 'right' }}>Actions</th></tr>
                     </thead>
                     <tbody>
                       {commissionRows.map((r) => (
-                        <tr key={r.member.id}>
-                          <td style={{ fontWeight: 600 }}>{r.member.fullName}</td>
-                          <td className="sns-text-soft">{departmentLabel(r.member.department)}</td>
-                          <td className="sns-mono">{r.count}</td>
-                          <td className="sns-mono" style={{ fontWeight: 700, color: 'var(--confirmed)' }}>{formatKSh(r.commission)}</td>
+                        <React.Fragment key={r.member.id}>
+                          <tr style={{ cursor: 'pointer' }} onClick={() => setExpandedMemberId((id) => (id === r.member.id ? null : r.member.id))}>
+                            <td style={{ fontWeight: 600 }}>{r.member.fullName}</td>
+                            <td className="sns-text-soft">{departmentLabel(r.member.department)}</td>
+                            <td className="sns-mono">{r.count}</td>
+                            <td className="sns-mono" style={{ fontWeight: 700, color: 'var(--confirmed)' }}>{formatKSh(r.commission)}</td>
+                            <td style={{ textAlign: 'right' }}>
+                              <button onClick={(e) => { e.stopPropagation(); setConfirmClear(r) }} className="sns-btn-secondary" style={{ fontSize: '0.78rem', padding: '0.4rem 0.7rem' }}>
+                                <Check size={13} /> Clear
+                              </button>
+                            </td>
+                          </tr>
+                          {expandedMemberId === r.member.id && (
+                            <tr>
+                              <td colSpan={5} style={{ background: 'var(--paper)', padding: '0.9rem 1.1rem' }}>
+                                <p className="sns-eyebrow sns-text-faint" style={{ marginBottom: '0.6rem' }}>{r.count} unpaid commission{r.count === 1 ? '' : 's'}</p>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                  {r.unpaidCustomers.map((c) => (
+                                    <div key={c.id} className="flex items-center justify-between" style={{ fontSize: '0.83rem' }}>
+                                      <span style={{ fontWeight: 600 }}>{c.fullName}</span>
+                                      <span className="sns-text-faint">{formatDate(c.createdAt)}</span>
+                                      <span className="sns-mono" style={{ fontWeight: 600 }}>{formatKSh(commissionRate)}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab === 'customers' && (
+          <div>
+            <div className="no-print" style={{ marginBottom: '1rem' }}>
+              <SearchInput value={customerSearch} onChange={setCustomerSearch} placeholder="Search by name, contact, or location…" />
+            </div>
+            {filteredCustomers.length === 0 ? (
+              <EmptyState message="No customers recorded yet." />
+            ) : (
+              <div className="sns-card" style={{ overflow: 'hidden' }}>
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="sns-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr><th>Name</th><th>Contact</th><th>Location</th><th>Package requested</th><th>Recorded by</th><th>Date &amp; time</th><th>Status</th></tr>
+                    </thead>
+                    <tbody>
+                      {filteredCustomers.map((c) => (
+                        <tr key={c.id}>
+                          <td style={{ fontWeight: 600 }}>{c.fullName}</td>
+                          <td className="sns-text-soft">{c.contact}</td>
+                          <td className="sns-text-soft">{c.location}</td>
+                          <td className="sns-text-soft">{c.interestedPackage || '—'}</td>
+                          <td className="sns-text-soft">{userMap[c.recordedBy]?.fullName || '—'}</td>
+                          <td className="sns-text-soft">{formatDateTime(c.createdAt)}</td>
+                          <td>
+                            <select
+                              className="sns-input"
+                              style={{ width: 'auto', fontSize: '0.78rem', padding: '0.35rem 0.55rem' }}
+                              value={c.status}
+                              onChange={(e) => onUpdateCustomerStatus(c, e.target.value)}
+                            >
+                              {CUSTOMER_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -204,7 +292,13 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, on
             )}
           </div>
         )}
-        {tab === 'settings' && <AccessCodeSettings accessCode={accessCode} onUpdate={onUpdateAccessCode} />}
+
+        {tab === 'settings' && (
+          <div>
+            <AccessCodeSettings accessCode={accessCode} onUpdate={onUpdateAccessCode} />
+            <CommissionRateSettings commissionRate={commissionRate} onUpdate={onUpdateCommissionRate} />
+          </div>
+        )}
       </main>
 
       {editingJob && (
@@ -221,6 +315,15 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, on
           danger
           onCancel={() => setConfirmDelete(null)}
           onConfirm={async () => { await onDeleteJob(confirmDelete.id); setConfirmDelete(null) }}
+        />
+      )}
+      {confirmClear && (
+        <ConfirmDialog
+          title="Clear commission"
+          message={`Mark ${confirmClear.count} commission${confirmClear.count === 1 ? '' : 's'} (${formatKSh(confirmClear.commission)}) as paid for ${confirmClear.member.fullName}? This only makes sense once you've actually paid them — it can't be undone.`}
+          danger
+          onCancel={() => setConfirmClear(null)}
+          onConfirm={async () => { await onClearCommission(confirmClear.member); setConfirmClear(null); setExpandedMemberId(null) }}
         />
       )}
     </div>
@@ -282,6 +385,38 @@ function AccessCodeSettings({ accessCode, onUpdate }) {
           </div>
         </FormField>
       </div>
+    </div>
+  )
+}
+
+function CommissionRateSettings({ commissionRate, onUpdate }) {
+  const [draft, setDraft] = useState(String(commissionRate))
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => { setDraft(String(commissionRate)) }, [commissionRate])
+
+  async function save() {
+    const n = Number(draft)
+    if (!draft.trim() || isNaN(n) || n < 0 || n === commissionRate) return
+    setSaving(true)
+    await onUpdate(n)
+    setSaving(false)
+  }
+
+  return (
+    <div className="sns-card" style={{ padding: '1.5rem', maxWidth: '30rem', marginTop: '1.25rem' }}>
+      <h3 className="sns-display" style={{ fontWeight: 700, marginBottom: '0.4rem' }}>Commission rate</h3>
+      <p style={{ fontSize: '0.85rem', color: 'var(--ink-soft)', marginBottom: '1.3rem' }}>
+        Paid to Sales &amp; Marketing and Technical members for each new customer they record.
+      </p>
+      <FormField label="Amount per customer (KSh)">
+        <div className="flex items-center gap-2">
+          <input type="number" min="0" className="sns-input" style={{ flex: 1 }} value={draft} onChange={(e) => setDraft(e.target.value)} />
+          <button type="button" className="sns-btn-primary" disabled={saving || !draft.trim() || Number(draft) === commissionRate} onClick={save}>
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </FormField>
     </div>
   )
 }

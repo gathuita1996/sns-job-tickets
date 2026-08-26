@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from './lib/supabaseClient'
 import { mapProfile, mapJob, jobToDbFields, mapCustomer, customerToDbFields } from './lib/mappers'
-import { COMMISSION_PER_CUSTOMER, COMMISSION_DEPARTMENTS } from './lib/helpers'
+import { COMMISSION_DEPARTMENTS } from './lib/helpers'
 import { LoadingScreen, Toast } from './components/shared'
 import { LoginView, SignupView, ForgotPasswordView, ResetPasswordView } from './components/Auth'
 import MemberDashboard from './components/MemberDashboard'
@@ -14,6 +14,7 @@ export default function App() {
   const [customers, setCustomers] = useState([])
   const [allUsers, setAllUsers] = useState([])
   const [accessCode, setAccessCode] = useState('')
+  const [commissionRate, setCommissionRate] = useState(500)
   const [authView, setAuthView] = useState('login')
   const [authError, setAuthError] = useState('')
   const [authNotice, setAuthNotice] = useState('')
@@ -39,8 +40,19 @@ export default function App() {
     setCurrentUser(profile)
     await refreshJobs()
     await refreshCustomers()
-    if (profile.role === 'admin') { await refreshUsers(); await refreshAccessCode() }
+    if (profile.role === 'admin') {
+      await refreshUsers()
+      await refreshAppSettings()
+    } else {
+      await refreshCommissionRate()
+    }
     setBooting(false)
+  }
+
+  async function refreshCommissionRate() {
+    const { data, error } = await supabase.rpc('get_commission_rate')
+    if (error) return
+    setCommissionRate(Number(data) || 500)
   }
 
   async function refreshJobs() {
@@ -61,17 +73,39 @@ export default function App() {
     setAllUsers((data || []).map(mapProfile))
   }
 
-  async function refreshAccessCode() {
-    const { data, error } = await supabase.from('app_settings').select('signup_access_code').eq('id', true).single()
+  async function refreshAppSettings() {
+    const { data, error } = await supabase.from('app_settings').select('signup_access_code, commission_per_customer').eq('id', true).single()
     if (error) return
     setAccessCode(data?.signup_access_code || '')
+    setCommissionRate(Number(data?.commission_per_customer) || 500)
   }
 
   async function handleUpdateAccessCode(newCode) {
     const { error } = await supabase.from('app_settings').update({ signup_access_code: newCode }).eq('id', true)
     if (error) { showToast('Failed to update access code.', 'error'); return }
     showToast('Access code updated.')
-    await refreshAccessCode()
+    await refreshAppSettings()
+  }
+
+  async function handleUpdateCommissionRate(newRate) {
+    const { error } = await supabase.from('app_settings').update({ commission_per_customer: newRate }).eq('id', true)
+    if (error) { showToast('Failed to update commission rate.', 'error'); return }
+    showToast('Commission rate updated.')
+    await refreshAppSettings()
+  }
+
+  async function handleClearCommission(member) {
+    const { error } = await supabase.from('customers').update({ commission_paid_at: new Date().toISOString() })
+      .eq('recorded_by', member.id).is('commission_paid_at', null)
+    if (error) { showToast('Failed to clear commission.', 'error'); return }
+    showToast(`Cleared ${member.fullName}'s commission — marked as paid.`)
+    await refreshCustomers()
+  }
+
+  async function handleUpdateCustomerStatus(customer, status) {
+    const { error } = await supabase.from('customers').update({ status }).eq('id', customer.id)
+    if (error) { showToast('Failed to update status.', 'error'); return }
+    await refreshCustomers()
   }
 
   // Single source of truth for auth state. Handles first load, sign-in,
@@ -199,7 +233,7 @@ export default function App() {
     const { error } = await supabase.from('customers').insert({ ...customerToDbFields(formData), recorded_by: currentUserRef.current.id })
     if (error) { showToast('Failed to save customer.', 'error'); return }
     const earnsCommission = COMMISSION_DEPARTMENTS.includes(currentUserRef.current.department)
-    showToast(earnsCommission ? `Customer recorded — KSh ${COMMISSION_PER_CUSTOMER} commission added.` : 'Customer recorded.')
+    showToast(earnsCommission ? `Customer recorded — KSh ${commissionRate} commission added.` : 'Customer recorded.')
     await refreshCustomers()
   }
 
@@ -264,7 +298,7 @@ export default function App() {
   return (<>
     {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     {currentUser.role === 'admin'
-      ? <AdminDashboard currentUser={currentUser} users={allUsers} jobs={jobs} customers={customers} onLogout={handleLogout} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onPromote={handlePromote} onUpdateDepartment={handleUpdateDepartment} accessCode={accessCode} onUpdateAccessCode={handleUpdateAccessCode} />
-      : <MemberDashboard currentUser={currentUser} jobs={jobs.filter((j) => j.memberId === currentUser.id)} customers={customers.filter((c) => c.recordedBy === currentUser.id)} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAddCustomer={handleAddCustomer} />}
+      ? <AdminDashboard currentUser={currentUser} users={allUsers} jobs={jobs} customers={customers} onLogout={handleLogout} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onPromote={handlePromote} onUpdateDepartment={handleUpdateDepartment} accessCode={accessCode} onUpdateAccessCode={handleUpdateAccessCode} commissionRate={commissionRate} onUpdateCommissionRate={handleUpdateCommissionRate} onClearCommission={handleClearCommission} onUpdateCustomerStatus={handleUpdateCustomerStatus} />
+      : <MemberDashboard currentUser={currentUser} jobs={jobs.filter((j) => j.memberId === currentUser.id)} customers={customers.filter((c) => c.recordedBy === currentUser.id)} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAddCustomer={handleAddCustomer} commissionRate={commissionRate} />}
   </>)
 }
