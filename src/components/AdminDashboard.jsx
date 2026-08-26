@@ -1,15 +1,17 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, Award, Check, CheckCircle2, Clipboard, Copy, Eye, EyeOff, Printer, Users, Wallet } from 'lucide-react'
+import { AlertCircle, Award, Check, CheckCircle2, Clipboard, Copy, Eye, EyeOff, Pencil, Printer, Trash2, UserPlus, Users, Wallet } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import Header from './Header'
 import JobFormModal from './JobForm'
+import CustomerFormModal from './CustomerForm'
+import ProfileFormModal from './ProfileForm'
 import JobsTable from './JobsTable'
 import TeamList from './TeamList'
 import { JobPrintView, BatchPrintView } from './PrintViews'
 import { ConfirmDialog, EmptyState, FormField, PeriodSelector, SearchInput, StatCard, StatusFilterSelect } from './shared'
 import { JOB_TYPES, PRIORITY_OPTIONS, CUSTOMER_STATUSES, CHART_COLORS, COMMISSION_DEPARTMENTS, departmentLabel, formatKSh, formatDate, formatDateTime, isOverdue, isInPeriod, getPeriodRange, isInRange } from '../lib/helpers'
 
-export default function AdminDashboard({ currentUser, users, jobs, customers, onLogout, onUpdateJob, onDeleteJob, onPromote, onUpdateDepartment, accessCode, onUpdateAccessCode, commissionRate, onUpdateCommissionRate, onClearCommission, onUpdateCustomerStatus }) {
+export default function AdminDashboard({ currentUser, users, jobs, customers, onLogout, onUpdateJob, onDeleteJob, onAssignJob, onPromote, onUpdateDepartment, onUpdateProfile, accessCode, onUpdateAccessCode, commissionRate, onUpdateCommissionRate, onClearCommission, onUpdateCustomerStatus, onUpdateCustomer, onDeleteCustomer }) {
   const [tab, setTab] = useState('overview')
   const [periodGranularity, setPeriodGranularity] = useState('day')
   const [periodAnchor, setPeriodAnchor] = useState(() => new Date())
@@ -22,12 +24,17 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, on
   const [selected, setSelected] = useState([])
   const [printing, setPrinting] = useState(null)
   const [editingJob, setEditingJob] = useState(null)
+  const [showAssignForm, setShowAssignForm] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(null)
+  const [editingCustomer, setEditingCustomer] = useState(null)
+  const [confirmDeleteCustomer, setConfirmDeleteCustomer] = useState(null)
+  const [editingMember, setEditingMember] = useState(null)
   const [expandedMemberId, setExpandedMemberId] = useState(null)
   const [confirmClear, setConfirmClear] = useState(null)
   const [customerSearch, setCustomerSearch] = useState('')
 
   const members = users.filter((u) => u.role === 'member')
+  const technicalMembers = users.filter((u) => u.department === 'technical')
   const userMap = useMemo(() => { const m = {}; users.forEach((u) => (m[u.id] = u)); return m }, [users])
   const overdueJobs = useMemo(() => jobs.filter(isOverdue), [jobs])
 
@@ -91,12 +98,12 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, on
     }
   }, [jobs, periodJobs, members, overdueJobs])
 
-  if (printing?.type === 'single') return <JobPrintView job={printing.job} filedByUser={userMap[printing.job.memberId]} onBack={() => setPrinting(null)} />
+  if (printing?.type === 'single') return <JobPrintView job={printing.job} filedByUser={userMap[printing.job.memberId]} assignedByUser={printing.job.assignedBy ? userMap[printing.job.assignedBy] : null} onBack={() => setPrinting(null)} />
   if (printing?.type === 'batch') return <BatchPrintView jobs={printing.jobs} userMap={userMap} onBack={() => setPrinting(null)} generatedBy={currentUser} />
 
   return (
     <div className="sns-shell">
-      <Header currentUser={currentUser} onLogout={onLogout} subtitle="Ticketing System" />
+      <Header currentUser={currentUser} onLogout={onLogout} onUpdateProfile={onUpdateProfile} subtitle="Ticketing System" />
       <main className="max-w-6xl mx-auto px-4 sm:px-6" style={{ paddingTop: '1.5rem', paddingBottom: '3rem' }}>
 
         {stats.overdue > 0 && (
@@ -168,6 +175,9 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, on
                 {PRIORITY_OPTIONS.map((p) => <option key={p} value={p}>{p}</option>)}
               </select>
               <StatusFilterSelect value={statusFilter} onChange={setStatusFilter} />
+              <button onClick={() => setShowAssignForm(true)} className="sns-btn-primary">
+                <UserPlus size={15} /> Assign new job
+              </button>
               <button
                 onClick={() => setOverdueOnly((v) => !v)}
                 className={overdueOnly ? 'sns-btn-primary' : 'sns-btn-secondary'}
@@ -193,7 +203,7 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, on
           </div>
         )}
 
-        {tab === 'team' && <TeamList users={users} jobs={jobs} onPromote={onPromote} onUpdateDepartment={onUpdateDepartment} />}
+        {tab === 'team' && <TeamList users={users} jobs={jobs} onPromote={onPromote} onUpdateDepartment={onUpdateDepartment} onEditMember={setEditingMember} />}
 
         {tab === 'commissions' && (
           <div>
@@ -262,7 +272,7 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, on
                 <div style={{ overflowX: 'auto' }}>
                   <table className="sns-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
-                      <tr><th>Name</th><th>Contact</th><th>Location</th><th>Package requested</th><th>Recorded by</th><th>Date &amp; time</th><th>Status</th></tr>
+                      <tr><th>Name</th><th>Contact</th><th>Location</th><th>Package requested</th><th>Recorded by</th><th>Date &amp; time</th><th>Status</th><th style={{ textAlign: 'right' }}>Actions</th></tr>
                     </thead>
                     <tbody>
                       {filteredCustomers.map((c) => (
@@ -282,6 +292,12 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, on
                             >
                               {CUSTOMER_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
                             </select>
+                          </td>
+                          <td>
+                            <div className="flex items-center justify-end gap-1">
+                              <button onClick={() => setEditingCustomer(c)} title="Edit" className="sns-icon-btn"><Pencil size={15} /></button>
+                              <button onClick={() => setConfirmDeleteCustomer(c)} title="Delete" className="sns-icon-btn danger"><Trash2 size={15} /></button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -304,8 +320,16 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, on
       {editingJob && (
         <JobFormModal
           initialJob={editingJob}
+          technicalMembers={technicalMembers}
           onClose={() => setEditingJob(null)}
           onSave={async (data) => { await onUpdateJob(editingJob.id, data); setEditingJob(null) }}
+        />
+      )}
+      {showAssignForm && (
+        <JobFormModal
+          technicalMembers={technicalMembers}
+          onClose={() => setShowAssignForm(false)}
+          onSave={async (data) => { await onAssignJob(data); setShowAssignForm(false) }}
         />
       )}
       {confirmDelete && (
@@ -315,6 +339,30 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, on
           danger
           onCancel={() => setConfirmDelete(null)}
           onConfirm={async () => { await onDeleteJob(confirmDelete.id); setConfirmDelete(null) }}
+        />
+      )}
+      {editingCustomer && (
+        <CustomerFormModal
+          initialCustomer={editingCustomer}
+          onClose={() => setEditingCustomer(null)}
+          onSave={async (data) => { await onUpdateCustomer(editingCustomer.id, data); setEditingCustomer(null) }}
+        />
+      )}
+      {confirmDeleteCustomer && (
+        <ConfirmDialog
+          title="Delete customer"
+          message={`Are you sure you want to delete ${confirmDeleteCustomer.fullName}? This cannot be undone.`}
+          danger
+          onCancel={() => setConfirmDeleteCustomer(null)}
+          onConfirm={async () => { await onDeleteCustomer(confirmDeleteCustomer.id); setConfirmDeleteCustomer(null) }}
+        />
+      )}
+      {editingMember && (
+        <ProfileFormModal
+          profile={editingMember}
+          isSelf={false}
+          onClose={() => setEditingMember(null)}
+          onSave={async (updates) => { await onUpdateProfile(editingMember.id, updates); setEditingMember(null) }}
         />
       )}
       {confirmClear && (

@@ -12,7 +12,7 @@ function PrintField({ label, value, full }) {
   )
 }
 
-export function JobPrintView({ job, filedByUser, onBack }) {
+export function JobPrintView({ job, filedByUser, assignedByUser, onBack }) {
   return (
     <div className="sns-shell print-page" style={{ padding: '2rem 1rem' }}>
       <div className="no-print flex justify-between mx-auto" style={{ maxWidth: '38rem', marginBottom: '1rem' }}>
@@ -48,9 +48,14 @@ export function JobPrintView({ job, filedByUser, onBack }) {
           <PrintField label="Job Details" value={job.notes || '—'} full />
           {job.overdueReason && <PrintField label="Overdue — Reason for Delay" value={job.overdueReason} full />}
         </div>
-        <p className="sns-text-faint" style={{ fontSize: '0.75rem', borderTop: '1px solid var(--line)', paddingTop: '1rem', marginBottom: '2.5rem' }}>
+        <p className="sns-text-faint" style={{ fontSize: '0.75rem', borderTop: '1px solid var(--line)', paddingTop: '1rem', marginBottom: job.assignedBy ? '0.3rem' : '2.5rem' }}>
           Filed by {filedByUser?.fullName || 'Unknown'} on {formatDateTime(job.createdAt)}
         </p>
+        {job.assignedBy && (
+          <p className="sns-text-faint" style={{ fontSize: '0.75rem', marginBottom: '2.5rem' }}>
+            Assigned{assignedByUser?.fullName ? ` by ${assignedByUser.fullName}` : ' by an admin'}
+          </p>
+        )}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
           <div><div style={{ borderBottom: '1px solid var(--ink-faint)', height: 36 }} /><p className="sns-eyebrow sns-text-faint" style={{ marginTop: 4 }}>Technician Signature</p></div>
           <div><div style={{ borderBottom: '1px solid var(--ink-faint)', height: 36 }} /><p className="sns-eyebrow sns-text-faint" style={{ marginTop: 4 }}>Client Signature</p></div>

@@ -27,6 +27,7 @@ export function mapCustomer(row) {
     interestedPackage: row.interested_package || '',
     notes: row.notes || '',
     status: row.status || 'New',
+    desiredDate: row.desired_date || '',
     commissionPaidAt: row.commission_paid_at,
     recordedBy: row.recorded_by,
     createdAt: row.created_at,
@@ -41,6 +42,7 @@ export function customerToDbFields(data) {
     location: data.location,
     interested_package: data.interestedPackage || null,
     notes: data.notes || null,
+    desired_date: data.desiredDate || null,
   }
 }
 
@@ -62,6 +64,8 @@ export function mapJob(row) {
     notes: row.notes || '',
     overdueReason: row.overdue_reason || '',
     memberId: row.member_id,
+    assignedBy: row.assigned_by || null,
+    customerId: row.customer_id || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }

@@ -99,6 +99,7 @@ export function defaultCustomerForm() {
     location: '',
     interestedPackage: PACKAGES[0],
     notes: '',
+    desiredDate: '',
   }
 }
 
@@ -112,8 +113,22 @@ export function hoursSince(iso) {
 // nobody has yet recorded a reason for the delay. Once a reason is recorded
 // (see JobForm's "why was this overdue" field), it's considered acknowledged
 // even if still technically Pending for a moment longer while being resolved.
+// A job is overdue differently depending on what kind of job it is:
+//
+// - Normal jobs (visit already happened or is happening today/earlier): the
+//   existing rule — Pending for more than 24 hours since it was filed.
+// - Scheduled jobs (visitDate is in the future, relative to the day it was
+//   created — e.g. a potential customer who wants installation next Monday):
+//   these are SUPPOSED to sit Pending until that date arrives. They only
+//   become overdue once the scheduled date itself has passed.
 export function isOverdue(job) {
-  return job.status === 'Pending' && !job.overdueReason && hoursSince(job.createdAt) > OVERDUE_HOURS
+  if (job.status !== 'Pending' || job.overdueReason) return false
+  const createdDateStr = toDateInputValue(job.createdAt)
+  const isScheduledAhead = job.visitDate > createdDateStr
+  if (isScheduledAhead) {
+    return toDateInputValue(new Date()) > job.visitDate
+  }
+  return hoursSince(job.createdAt) > OVERDUE_HOURS
 }
 
 function startOfToday() {

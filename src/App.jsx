@@ -229,19 +229,89 @@ export default function App() {
     await refreshJobs()
   }
 
+  // Admin creating a brand-new job and handing it to a technician (a
+  // reported or raised issue), rather than a member filing their own.
+  async function handleAssignJob(formData) {
+    const { error } = await supabase.from('jobs').insert({
+      ...jobToDbFields(formData),
+      member_id: formData.assignedTo,
+      assigned_by: currentUserRef.current.id,
+    })
+    if (error) { showToast('Failed to assign job.', 'error'); return }
+    showToast('Job assigned.')
+    await refreshJobs()
+  }
+
   async function handleAddCustomer(formData) {
-    const { error } = await supabase.from('customers').insert({ ...customerToDbFields(formData), recorded_by: currentUserRef.current.id })
+    const { data: inserted, error } = await supabase.from('customers')
+      .insert({ ...customerToDbFields(formData), recorded_by: currentUserRef.current.id })
+      .select().single()
     if (error) { showToast('Failed to save customer.', 'error'); return }
+
     const earnsCommission = COMMISSION_DEPARTMENTS.includes(currentUserRef.current.department)
-    showToast(earnsCommission ? `Customer recorded — KSh ${commissionRate} commission added.` : 'Customer recorded.')
+    let message = earnsCommission ? `Customer recorded — KSh ${commissionRate} commission added.` : 'Customer recorded.'
+
+    // A desired service date turns into a real, tracked job automatically —
+    // not just a note that relies on someone remembering to act on it.
+    if (formData.desiredDate) {
+      const { error: jobError } = await supabase.from('jobs').insert({
+        job_type: 'New Installation',
+        location: formData.location,
+        requested_by: `${formData.firstName} ${formData.lastName}`,
+        requester_contact: formData.contact,
+        visit_date: formData.desiredDate,
+        transport_from: 'Office',
+        transport_to: formData.location,
+        transport_amount: 0,
+        status: 'Pending',
+        priority: 'Normal',
+        notes: `Follow-up for potential customer.${formData.notes ? ' ' + formData.notes : ''} Interested in ${formData.interestedPackage || 'a package (not yet specified)'}.`,
+        member_id: currentUserRef.current.id,
+        customer_id: inserted.id,
+      })
+      if (!jobError) message += ` A follow-up job was scheduled for ${formData.desiredDate}.`
+      await refreshJobs()
+    }
+
+    showToast(message)
+    await refreshCustomers()
+  }
+
+  async function handleUpdateCustomer(id, formData) {
+    const { error } = await supabase.from('customers').update(customerToDbFields(formData)).eq('id', id)
+    if (error) { showToast('Failed to update customer.', 'error'); return }
+    showToast('Customer updated.')
+    await refreshCustomers()
+  }
+
+  async function handleDeleteCustomer(id) {
+    const { error } = await supabase.from('customers').delete().eq('id', id)
+    if (error) { showToast('Failed to delete customer.', 'error'); return }
+    showToast('Customer deleted.')
     await refreshCustomers()
   }
 
   async function handleUpdateJob(id, formData) {
-    const { error } = await supabase.from('jobs').update(jobToDbFields(formData)).eq('id', id)
+    const updates = jobToDbFields(formData)
+    if (formData.assignedTo) {
+      updates.member_id = formData.assignedTo
+      if (currentUserRef.current.role === 'admin') updates.assigned_by = currentUserRef.current.id
+    }
+    const { error } = await supabase.from('jobs').update(updates).eq('id', id)
     if (error) { showToast('Failed to update job card.', 'error'); return }
     showToast('Job card updated.')
     await refreshJobs()
+  }
+
+  async function handleUpdateProfile(profileId, updates) {
+    const { error } = await supabase.from('profiles').update(updates).eq('id', profileId)
+    if (error) { showToast('Failed to update profile.', 'error'); return }
+    showToast('Profile updated.')
+    if (profileId === currentUserRef.current.id) {
+      const { data } = await supabase.from('profiles').select('*').eq('id', profileId).single()
+      if (data) { const updated = mapProfile(data); currentUserRef.current = updated; setCurrentUser(updated) }
+    }
+    if (currentUserRef.current.role === 'admin') await refreshUsers()
   }
 
   async function handleDeleteJob(id) {
@@ -298,7 +368,7 @@ export default function App() {
   return (<>
     {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     {currentUser.role === 'admin'
-      ? <AdminDashboard currentUser={currentUser} users={allUsers} jobs={jobs} customers={customers} onLogout={handleLogout} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onPromote={handlePromote} onUpdateDepartment={handleUpdateDepartment} accessCode={accessCode} onUpdateAccessCode={handleUpdateAccessCode} commissionRate={commissionRate} onUpdateCommissionRate={handleUpdateCommissionRate} onClearCommission={handleClearCommission} onUpdateCustomerStatus={handleUpdateCustomerStatus} />
-      : <MemberDashboard currentUser={currentUser} jobs={jobs.filter((j) => j.memberId === currentUser.id)} customers={customers.filter((c) => c.recordedBy === currentUser.id)} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAddCustomer={handleAddCustomer} commissionRate={commissionRate} />}
+      ? <AdminDashboard currentUser={currentUser} users={allUsers} jobs={jobs} customers={customers} onLogout={handleLogout} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAssignJob={handleAssignJob} onPromote={handlePromote} onUpdateDepartment={handleUpdateDepartment} onUpdateProfile={handleUpdateProfile} accessCode={accessCode} onUpdateAccessCode={handleUpdateAccessCode} commissionRate={commissionRate} onUpdateCommissionRate={handleUpdateCommissionRate} onClearCommission={handleClearCommission} onUpdateCustomerStatus={handleUpdateCustomerStatus} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} />
+      : <MemberDashboard currentUser={currentUser} jobs={jobs.filter((j) => j.memberId === currentUser.id)} customers={customers.filter((c) => c.recordedBy === currentUser.id)} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAddCustomer={handleAddCustomer} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onUpdateProfile={handleUpdateProfile} commissionRate={commissionRate} />}
   </>)
 }

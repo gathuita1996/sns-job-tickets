@@ -1,10 +1,10 @@
-import { Phone, Shield } from 'lucide-react'
+import { Pencil, Phone, Shield } from 'lucide-react'
 import { EmptyState } from './shared'
 import { DEPARTMENTS, departmentLabel } from '../lib/helpers'
 
 const DEPT_BADGE_CLASS = { sales: 'sns-badge-progress', technical: 'sns-badge-role', admin: 'sns-badge-pending' }
 
-export default function TeamList({ users, jobs, onPromote, onUpdateDepartment }) {
+export default function TeamList({ users, jobs, onPromote, onUpdateDepartment, onEditMember }) {
   if (!users.length) return <EmptyState message="No team members registered yet." />
   return (
     <div className="sns-card">
@@ -40,6 +40,11 @@ export default function TeamList({ users, jobs, onPromote, onUpdateDepartment })
                 >
                   {DEPARTMENTS.map((d) => <option key={d.key} value={d.key}>{d.label}</option>)}
                 </select>
+              )}
+              {onEditMember && (
+                <button onClick={() => onEditMember(m)} className="sns-icon-btn" title="Edit profile">
+                  <Pencil size={15} />
+                </button>
               )}
               {m.role !== 'admin' && (
                 <button onClick={() => onPromote(m)} className="sns-btn-secondary" style={{ fontSize: '0.78rem', padding: '0.45rem 0.75rem' }} title="Promote to admin">

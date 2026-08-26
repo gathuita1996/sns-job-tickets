@@ -1,10 +1,14 @@
 import { useState } from 'react'
 import { X } from 'lucide-react'
 import { FormField } from './shared'
-import { LOCATIONS, PACKAGES, defaultCustomerForm } from '../lib/helpers'
+import { LOCATIONS, PACKAGES, defaultCustomerForm, toDateInputValue } from '../lib/helpers'
 
-export default function CustomerFormModal({ onClose, onSave }) {
-  const [form, setForm] = useState(defaultCustomerForm())
+export default function CustomerFormModal({ initialCustomer, onClose, onSave }) {
+  const [form, setForm] = useState(initialCustomer ? {
+    firstName: initialCustomer.firstName, lastName: initialCustomer.lastName, contact: initialCustomer.contact,
+    location: initialCustomer.location, interestedPackage: initialCustomer.interestedPackage || PACKAGES[0],
+    notes: initialCustomer.notes || '', desiredDate: initialCustomer.desiredDate || '',
+  } : defaultCustomerForm())
   const [errors, setErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
 
@@ -37,7 +41,7 @@ export default function CustomerFormModal({ onClose, onSave }) {
     <div className="no-print flex items-center justify-center p-4" style={{ position: 'fixed', inset: 0, background: 'rgba(27,36,48,0.55)', zIndex: 50 }}>
       <div className="sns-card sns-fade-in" style={{ width: '100%', maxWidth: '30rem', maxHeight: '90vh', overflowY: 'auto' }}>
         <div className="flex items-center justify-between sns-border-b sns-bg-card" style={{ padding: '1.1rem 1.4rem', position: 'sticky', top: 0, borderRadius: '14px 14px 0 0' }}>
-          <h3 className="sns-display" style={{ fontWeight: 700 }}>Record a new customer</h3>
+          <h3 className="sns-display" style={{ fontWeight: 700 }}>{initialCustomer ? 'Edit customer' : 'Record a new customer'}</h3>
           <button onClick={onClose} className="sns-icon-btn"><X size={18} /></button>
         </div>
         <form onSubmit={handleSubmit} style={{ padding: '1.4rem' }} className="space-y-4">
@@ -63,12 +67,20 @@ export default function CustomerFormModal({ onClose, onSave }) {
               {PACKAGES.map((p) => <option key={p} value={p}>{p}</option>)}
             </select>
           </FormField>
+          <FormField
+            label="Wants service on (optional)"
+            hint={initialCustomer
+              ? 'Changing this only updates the note on file — it will not move any job already scheduled.'
+              : 'If they gave you a date (e.g. "next Monday"), pick it here — a Pending job gets scheduled for that date automatically, so this follow-up is tracked, not just noted.'}
+          >
+            <input type="date" min={toDateInputValue(new Date())} className="sns-input" value={form.desiredDate} onChange={(e) => update('desiredDate', e.target.value)} />
+          </FormField>
           <FormField label="Notes" hint="Optional — how you met them, best time to reach them, anything useful for follow-up.">
             <textarea className="sns-input" rows={3} value={form.notes} onChange={(e) => update('notes', e.target.value)} placeholder="Optional notes…" />
           </FormField>
           <div className="flex gap-3" style={{ paddingTop: '0.4rem' }}>
             <button type="button" onClick={onClose} className="sns-btn-secondary" style={{ flex: 1 }}>Cancel</button>
-            <button type="submit" disabled={submitting} className="sns-btn-primary" style={{ flex: 1 }}>{submitting ? 'Saving…' : 'Record customer'}</button>
+            <button type="submit" disabled={submitting} className="sns-btn-primary" style={{ flex: 1 }}>{submitting ? 'Saving…' : (initialCustomer ? 'Save changes' : 'Record customer')}</button>
           </div>
         </form>
       </div>

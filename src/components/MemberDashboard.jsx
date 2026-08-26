@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { AlertCircle, ArrowLeft, Calendar, CheckCircle2, Clipboard, Clock, Plus, UserPlus, Users, Wallet } from 'lucide-react'
+import { AlertCircle, ArrowLeft, Calendar, CheckCircle2, Clipboard, Clock, Pencil, Plus, Trash2, UserPlus, Users, Wallet } from 'lucide-react'
 import Header from './Header'
 import JobFormModal from './JobForm'
 import JobsTable from './JobsTable'
@@ -8,13 +8,15 @@ import { JobPrintView } from './PrintViews'
 import { ConfirmDialog, EmptyState, NavCard, PeriodSelector, SearchInput, StatCard, StatusFilterSelect } from './shared'
 import { formatKSh, formatDate, isOverdue, isInPeriod, getPeriodRange, isInRange, COMMISSION_DEPARTMENTS } from '../lib/helpers'
 
-export default function MemberDashboard({ currentUser, jobs, customers, onLogout, onAddJob, onUpdateJob, onDeleteJob, onAddCustomer, commissionRate }) {
+export default function MemberDashboard({ currentUser, jobs, customers, onLogout, onAddJob, onUpdateJob, onDeleteJob, onAddCustomer, onUpdateCustomer, onDeleteCustomer, onUpdateProfile, commissionRate }) {
   const [view, setView] = useState('home') // 'home' | 'all' | 'pending' | 'today' | 'customers'
   const [periodGranularity, setPeriodGranularity] = useState('day')
   const [periodAnchor, setPeriodAnchor] = useState(() => new Date())
   const [showForm, setShowForm] = useState(false)
   const [editingJob, setEditingJob] = useState(null)
   const [showCustomerForm, setShowCustomerForm] = useState(false)
+  const [editingCustomer, setEditingCustomer] = useState(null)
+  const [confirmDeleteCustomer, setConfirmDeleteCustomer] = useState(null)
   const [printing, setPrinting] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [search, setSearch] = useState('')
@@ -58,7 +60,7 @@ export default function MemberDashboard({ currentUser, jobs, customers, onLogout
 
   return (
     <div className="sns-shell">
-      <Header currentUser={currentUser} onLogout={onLogout} subtitle="Ticketing System" />
+      <Header currentUser={currentUser} onLogout={onLogout} onUpdateProfile={onUpdateProfile} subtitle="Ticketing System" />
       <main className="max-w-6xl mx-auto px-4 sm:px-6" style={{ paddingTop: '1.5rem', paddingBottom: '3rem' }}>
 
         {stats.overdue > 0 && (
@@ -114,7 +116,7 @@ export default function MemberDashboard({ currentUser, jobs, customers, onLogout
                 <div style={{ overflowX: 'auto' }}>
                   <table className="sns-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
-                      <tr><th>Name</th><th>Contact</th><th>Location</th><th>Interested package</th><th>Recorded</th></tr>
+                      <tr><th>Name</th><th>Contact</th><th>Location</th><th>Interested package</th><th>Recorded</th><th style={{ textAlign: 'right' }}>Actions</th></tr>
                     </thead>
                     <tbody>
                       {sortedCustomers.map((c) => (
@@ -124,6 +126,12 @@ export default function MemberDashboard({ currentUser, jobs, customers, onLogout
                           <td className="sns-text-soft">{c.location}</td>
                           <td className="sns-text-soft">{c.interestedPackage || '—'}</td>
                           <td className="sns-text-soft">{formatDate(c.createdAt)}</td>
+                          <td>
+                            <div className="flex items-center justify-end gap-1">
+                              <button onClick={() => { setEditingCustomer(c); setShowCustomerForm(true) }} title="Edit" className="sns-icon-btn"><Pencil size={15} /></button>
+                              <button onClick={() => setConfirmDeleteCustomer(c)} title="Delete" className="sns-icon-btn danger"><Trash2 size={15} /></button>
+                            </div>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -169,8 +177,22 @@ export default function MemberDashboard({ currentUser, jobs, customers, onLogout
       )}
       {showCustomerForm && (
         <CustomerFormModal
-          onClose={() => setShowCustomerForm(false)}
-          onSave={async (data) => { await onAddCustomer(data); setShowCustomerForm(false) }}
+          initialCustomer={editingCustomer}
+          onClose={() => { setShowCustomerForm(false); setEditingCustomer(null) }}
+          onSave={async (data) => {
+            if (editingCustomer) await onUpdateCustomer(editingCustomer.id, data)
+            else await onAddCustomer(data)
+            setShowCustomerForm(false); setEditingCustomer(null)
+          }}
+        />
+      )}
+      {confirmDeleteCustomer && (
+        <ConfirmDialog
+          title="Delete customer"
+          message={`Are you sure you want to delete ${confirmDeleteCustomer.fullName}? This cannot be undone.`}
+          danger
+          onCancel={() => setConfirmDeleteCustomer(null)}
+          onConfirm={async () => { await onDeleteCustomer(confirmDeleteCustomer.id); setConfirmDeleteCustomer(null) }}
         />
       )}
       {confirmDelete && (

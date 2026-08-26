@@ -73,7 +73,14 @@ export default function JobsTable({ jobs, showFiledBy, userMap, onView, onEdit, 
               return (
                 <tr key={j.id} style={overdue ? { background: 'var(--overdue-pale)' } : undefined}>
                   {selectable && <td><input type="checkbox" checked={selected.includes(j.id)} onChange={() => onToggleSelect(j.id)} /></td>}
-                  <td><span className="sns-chip-id">{j.jobId}</span></td>
+                  <td>
+                    <span className="sns-chip-id">{j.jobId}</span>
+                    {j.assignedBy && (
+                      <div className="sns-text-faint" style={{ fontSize: '0.68rem', fontFamily: "'IBM Plex Sans', sans-serif", marginTop: '0.15rem' }}>
+                        Assigned{userMap?.[j.assignedBy]?.fullName ? ` by ${userMap[j.assignedBy].fullName}` : ''}
+                      </div>
+                    )}
+                  </td>
                   <td className="sns-text-soft">{formatDate(j.visitDate)}</td>
                   <td className="sns-text-soft">{j.jobType === 'Other' && j.jobTypeOther ? j.jobTypeOther : j.jobType}</td>
                   <td className="sns-text-soft">{j.location}</td>
