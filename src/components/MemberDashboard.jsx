@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { AlertCircle, ArrowLeft, Calendar, CheckCircle2, Clipboard, Clock, Pencil, Plus, Trash2, UserPlus, Users, Wallet } from 'lucide-react'
+import { AlertCircle, ArrowLeft, Calendar, CheckCircle2, ClipboardCheck, Clipboard, Clock, Pencil, Plus, Trash2, UserPlus, Users, Wallet } from 'lucide-react'
 import Header from './Header'
 import JobFormModal from './JobForm'
 import JobsTable from './JobsTable'
@@ -8,8 +8,8 @@ import { JobPrintView } from './PrintViews'
 import { ConfirmDialog, EmptyState, NavCard, PeriodSelector, SearchInput, StatCard, StatusFilterSelect } from './shared'
 import { formatKSh, formatDate, isOverdue, isInPeriod, getPeriodRange, isInRange, COMMISSION_DEPARTMENTS } from '../lib/helpers'
 
-export default function MemberDashboard({ currentUser, jobs, customers, onLogout, onAddJob, onUpdateJob, onDeleteJob, onAddCustomer, onUpdateCustomer, onDeleteCustomer, onUpdateProfile, commissionRate }) {
-  const [view, setView] = useState('home') // 'home' | 'all' | 'pending' | 'today' | 'customers'
+export default function MemberDashboard({ currentUser, jobs, customers, customerIdsWithJobs, onLogout, onAddJob, onUpdateJob, onDeleteJob, onAddCustomer, onUpdateCustomer, onDeleteCustomer, onUpdateProfile, commissionRate }) {
+  const [view, setView] = useState('home') // 'home' | 'all' | 'pending' | 'today' | 'assigned' | 'customers'
   const [periodGranularity, setPeriodGranularity] = useState('day')
   const [periodAnchor, setPeriodAnchor] = useState(() => new Date())
   const [showForm, setShowForm] = useState(false)
@@ -24,9 +24,14 @@ export default function MemberDashboard({ currentUser, jobs, customers, onLogout
 
   const isSales = currentUser.department === 'sales'
 
+  // jobs here is already scoped to this member (App.jsx filters it), so
+  // "assigned" just means someone else (an admin) put it there.
   const pendingJobs = useMemo(() => jobs.filter((j) => j.status !== 'Completed'), [jobs])
   const overdueJobs = useMemo(() => jobs.filter(isOverdue), [jobs])
   const todayJobs = useMemo(() => jobs.filter((j) => isInPeriod(j.createdAt, 'day')), [jobs])
+  const assignedJobs = useMemo(() => jobs.filter((j) => j.assignedBy), [jobs])
+  const myCustomers = useMemo(() => customers.filter((c) => c.recordedBy === currentUser.id), [customers, currentUser.id])
+  const availableCustomers = useMemo(() => customers.filter((c) => !customerIdsWithJobs.has(c.id)), [customers, customerIdsWithJobs])
 
   const { start: periodStart, end: periodEnd } = useMemo(() => getPeriodRange(periodGranularity, periodAnchor), [periodGranularity, periodAnchor])
   const periodJobs = useMemo(() => jobs.filter((j) => isInRange(j.createdAt, periodStart, periodEnd)), [jobs, periodStart, periodEnd])
@@ -42,19 +47,20 @@ export default function MemberDashboard({ currentUser, jobs, customers, onLogout
     let base = jobs
     if (view === 'pending') base = pendingJobs
     else if (view === 'today') base = todayJobs
+    else if (view === 'assigned') base = assignedJobs
     return base.filter((j) => {
       const q = search.toLowerCase()
       const matchesSearch = !q || [j.location, j.requestedBy, j.jobId].some((f) => (f || '').toLowerCase().includes(q))
       const matchesStatus = statusFilter === 'all' || j.status === statusFilter
       return matchesSearch && matchesStatus
     }).sort((a, b) => new Date(b.visitDate) - new Date(a.visitDate))
-  }, [view, jobs, pendingJobs, todayJobs, search, statusFilter])
+  }, [view, jobs, pendingJobs, todayJobs, assignedJobs, search, statusFilter])
 
-  const sortedCustomers = useMemo(() => [...customers].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)), [customers])
+  const sortedMyCustomers = useMemo(() => [...myCustomers].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)), [myCustomers])
 
   if (printing) return <JobPrintView job={printing} filedByUser={currentUser} onBack={() => setPrinting(null)} />
 
-  const viewTitles = { all: 'All my jobs', pending: 'Pending jobs', today: "Today's jobs", customers: 'My customers' }
+  const viewTitles = { all: 'All my jobs', pending: 'Pending jobs', today: "Today's jobs", assigned: 'Jobs assigned to me', customers: 'My customers' }
 
   function openNewJob() { setEditingJob(null); setShowForm(true) }
 
@@ -90,9 +96,10 @@ export default function MemberDashboard({ currentUser, jobs, customers, onLogout
               <NavCard icon={Clipboard} label="All my jobs" description={`${jobs.length} total`} onClick={() => setView('all')} />
               <NavCard icon={Clock} label="Pending jobs" description={`${pendingJobs.length} waiting`} onClick={() => setView('pending')} badge={stats.overdue} />
               <NavCard icon={Calendar} label="Jobs today" description={`${todayJobs.length} filed today`} onClick={() => setView('today')} />
+              <NavCard icon={ClipboardCheck} label="Assigned to me" description={`${assignedJobs.length} from admin`} onClick={() => setView('assigned')} />
               <NavCard icon={UserPlus} label="Record new customer" description={COMMISSION_DEPARTMENTS.includes(currentUser.department) ? `Earn KSh ${commissionRate} commission` : 'Log a lead for follow-up'} onClick={() => setShowCustomerForm(true)} />
               {isSales && (
-                <NavCard icon={Users} label="My customers" description={`${customers.length} recorded`} onClick={() => setView('customers')} />
+                <NavCard icon={Users} label="My customers" description={`${myCustomers.length} recorded`} onClick={() => setView('customers')} />
               )}
             </div>
           </>
@@ -103,13 +110,13 @@ export default function MemberDashboard({ currentUser, jobs, customers, onLogout
               <h2 className="sns-display" style={{ fontSize: '1.1rem', fontWeight: 700 }}>My customers</h2>
             </div>
             <div className="grid grid-cols-2 gap-3" style={{ marginBottom: '1rem', maxWidth: '24rem' }}>
-              <StatCard label="Customers recorded" value={customers.length} icon={Users} />
-              <StatCard label="Commission earned" value={formatKSh(customers.length * commissionRate)} icon={Wallet} tone="success" />
+              <StatCard label="Customers recorded" value={myCustomers.length} icon={Users} />
+              <StatCard label="Commission earned" value={formatKSh(myCustomers.length * commissionRate)} icon={Wallet} tone="success" />
             </div>
             <div className="flex justify-end" style={{ marginBottom: '1rem' }}>
               <button onClick={() => setShowCustomerForm(true)} className="sns-btn-primary"><UserPlus size={17} /> Record new customer</button>
             </div>
-            {sortedCustomers.length === 0 ? (
+            {sortedMyCustomers.length === 0 ? (
               <EmptyState message="No customers recorded yet." />
             ) : (
               <div className="sns-card" style={{ overflow: 'hidden' }}>
@@ -119,7 +126,7 @@ export default function MemberDashboard({ currentUser, jobs, customers, onLogout
                       <tr><th>Name</th><th>Contact</th><th>Location</th><th>Interested package</th><th>Recorded</th><th style={{ textAlign: 'right' }}>Actions</th></tr>
                     </thead>
                     <tbody>
-                      {sortedCustomers.map((c) => (
+                      {sortedMyCustomers.map((c) => (
                         <tr key={c.id}>
                           <td style={{ fontWeight: 600 }}>{c.fullName}</td>
                           <td className="sns-text-soft">{c.contact}</td>
@@ -155,18 +162,23 @@ export default function MemberDashboard({ currentUser, jobs, customers, onLogout
                 <Plus size={17} /> File new job
               </button>
             </div>
-            <JobsTable
-              jobs={filtered}
-              onView={(j) => setPrinting(j)}
-              onEdit={(j) => { setEditingJob(j); setShowForm(true) }}
-              onDelete={(j) => setConfirmDelete(j)}
-            />
+            {view === 'assigned' && filtered.length === 0 ? (
+              <EmptyState message="No jobs have been assigned to you yet." />
+            ) : (
+              <JobsTable
+                jobs={filtered}
+                onView={(j) => setPrinting(j)}
+                onEdit={(j) => { setEditingJob(j); setShowForm(true) }}
+                onDelete={(j) => setConfirmDelete(j)}
+              />
+            )}
           </>
         )}
       </main>
       {showForm && (
         <JobFormModal
           initialJob={editingJob}
+          availableCustomers={availableCustomers}
           onClose={() => { setShowForm(false); setEditingJob(null) }}
           onSave={async (data) => {
             if (editingJob) await onUpdateJob(editingJob.id, data)

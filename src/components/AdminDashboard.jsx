@@ -1,17 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, Award, Check, CheckCircle2, Clipboard, Copy, Eye, EyeOff, Pencil, Printer, Trash2, UserPlus, Users, Wallet } from 'lucide-react'
+import { AlertCircle, Award, Check, CheckCircle2, Clipboard, Copy, Eye, EyeOff, Pencil, Printer, Trash2, UserPlus, Users, Wallet, X } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import Header from './Header'
 import JobFormModal from './JobForm'
-import CustomerFormModal from './CustomerForm'
+import { JobPrintView, BatchPrintView, CustomerPrintView } from './PrintViews'
 import ProfileFormModal from './ProfileForm'
 import JobsTable from './JobsTable'
 import TeamList from './TeamList'
-import { JobPrintView, BatchPrintView } from './PrintViews'
-import { ConfirmDialog, EmptyState, FormField, PeriodSelector, SearchInput, StatCard, StatusFilterSelect } from './shared'
-import { JOB_TYPES, PRIORITY_OPTIONS, CUSTOMER_STATUSES, CHART_COLORS, COMMISSION_DEPARTMENTS, departmentLabel, formatKSh, formatDate, formatDateTime, isOverdue, isInPeriod, getPeriodRange, isInRange } from '../lib/helpers'
+import { ConfirmDialog, EmptyState, FormField, PeriodSelector, SearchInput, StatCard, StatusBadge, StatusFilterSelect } from './shared'
+import { JOB_TYPES, PRIORITY_OPTIONS, CHART_COLORS, COMMISSION_DEPARTMENTS, departmentLabel, formatKSh, formatDate, formatDateTime, isOverdue, isInPeriod, getPeriodRange, isInRange } from '../lib/helpers'
 
-export default function AdminDashboard({ currentUser, users, jobs, customers, onLogout, onUpdateJob, onDeleteJob, onAssignJob, onPromote, onUpdateDepartment, onUpdateProfile, accessCode, onUpdateAccessCode, commissionRate, onUpdateCommissionRate, onClearCommission, onUpdateCustomerStatus, onUpdateCustomer, onDeleteCustomer }) {
+export default function AdminDashboard({ currentUser, users, jobs, customers, onLogout, onUpdateJob, onDeleteJob, onAssignJob, onPromote, onUpdateDepartment, onUpdateProfile, accessCode, onUpdateAccessCode, commissionRate, onUpdateCommissionRate, onClearCommission, onDeleteCustomer }) {
   const [tab, setTab] = useState('overview')
   const [periodGranularity, setPeriodGranularity] = useState('day')
   const [periodAnchor, setPeriodAnchor] = useState(() => new Date())
@@ -26,7 +25,8 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, on
   const [editingJob, setEditingJob] = useState(null)
   const [showAssignForm, setShowAssignForm] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(null)
-  const [editingCustomer, setEditingCustomer] = useState(null)
+  const [viewingCustomer, setViewingCustomer] = useState(null)
+  const [printingCustomer, setPrintingCustomer] = useState(null)
   const [confirmDeleteCustomer, setConfirmDeleteCustomer] = useState(null)
   const [editingMember, setEditingMember] = useState(null)
   const [expandedMemberId, setExpandedMemberId] = useState(null)
@@ -35,6 +35,10 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, on
 
   const members = users.filter((u) => u.role === 'member')
   const technicalMembers = users.filter((u) => u.department === 'technical')
+  const availableCustomers = useMemo(
+    () => customers.filter((c) => !jobs.some((j) => j.customerId === c.id)),
+    [customers, jobs]
+  )
   const userMap = useMemo(() => { const m = {}; users.forEach((u) => (m[u.id] = u)); return m }, [users])
   const overdueJobs = useMemo(() => jobs.filter(isOverdue), [jobs])
 
@@ -100,6 +104,10 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, on
 
   if (printing?.type === 'single') return <JobPrintView job={printing.job} filedByUser={userMap[printing.job.memberId]} assignedByUser={printing.job.assignedBy ? userMap[printing.job.assignedBy] : null} onBack={() => setPrinting(null)} />
   if (printing?.type === 'batch') return <BatchPrintView jobs={printing.jobs} userMap={userMap} onBack={() => setPrinting(null)} generatedBy={currentUser} />
+  if (printingCustomer) {
+    const linkedJob = jobs.find((j) => j.customerId === printingCustomer.id)
+    return <CustomerPrintView customer={printingCustomer} recordedByUser={userMap[printingCustomer.recordedBy]} displayStatus={linkedJob ? linkedJob.status : 'Pending'} onBack={() => setPrintingCustomer(null)} />
+  }
 
   return (
     <div className="sns-shell">
@@ -275,32 +283,28 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, on
                       <tr><th>Name</th><th>Contact</th><th>Location</th><th>Package requested</th><th>Recorded by</th><th>Date &amp; time</th><th>Status</th><th style={{ textAlign: 'right' }}>Actions</th></tr>
                     </thead>
                     <tbody>
-                      {filteredCustomers.map((c) => (
-                        <tr key={c.id}>
-                          <td style={{ fontWeight: 600 }}>{c.fullName}</td>
-                          <td className="sns-text-soft">{c.contact}</td>
-                          <td className="sns-text-soft">{c.location}</td>
-                          <td className="sns-text-soft">{c.interestedPackage || '—'}</td>
-                          <td className="sns-text-soft">{userMap[c.recordedBy]?.fullName || '—'}</td>
-                          <td className="sns-text-soft">{formatDateTime(c.createdAt)}</td>
-                          <td>
-                            <select
-                              className="sns-input"
-                              style={{ width: 'auto', fontSize: '0.78rem', padding: '0.35rem 0.55rem' }}
-                              value={c.status}
-                              onChange={(e) => onUpdateCustomerStatus(c, e.target.value)}
-                            >
-                              {CUSTOMER_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-                            </select>
-                          </td>
-                          <td>
-                            <div className="flex items-center justify-end gap-1">
-                              <button onClick={() => setEditingCustomer(c)} title="Edit" className="sns-icon-btn"><Pencil size={15} /></button>
-                              <button onClick={() => setConfirmDeleteCustomer(c)} title="Delete" className="sns-icon-btn danger"><Trash2 size={15} /></button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
+                      {filteredCustomers.map((c) => {
+                        const linkedJob = jobs.find((j) => j.customerId === c.id)
+                        const displayStatus = linkedJob ? linkedJob.status : 'Pending'
+                        return (
+                          <tr key={c.id}>
+                            <td style={{ fontWeight: 600 }}>{c.fullName}</td>
+                            <td className="sns-text-soft">{c.contact}</td>
+                            <td className="sns-text-soft">{c.location}</td>
+                            <td className="sns-text-soft">{c.interestedPackage || '—'}</td>
+                            <td className="sns-text-soft">{userMap[c.recordedBy]?.fullName || '—'}</td>
+                            <td className="sns-text-soft">{formatDateTime(c.createdAt)}</td>
+                            <td><StatusBadge status={displayStatus} /></td>
+                            <td>
+                              <div className="flex items-center justify-end gap-1">
+                                <button onClick={() => setViewingCustomer(c)} title="View" className="sns-icon-btn"><Eye size={15} /></button>
+                                <button onClick={() => setPrintingCustomer(c)} title="Print" className="sns-icon-btn"><Printer size={15} /></button>
+                                <button onClick={() => setConfirmDeleteCustomer(c)} title="Delete" className="sns-icon-btn danger"><Trash2 size={15} /></button>
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -321,6 +325,8 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, on
         <JobFormModal
           initialJob={editingJob}
           technicalMembers={technicalMembers}
+          allMembers={users}
+          reassignOnly={!editingJob.assignedBy}
           onClose={() => setEditingJob(null)}
           onSave={async (data) => { await onUpdateJob(editingJob.id, data); setEditingJob(null) }}
         />
@@ -328,6 +334,8 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, on
       {showAssignForm && (
         <JobFormModal
           technicalMembers={technicalMembers}
+          allMembers={users}
+          availableCustomers={availableCustomers}
           onClose={() => setShowAssignForm(false)}
           onSave={async (data) => { await onAssignJob(data); setShowAssignForm(false) }}
         />
@@ -341,11 +349,13 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, on
           onConfirm={async () => { await onDeleteJob(confirmDelete.id); setConfirmDelete(null) }}
         />
       )}
-      {editingCustomer && (
-        <CustomerFormModal
-          initialCustomer={editingCustomer}
-          onClose={() => setEditingCustomer(null)}
-          onSave={async (data) => { await onUpdateCustomer(editingCustomer.id, data); setEditingCustomer(null) }}
+      {viewingCustomer && (
+        <CustomerViewModal
+          customer={viewingCustomer}
+          recordedByName={userMap[viewingCustomer.recordedBy]?.fullName}
+          displayStatus={(jobs.find((j) => j.customerId === viewingCustomer.id) || {}).status || 'Pending'}
+          onClose={() => setViewingCustomer(null)}
+          onPrint={() => { setPrintingCustomer(viewingCustomer); setViewingCustomer(null) }}
         />
       )}
       {confirmDeleteCustomer && (
@@ -465,6 +475,52 @@ function CommissionRateSettings({ commissionRate, onUpdate }) {
           </button>
         </div>
       </FormField>
+    </div>
+  )
+}
+
+function CustomerViewModal({ customer, recordedByName, displayStatus, onClose, onPrint }) {
+  return (
+    <div className="no-print flex items-center justify-center p-4" style={{ position: 'fixed', inset: 0, background: 'rgba(27,36,48,0.55)', zIndex: 50 }}>
+      <div className="sns-card sns-fade-in" style={{ width: '100%', maxWidth: '26rem' }}>
+        <div className="flex items-center justify-between sns-border-b" style={{ padding: '1.1rem 1.4rem' }}>
+          <h3 className="sns-display" style={{ fontWeight: 700 }}>{customer.fullName}</h3>
+          <button onClick={onClose} className="sns-icon-btn"><Eye size={18} style={{ opacity: 0 }} /></button>
+        </div>
+        <div style={{ padding: '1.4rem' }} className="space-y-3">
+          <div className="flex items-center justify-between" style={{ fontSize: '0.85rem' }}>
+            <span className="sns-text-faint">Contact</span><span style={{ fontWeight: 600 }}>{customer.contact}</span>
+          </div>
+          <div className="flex items-center justify-between" style={{ fontSize: '0.85rem' }}>
+            <span className="sns-text-faint">Location</span><span style={{ fontWeight: 600 }}>{customer.location}</span>
+          </div>
+          <div className="flex items-center justify-between" style={{ fontSize: '0.85rem' }}>
+            <span className="sns-text-faint">Package requested</span><span style={{ fontWeight: 600 }}>{customer.interestedPackage || '—'}</span>
+          </div>
+          <div className="flex items-center justify-between" style={{ fontSize: '0.85rem' }}>
+            <span className="sns-text-faint">Wants service on</span><span style={{ fontWeight: 600 }}>{customer.desiredDate ? formatDate(customer.desiredDate) : '—'}</span>
+          </div>
+          <div className="flex items-center justify-between" style={{ fontSize: '0.85rem' }}>
+            <span className="sns-text-faint">Recorded by</span><span style={{ fontWeight: 600 }}>{recordedByName || '—'}</span>
+          </div>
+          <div className="flex items-center justify-between" style={{ fontSize: '0.85rem' }}>
+            <span className="sns-text-faint">Recorded</span><span style={{ fontWeight: 600 }}>{formatDateTime(customer.createdAt)}</span>
+          </div>
+          <div className="flex items-center justify-between" style={{ fontSize: '0.85rem' }}>
+            <span className="sns-text-faint">Status</span><StatusBadge status={displayStatus} />
+          </div>
+          {customer.notes && (
+            <div>
+              <p className="sns-text-faint" style={{ fontSize: '0.85rem', marginBottom: '0.25rem' }}>Notes</p>
+              <p style={{ fontSize: '0.85rem', whiteSpace: 'pre-wrap' }}>{customer.notes}</p>
+            </div>
+          )}
+          <div className="flex gap-3" style={{ paddingTop: '0.6rem' }}>
+            <button type="button" onClick={onClose} className="sns-btn-secondary" style={{ flex: 1 }}>Close</button>
+            <button type="button" onClick={onPrint} className="sns-btn-primary" style={{ flex: 1 }}><Printer size={15} /> Print</button>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

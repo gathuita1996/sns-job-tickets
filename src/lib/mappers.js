@@ -65,6 +65,7 @@ export function mapJob(row) {
     overdueReason: row.overdue_reason || '',
     memberId: row.member_id,
     assignedBy: row.assigned_by || null,
+    raisedBy: row.raised_by || null,
     customerId: row.customer_id || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -86,5 +87,6 @@ export function jobToDbFields(data) {
     priority: data.priority || 'Normal',
     notes: data.notes || null,
     overdue_reason: data.overdueReason || null,
+    customer_id: data.customerId || null,
   }
 }

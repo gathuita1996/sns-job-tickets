@@ -120,3 +120,39 @@ export function BatchPrintView({ jobs, userMap, onBack, generatedBy }) {
     </div>
   )
 }
+
+export function CustomerPrintView({ customer, recordedByUser, displayStatus, onBack }) {
+  return (
+    <div className="sns-shell print-page" style={{ padding: '2rem 1rem' }}>
+      <div className="no-print flex justify-between mx-auto" style={{ maxWidth: '38rem', marginBottom: '1rem' }}>
+        <button onClick={onBack} className="sns-btn-secondary"><ArrowLeft size={16} /> Back</button>
+        <button onClick={() => window.print()} className="sns-btn-primary"><Printer size={16} /> Print / Save as PDF</button>
+      </div>
+      <div className="sns-card mx-auto" style={{ maxWidth: '38rem', padding: '2rem' }}>
+        <div className="flex items-center justify-between" style={{ borderBottom: '2px solid var(--ink)', paddingBottom: '1.1rem', marginBottom: '1.5rem' }}>
+          <div className="flex items-center gap-3">
+            <div className="sns-brand-mark"><img src={logoIcon} alt="Swahili Net Solution" /></div>
+            <div>
+              <p className="sns-display" style={{ fontWeight: 700, fontSize: '1.05rem' }}>Swahili Net Solution</p>
+              <p className="sns-eyebrow sns-text-faint">Customer Record</p>
+            </div>
+          </div>
+          <StatusBadge status={displayStatus} />
+        </div>
+        <div style={{ borderBottom: '1px dashed var(--line)', marginBottom: '1.5rem' }} />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4" style={{ marginBottom: '1.5rem' }}>
+          <PrintField label="Name" value={customer.fullName} />
+          <PrintField label="Contact" value={customer.contact} />
+          <PrintField label="Location" value={customer.location} />
+          <PrintField label="Interested Package" value={customer.interestedPackage || '—'} />
+          <PrintField label="Desired Service Date" value={customer.desiredDate ? formatDate(customer.desiredDate) : 'Not specified'} />
+          <PrintField label="Recorded By" value={recordedByUser?.fullName || '—'} />
+          <PrintField label="Notes" value={customer.notes || '—'} full />
+        </div>
+        <p className="sns-text-faint" style={{ fontSize: '0.75rem', borderTop: '1px solid var(--line)', paddingTop: '1rem' }}>
+          Recorded on {formatDateTime(customer.createdAt)}
+        </p>
+      </div>
+    </div>
+  )
+}

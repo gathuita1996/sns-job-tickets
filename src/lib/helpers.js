@@ -36,7 +36,9 @@ export const MAX_TRANSPORT = 60
 // something added to LOCATIONS itself.
 export const TRANSPORT_LOCATIONS = ['Office', ...LOCATIONS]
 
-export const CUSTOMER_STATUSES = ['New', 'Contacted', 'Converted', 'Not Interested']
+// Customer status is now derived entirely from its linked job's status
+// (Pending/In Progress/Completed) rather than tracked independently -- see
+// AdminDashboard's displayStatus logic. No separate status list needed.
 
 export const DEPARTMENTS = [
   { key: 'sales', label: 'Sales & Marketing' },

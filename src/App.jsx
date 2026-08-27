@@ -12,6 +12,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(null)
   const [jobs, setJobs] = useState([])
   const [customers, setCustomers] = useState([])
+  const [customerIdsWithJobs, setCustomerIdsWithJobs] = useState(new Set())
   const [allUsers, setAllUsers] = useState([])
   const [accessCode, setAccessCode] = useState('')
   const [commissionRate, setCommissionRate] = useState(500)
@@ -59,12 +60,19 @@ export default function App() {
     const { data, error } = await supabase.from('jobs').select('*')
     if (error) { showToast('Failed to load job cards.', 'error'); return }
     setJobs((data || []).map(mapJob))
+    await refreshCustomerIdsWithJobs()
   }
 
   async function refreshCustomers() {
     const { data, error } = await supabase.from('customers').select('*')
     if (error) return
     setCustomers((data || []).map(mapCustomer))
+  }
+
+  async function refreshCustomerIdsWithJobs() {
+    const { data, error } = await supabase.rpc('customers_with_jobs')
+    if (error) return
+    setCustomerIdsWithJobs(new Set((data || []).map((r) => r.customer_id)))
   }
 
   async function refreshUsers() {
@@ -102,11 +110,9 @@ export default function App() {
     await refreshCustomers()
   }
 
-  async function handleUpdateCustomerStatus(customer, status) {
-    const { error } = await supabase.from('customers').update({ status }).eq('id', customer.id)
-    if (error) { showToast('Failed to update status.', 'error'); return }
-    await refreshCustomers()
-  }
+  // Customer status is no longer independently editable -- it's derived
+  // from the linked job's status (see AdminDashboard), so there's nothing
+  // to update here anymore.
 
   // Single source of truth for auth state. Handles first load, sign-in,
   // sign-out, and the password-recovery link redirect.
@@ -236,11 +242,21 @@ export default function App() {
       ...jobToDbFields(formData),
       member_id: formData.assignedTo,
       assigned_by: currentUserRef.current.id,
+      raised_by: formData.raisedBy || null,
+      customer_id: formData.customerId || null,
     })
     if (error) { showToast('Failed to assign job.', 'error'); return }
     showToast('Job assigned.')
     await refreshJobs()
   }
+
+  // For a job a member filed themselves (or that was auto-created from a
+  // customer's desired date) — admin can hand it to a technician, but
+  // can't touch any of its other details.
+  // Note: reassigning a self-filed job (the "reassignOnly" flow in
+  // JobFormModal) goes through handleUpdateJob below, not a separate
+  // function -- its assignedTo branch already handles setting member_id
+  // and assigned_by correctly.
 
   async function handleAddCustomer(formData) {
     const { data: inserted, error } = await supabase.from('customers')
@@ -292,14 +308,20 @@ export default function App() {
   }
 
   async function handleUpdateJob(id, formData) {
-    const updates = jobToDbFields(formData)
+    // Reassign-only sends just { assignedTo } — nothing else about the job
+    // changed, so don't run it through the full field mapper (which would
+    // otherwise build an update full of undefined values for every other
+    // column).
+    const isReassignOnly = formData.assignedTo && Object.keys(formData).length === 1
+    const updates = isReassignOnly ? {} : jobToDbFields(formData)
     if (formData.assignedTo) {
       updates.member_id = formData.assignedTo
       if (currentUserRef.current.role === 'admin') updates.assigned_by = currentUserRef.current.id
     }
+    if (formData.raisedBy) updates.raised_by = formData.raisedBy
     const { error } = await supabase.from('jobs').update(updates).eq('id', id)
     if (error) { showToast('Failed to update job card.', 'error'); return }
-    showToast('Job card updated.')
+    showToast(isReassignOnly ? 'Job reassigned.' : 'Job card updated.')
     await refreshJobs()
   }
 
@@ -368,7 +390,7 @@ export default function App() {
   return (<>
     {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     {currentUser.role === 'admin'
-      ? <AdminDashboard currentUser={currentUser} users={allUsers} jobs={jobs} customers={customers} onLogout={handleLogout} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAssignJob={handleAssignJob} onPromote={handlePromote} onUpdateDepartment={handleUpdateDepartment} onUpdateProfile={handleUpdateProfile} accessCode={accessCode} onUpdateAccessCode={handleUpdateAccessCode} commissionRate={commissionRate} onUpdateCommissionRate={handleUpdateCommissionRate} onClearCommission={handleClearCommission} onUpdateCustomerStatus={handleUpdateCustomerStatus} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} />
-      : <MemberDashboard currentUser={currentUser} jobs={jobs.filter((j) => j.memberId === currentUser.id)} customers={customers.filter((c) => c.recordedBy === currentUser.id)} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAddCustomer={handleAddCustomer} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onUpdateProfile={handleUpdateProfile} commissionRate={commissionRate} />}
+      ? <AdminDashboard currentUser={currentUser} users={allUsers} jobs={jobs} customers={customers} onLogout={handleLogout} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAssignJob={handleAssignJob} onPromote={handlePromote} onUpdateDepartment={handleUpdateDepartment} onUpdateProfile={handleUpdateProfile} accessCode={accessCode} onUpdateAccessCode={handleUpdateAccessCode} commissionRate={commissionRate} onUpdateCommissionRate={handleUpdateCommissionRate} onClearCommission={handleClearCommission} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} />
+      : <MemberDashboard currentUser={currentUser} jobs={jobs.filter((j) => j.memberId === currentUser.id)} customers={customers} customerIdsWithJobs={customerIdsWithJobs} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAddCustomer={handleAddCustomer} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onUpdateProfile={handleUpdateProfile} commissionRate={commissionRate} />}
   </>)
 }
