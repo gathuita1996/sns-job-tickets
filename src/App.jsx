@@ -277,7 +277,7 @@ export default function App() {
         requester_contact: formData.contact,
         visit_date: formData.desiredDate,
         transport_from: 'Office',
-        transport_to: formData.location,
+        transport_to: [formData.location],
         transport_amount: 0,
         status: 'Pending',
         priority: 'Normal',

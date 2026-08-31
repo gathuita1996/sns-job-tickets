@@ -57,7 +57,7 @@ export function mapJob(row) {
     requesterContact: row.requester_contact || '',
     visitDate: row.visit_date,
     transportFrom: row.transport_from || '',
-    transportTo: row.transport_to || '',
+    transportTo: row.transport_to || [],
     transportAmount: Number(row.transport_amount) || 0,
     status: row.status,
     priority: row.priority || 'Normal',

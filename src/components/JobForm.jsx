@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, X } from 'lucide-react'
+import { Plus, Trash2, X } from 'lucide-react'
 import { FormField } from './shared'
 import { JOB_TYPES, LOCATIONS, TRANSPORT_LOCATIONS, STATUS_OPTIONS, PRIORITY_OPTIONS, defaultJobForm, isOverdue, toDateInputValue, formatDate, formatKSh } from '../lib/helpers'
 
@@ -26,7 +26,12 @@ export default function JobFormModal({ initialJob, technicalMembers, allMembers,
   const isNewAdminAssignment = adminMode && !initialJob
   const editingOverdue = Boolean(initialJob) && isOverdue(initialJob)
   const fromResolved = initialJob ? resolveTransportField(initialJob.transportFrom) : null
-  const toResolved = initialJob ? resolveTransportField(initialJob.transportTo) : null
+  // A job's trip can cover several stops now (Office -> A -> B -> ...), so
+  // transportTo is an array -- resolve each stop the same way a single one
+  // used to be resolved.
+  const stopsResolved = initialJob && initialJob.transportTo && initialJob.transportTo.length
+    ? initialJob.transportTo.map(resolveTransportField)
+    : null
   // Sales & Marketing members often file for a general field visit, not a
   // specific client request -- Technical stays required, since their work is
   // normally tied to who asked for it. Admin-assigned jobs always require it
@@ -39,7 +44,7 @@ export default function JobFormModal({ initialJob, technicalMembers, allMembers,
     requestedBy: initialJob.requestedBy, requesterContact: initialJob.requesterContact || '',
     visitDate: initialJob.visitDate,
     transportFrom: fromResolved.selected, transportFromOther: fromResolved.other,
-    transportTo: toResolved.selected, transportToOther: toResolved.other,
+    transportStops: stopsResolved || [{ selected: '', other: '' }],
     transportAmount: initialJob.transportAmount, status: initialJob.status,
     priority: initialJob.priority || 'Normal', notes: initialJob.notes || '', overdueReason: initialJob.overdueReason || '',
     assignedTo: initialJob.memberId || '', raisedBy: initialJob.raisedBy || '', customerId: initialJob.customerId || null,
@@ -64,6 +69,27 @@ export default function JobFormModal({ initialJob, technicalMembers, allMembers,
     }))
   }
 
+  function addStop() {
+    setForm((f) => ({ ...f, transportStops: [...f.transportStops, { selected: '', other: '' }] }))
+  }
+
+  function removeStop(index) {
+    setForm((f) => ({ ...f, transportStops: f.transportStops.filter((_, i) => i !== index) }))
+  }
+
+  function updateStop(index, key, value) {
+    setForm((f) => ({
+      ...f,
+      transportStops: f.transportStops.map((stop, i) => (i === index ? { ...stop, [key]: value } : stop)),
+    }))
+    setErrors((e) => {
+      if (!e.transportStops) return e
+      const nextStopErrors = [...e.transportStops]
+      nextStopErrors[index] = undefined
+      return { ...e, transportStops: nextStopErrors }
+    })
+  }
+
   function validate() {
     if (reassignOnly) {
       const e = {}
@@ -81,8 +107,12 @@ export default function JobFormModal({ initialJob, technicalMembers, allMembers,
     if (!isNewAdminAssignment) {
       if (!form.transportFrom) e.transportFrom = 'Please select a starting point'
       else if (form.transportFrom === 'Other' && !form.transportFromOther.trim()) e.transportFromOther = 'Please specify the starting location'
-      if (!form.transportTo) e.transportTo = 'Please select a destination'
-      else if (form.transportTo === 'Other' && !form.transportToOther.trim()) e.transportToOther = 'Please specify the destination'
+      const stopErrors = form.transportStops.map((stop) => {
+        if (!stop.selected) return 'Please select a destination'
+        if (stop.selected === 'Other' && !stop.other.trim()) return 'Please specify the destination'
+        return null
+      })
+      if (stopErrors.some(Boolean)) e.transportStops = stopErrors
       if (form.transportAmount === '' || isNaN(Number(form.transportAmount)) || Number(form.transportAmount) < 0) e.transportAmount = 'Enter a valid amount'
     }
     if (!form.status) e.status = 'Please select a status'
@@ -103,7 +133,7 @@ export default function JobFormModal({ initialJob, technicalMembers, allMembers,
     await onSave({
       ...form,
       transportFrom: form.transportFrom === 'Other' ? form.transportFromOther.trim() : form.transportFrom,
-      transportTo: form.transportTo === 'Other' ? form.transportToOther.trim() : form.transportTo,
+      transportTo: form.transportStops.map((stop) => (stop.selected === 'Other' ? stop.other.trim() : stop.selected)),
       transportAmount: form.transportAmount === '' ? 0 : Number(form.transportAmount),
     })
     setSubmitting(false)
@@ -196,7 +226,7 @@ export default function JobFormModal({ initialJob, technicalMembers, allMembers,
           </FormField>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <FormField label="Requested by" error={errors.requestedBy} hint={requestedByOptional ? 'Optional — leave blank for a general field visit with no specific requester.' : undefined}>
+            <FormField label="Requested by" error={errors.requestedBy}>
               <input className="sns-input" value={form.requestedBy} onChange={(e) => update('requestedBy', e.target.value)} placeholder={requestedByOptional ? 'Client / contact name (optional)' : 'Client / contact name'} />
             </FormField>
             <FormField label="Requester contact" hint="Optional">
@@ -217,39 +247,12 @@ export default function JobFormModal({ initialJob, technicalMembers, allMembers,
 
           {!isNewAdminAssignment && (
             <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <FormField label="From" error={errors.transportFrom}>
-                  <select className="sns-input" value={form.transportFrom} onChange={(e) => update('transportFrom', e.target.value)}>
-                    {TRANSPORT_LOCATIONS.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
-                    <option value="Other">Other</option>
-                  </select>
-                </FormField>
-                <FormField label="To" error={errors.transportTo || errors.transportToOther}>
-                  {form.transportTo === 'Other' ? (
-                    <div className="flex items-center gap-2">
-                      <input
-                        className="sns-input" style={{ flex: 1 }} autoFocus
-                        value={form.transportToOther}
-                        onChange={(e) => update('transportToOther', e.target.value)}
-                        placeholder="Type the destination"
-                      />
-                      <button type="button" onClick={() => { update('transportTo', ''); update('transportToOther', '') }} className="sns-icon-btn" title="Choose from the list instead">
-                        <X size={16} />
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <select className={`sns-input${form.transportTo === '' ? ' sns-select-placeholder' : ''}`} style={{ flex: 1 }} value={form.transportTo} onChange={(e) => update('transportTo', e.target.value)}>
-                        <option value="" disabled>select-destination</option>
-                        {TRANSPORT_LOCATIONS.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
-                      </select>
-                      <button type="button" onClick={() => update('transportTo', 'Other')} className="sns-icon-btn" title="Add a destination not on this list">
-                        <Plus size={16} />
-                      </button>
-                    </div>
-                  )}
-                </FormField>
-              </div>
+              <FormField label="From" error={errors.transportFrom}>
+                <select className="sns-input" value={form.transportFrom} onChange={(e) => update('transportFrom', e.target.value)}>
+                  {TRANSPORT_LOCATIONS.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
+                  <option value="Other">Other</option>
+                </select>
+              </FormField>
 
               {form.transportFrom === 'Other' && (
                 <FormField label="Specify starting location" error={errors.transportFromOther}>
@@ -257,7 +260,57 @@ export default function JobFormModal({ initialJob, technicalMembers, allMembers,
                 </FormField>
               )}
 
-              <FormField label="Transport amount (KSh)" error={errors.transportAmount} hint={`Total for the round trip — ${form.transportFrom === 'Other' ? (form.transportFromOther || '—') : form.transportFrom} to ${form.transportTo === 'Other' ? (form.transportToOther || '—') : (form.transportTo || '—')} AND back.`}>
+              <FormField label="To" hint="Add a stop for each place visited on this trip.">
+                {form.transportStops.map((stop, idx) => (
+                  <div key={idx} style={{ marginBottom: idx === form.transportStops.length - 1 ? 0 : '0.6rem' }}>
+                    <div className="flex items-center gap-2">
+                      {stop.selected === 'Other' ? (
+                        <>
+                          <input
+                            className="sns-input" style={{ flex: 1 }} autoFocus
+                            value={stop.other}
+                            onChange={(e) => updateStop(idx, 'other', e.target.value)}
+                            placeholder="Type the destination"
+                          />
+                          <button type="button" onClick={() => { updateStop(idx, 'selected', ''); updateStop(idx, 'other', '') }} className="sns-icon-btn" title="Choose from the list instead">
+                            <X size={16} />
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <select className={`sns-input${stop.selected === '' ? ' sns-select-placeholder' : ''}`} style={{ flex: 1 }} value={stop.selected} onChange={(e) => updateStop(idx, 'selected', e.target.value)}>
+                            <option value="" disabled>select-destination</option>
+                            {TRANSPORT_LOCATIONS.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
+                          </select>
+                          <button type="button" onClick={() => updateStop(idx, 'selected', 'Other')} className="sns-icon-btn" title="Add a destination not on this list">
+                            <Plus size={16} />
+                          </button>
+                        </>
+                      )}
+                      {form.transportStops.length > 1 && (
+                        <button type="button" onClick={() => removeStop(idx)} className="sns-icon-btn danger" title="Remove this stop">
+                          <Trash2 size={16} />
+                        </button>
+                      )}
+                    </div>
+                    {errors.transportStops?.[idx] && (
+                      <p style={{ color: 'var(--overdue)', fontSize: '0.78rem', marginTop: '0.3rem' }}>{errors.transportStops[idx]}</p>
+                    )}
+                  </div>
+                ))}
+                <button type="button" onClick={addStop} className="sns-btn-secondary" style={{ fontSize: '0.8rem', marginTop: '0.6rem' }}>
+                  <Plus size={14} /> Add another stop
+                </button>
+              </FormField>
+
+              <FormField
+                label="Transport amount (KSh)"
+                error={errors.transportAmount}
+                hint={`Total for the round trip — ${[
+                  form.transportFrom === 'Other' ? (form.transportFromOther || '—') : form.transportFrom,
+                  ...form.transportStops.map((stop) => (stop.selected === 'Other' ? (stop.other || '—') : (stop.selected || '—'))),
+                ].join(' → ')} AND back.`}
+              >
                 <input type="number" min="0" step="1" className="sns-input" value={form.transportAmount} onChange={(e) => update('transportAmount', e.target.value)} placeholder="0" />
               </FormField>
             </>
