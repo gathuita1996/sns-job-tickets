@@ -37,7 +37,7 @@ create table public.jobs (
   job_code           text not null unique,
   job_type           text not null,
   location           text not null,
-  requested_by       text not null,
+  requested_by       text,
   requester_contact  text,
   visit_date         date,
   transport_amount   numeric(10,2) not null default 0,
@@ -515,6 +515,16 @@ returns table(customer_id bigint) as $$
 $$ language sql security definer stable set search_path = public;
 
 grant execute on function public.customers_with_jobs() to authenticated;
+
+-- ============================================================================
+-- MIGRATION — added later: requested_by becomes optional.
+--
+-- Sales & Marketing members often file a job for a general field visit with
+-- no specific client requester -- Technical still requires it, since their
+-- work is normally tied to who asked for it (enforced in the app, not here).
+-- The database just needs to stop rejecting an empty value outright.
+-- ============================================================================
+alter table public.jobs alter column requested_by drop not null;
 
 -- ============================================================================
 -- Done. Next: Authentication -> Providers -> make sure Email is enabled,

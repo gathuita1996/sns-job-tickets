@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { X } from 'lucide-react'
+import { Plus, X } from 'lucide-react'
 import { FormField } from './shared'
-import { JOB_TYPES, LOCATIONS, TRANSPORT_LOCATIONS, STATUS_OPTIONS, PRIORITY_OPTIONS, MAX_TRANSPORT, defaultJobForm, isOverdue, toDateInputValue, formatDate, formatKSh } from '../lib/helpers'
+import { JOB_TYPES, LOCATIONS, TRANSPORT_LOCATIONS, STATUS_OPTIONS, PRIORITY_OPTIONS, defaultJobForm, isOverdue, toDateInputValue, formatDate, formatKSh } from '../lib/helpers'
 
 // A saved job's transport_from/to is just resolved text -- this figures out
 // whether that text matches a known location (so the dropdown can show it
@@ -21,12 +21,18 @@ function resolveTransportField(storedValue) {
 // allMembers (everyone, any department) powers the "raised by" field.
 // availableCustomers is the not-yet-installed leads a member filing a New
 // Installation can pick from, to link the job back to that customer record.
-export default function JobFormModal({ initialJob, technicalMembers, allMembers, availableCustomers, reassignOnly, onClose, onSave }) {
+export default function JobFormModal({ initialJob, technicalMembers, allMembers, availableCustomers, filerDepartment, reassignOnly, onClose, onSave }) {
   const adminMode = Boolean(technicalMembers)
   const isNewAdminAssignment = adminMode && !initialJob
   const editingOverdue = Boolean(initialJob) && isOverdue(initialJob)
   const fromResolved = initialJob ? resolveTransportField(initialJob.transportFrom) : null
   const toResolved = initialJob ? resolveTransportField(initialJob.transportTo) : null
+  // Sales & Marketing members often file for a general field visit, not a
+  // specific client request -- Technical stays required, since their work is
+  // normally tied to who asked for it. Admin-assigned jobs always require it
+  // regardless of the assignee's department, since that's a formally tracked
+  // handoff, not a casual self-filed visit.
+  const requestedByOptional = !adminMode && filerDepartment === 'sales'
 
   const [form, setForm] = useState(initialJob ? {
     jobType: initialJob.jobType, jobTypeOther: initialJob.jobTypeOther || '', location: initialJob.location,
@@ -69,7 +75,7 @@ export default function JobFormModal({ initialJob, technicalMembers, allMembers,
     if (!form.jobType) e.jobType = 'Please select a job type'
     if (form.jobType === 'Other' && !form.jobTypeOther.trim()) e.jobTypeOther = 'Please describe the job type'
     if (!form.location) e.location = 'Please select a location'
-    if (!form.requestedBy.trim()) e.requestedBy = 'Required'
+    if (!requestedByOptional && !form.requestedBy.trim()) e.requestedBy = 'Required'
     if (!form.visitDate) e.visitDate = 'Required'
     else if (!adminMode && form.visitDate > toDateInputValue(new Date())) e.visitDate = "You can't file a job for a future date — please choose today or an earlier date."
     if (!isNewAdminAssignment) {
@@ -78,7 +84,6 @@ export default function JobFormModal({ initialJob, technicalMembers, allMembers,
       if (!form.transportTo) e.transportTo = 'Please select a destination'
       else if (form.transportTo === 'Other' && !form.transportToOther.trim()) e.transportToOther = 'Please specify the destination'
       if (form.transportAmount === '' || isNaN(Number(form.transportAmount)) || Number(form.transportAmount) < 0) e.transportAmount = 'Enter a valid amount'
-      else if (Number(form.transportAmount) > MAX_TRANSPORT) e.transportAmount = `Transport can't exceed KSh ${MAX_TRANSPORT} — that's the round-trip maximum (there and back).`
     }
     if (!form.status) e.status = 'Please select a status'
     if (!form.notes.trim()) e.notes = 'Job details are required'
@@ -191,8 +196,8 @@ export default function JobFormModal({ initialJob, technicalMembers, allMembers,
           </FormField>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <FormField label="Requested by" error={errors.requestedBy}>
-              <input className="sns-input" value={form.requestedBy} onChange={(e) => update('requestedBy', e.target.value)} placeholder="Client / contact name" />
+            <FormField label="Requested by" error={errors.requestedBy} hint={requestedByOptional ? 'Optional — leave blank for a general field visit with no specific requester.' : undefined}>
+              <input className="sns-input" value={form.requestedBy} onChange={(e) => update('requestedBy', e.target.value)} placeholder={requestedByOptional ? 'Client / contact name (optional)' : 'Client / contact name'} />
             </FormField>
             <FormField label="Requester contact" hint="Optional">
               <input className="sns-input" value={form.requesterContact} onChange={(e) => update('requesterContact', e.target.value)} placeholder="Optional" />
@@ -219,12 +224,30 @@ export default function JobFormModal({ initialJob, technicalMembers, allMembers,
                     <option value="Other">Other</option>
                   </select>
                 </FormField>
-                <FormField label="To" error={errors.transportTo}>
-                  <select className={`sns-input${form.transportTo === '' ? ' sns-select-placeholder' : ''}`} value={form.transportTo} onChange={(e) => update('transportTo', e.target.value)}>
-                    <option value="" disabled>select-destination</option>
-                    {TRANSPORT_LOCATIONS.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
-                    <option value="Other">Other</option>
-                  </select>
+                <FormField label="To" error={errors.transportTo || errors.transportToOther}>
+                  {form.transportTo === 'Other' ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        className="sns-input" style={{ flex: 1 }} autoFocus
+                        value={form.transportToOther}
+                        onChange={(e) => update('transportToOther', e.target.value)}
+                        placeholder="Type the destination"
+                      />
+                      <button type="button" onClick={() => { update('transportTo', ''); update('transportToOther', '') }} className="sns-icon-btn" title="Choose from the list instead">
+                        <X size={16} />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <select className={`sns-input${form.transportTo === '' ? ' sns-select-placeholder' : ''}`} style={{ flex: 1 }} value={form.transportTo} onChange={(e) => update('transportTo', e.target.value)}>
+                        <option value="" disabled>select-destination</option>
+                        {TRANSPORT_LOCATIONS.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
+                      </select>
+                      <button type="button" onClick={() => update('transportTo', 'Other')} className="sns-icon-btn" title="Add a destination not on this list">
+                        <Plus size={16} />
+                      </button>
+                    </div>
+                  )}
                 </FormField>
               </div>
 
@@ -233,14 +256,9 @@ export default function JobFormModal({ initialJob, technicalMembers, allMembers,
                   <input className="sns-input" value={form.transportFromOther} onChange={(e) => update('transportFromOther', e.target.value)} placeholder="Where did the trip start?" />
                 </FormField>
               )}
-              {form.transportTo === 'Other' && (
-                <FormField label="Specify destination" error={errors.transportToOther}>
-                  <input className="sns-input" value={form.transportToOther} onChange={(e) => update('transportToOther', e.target.value)} placeholder="Where did the trip end?" />
-                </FormField>
-              )}
 
               <FormField label="Transport amount (KSh)" error={errors.transportAmount} hint={`Total for the round trip — ${form.transportFrom === 'Other' ? (form.transportFromOther || '—') : form.transportFrom} to ${form.transportTo === 'Other' ? (form.transportToOther || '—') : (form.transportTo || '—')} AND back.`}>
-                <input type="number" min="0" max={MAX_TRANSPORT} step="1" className="sns-input" value={form.transportAmount} onChange={(e) => update('transportAmount', e.target.value)} placeholder="0" />
+                <input type="number" min="0" step="1" className="sns-input" value={form.transportAmount} onChange={(e) => update('transportAmount', e.target.value)} placeholder="0" />
               </FormField>
             </>
           )}

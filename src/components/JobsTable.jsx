@@ -84,7 +84,7 @@ export default function JobsTable({ jobs, showFiledBy, userMap, onView, onEdit, 
                   <td className="sns-text-soft">{formatDate(j.visitDate)}</td>
                   <td className="sns-text-soft">{j.jobType === 'Other' && j.jobTypeOther ? j.jobTypeOther : j.jobType}</td>
                   <td className="sns-text-soft">{j.location}</td>
-                  <td className="sns-text-soft">{j.requestedBy}</td>
+                  <td className="sns-text-soft">{j.requestedBy || 'General field visit'}</td>
                   {showFiledBy && <td className="sns-text-soft">{userMap?.[j.memberId]?.fullName || '—'}</td>}
                   <td className="sns-mono">
                     <div style={{ fontWeight: 600 }}>{formatKSh(j.transportAmount)}</div>

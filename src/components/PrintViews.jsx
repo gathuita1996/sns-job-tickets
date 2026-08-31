@@ -40,7 +40,7 @@ export function JobPrintView({ job, filedByUser, assignedByUser, onBack }) {
           <PrintField label="Priority" value={job.priority || 'Normal'} />
           <PrintField label="Status" value={job.status} />
           <PrintField label="Location / Site" value={job.location} />
-          <PrintField label="Requested By" value={job.requestedBy} />
+          <PrintField label="Requested By" value={job.requestedBy || 'General field visit'} />
           <PrintField label="Requester Contact" value={job.requesterContact || '—'} />
           <PrintField label="Date of Visit" value={formatDate(job.visitDate)} />
           <PrintField label="Transport Route" value={`${job.transportFrom || '—'} → ${job.transportTo || '—'}`} />
@@ -99,7 +99,7 @@ export function BatchPrintView({ jobs, userMap, onBack, generatedBy }) {
                   <td>{formatDate(j.visitDate)}</td>
                   <td>{j.jobType}</td>
                   <td>{j.location}</td>
-                  <td>{j.requestedBy}</td>
+                  <td>{j.requestedBy || 'General field visit'}</td>
                   <td>{userMap[j.memberId]?.fullName || '—'}</td>
                   <td className="sns-mono">{formatKSh(j.transportAmount)}</td>
                   <td><StatusBadge status={j.status} /></td>

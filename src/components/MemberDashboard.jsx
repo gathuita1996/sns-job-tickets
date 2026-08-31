@@ -179,6 +179,7 @@ export default function MemberDashboard({ currentUser, jobs, customers, customer
         <JobFormModal
           initialJob={editingJob}
           availableCustomers={availableCustomers}
+          filerDepartment={currentUser.department}
           onClose={() => { setShowForm(false); setEditingJob(null) }}
           onSave={async (data) => {
             if (editingJob) await onUpdateJob(editingJob.id, data)
