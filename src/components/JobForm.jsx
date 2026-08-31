@@ -239,7 +239,7 @@ export default function JobFormModal({ initialJob, technicalMembers, allMembers,
                 </FormField>
               )}
 
-              <FormField label="Transport amount (KSh)" error={errors.transportAmount} hint={`Total for the round trip — ${form.transportFrom === 'Other' ? (form.transportFromOther || '—') : form.transportFrom} to ${form.transportTo === 'Other' ? (form.transportToOther || '—') : (form.transportTo || '—')} AND back. There's no separate field for the return trip yet, so include both in this one amount. Maximum KSh ${MAX_TRANSPORT}.`}>
+              <FormField label="Transport amount (KSh)" error={errors.transportAmount} hint={`Total for the round trip — ${form.transportFrom === 'Other' ? (form.transportFromOther || '—') : form.transportFrom} to ${form.transportTo === 'Other' ? (form.transportToOther || '—') : (form.transportTo || '—')} AND back.`}>
                 <input type="number" min="0" max={MAX_TRANSPORT} step="1" className="sns-input" value={form.transportAmount} onChange={(e) => update('transportAmount', e.target.value)} placeholder="0" />
               </FormField>
             </>
