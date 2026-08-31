@@ -229,7 +229,7 @@ export default function JobFormModal({ initialJob, technicalMembers, allMembers,
             <FormField label="Requested by" error={errors.requestedBy}>
               <input className="sns-input" value={form.requestedBy} onChange={(e) => update('requestedBy', e.target.value)} placeholder={requestedByOptional ? 'Client / contact name (optional)' : 'Client / contact name'} />
             </FormField>
-            <FormField label="Requester contact" hint="Optional">
+            <FormField label="Requester contact">
               <input className="sns-input" value={form.requesterContact} onChange={(e) => update('requesterContact', e.target.value)} placeholder="Optional" />
             </FormField>
           </div>
