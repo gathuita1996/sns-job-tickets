@@ -78,7 +78,7 @@ export default function JobFormModal({ initialJob, technicalMembers, allMembers,
       if (!form.transportTo) e.transportTo = 'Please select a destination'
       else if (form.transportTo === 'Other' && !form.transportToOther.trim()) e.transportToOther = 'Please specify the destination'
       if (form.transportAmount === '' || isNaN(Number(form.transportAmount)) || Number(form.transportAmount) < 0) e.transportAmount = 'Enter a valid amount'
-      else if (Number(form.transportAmount) > MAX_TRANSPORT) e.transportAmount = `Transport can't exceed KSh ${MAX_TRANSPORT} for this leg.`
+      else if (Number(form.transportAmount) > MAX_TRANSPORT) e.transportAmount = `Transport can't exceed KSh ${MAX_TRANSPORT} — that's the round-trip maximum (there and back).`
     }
     if (!form.status) e.status = 'Please select a status'
     if (!form.notes.trim()) e.notes = 'Job details are required'
@@ -239,7 +239,7 @@ export default function JobFormModal({ initialJob, technicalMembers, allMembers,
                 </FormField>
               )}
 
-              <FormField label="Transport amount (KSh)" error={errors.transportAmount} hint={`Cost for this leg only, ${form.transportFrom === 'Other' ? (form.transportFromOther || '—') : form.transportFrom} to ${form.transportTo === 'Other' ? (form.transportToOther || '—') : (form.transportTo || '—')}. Maximum KSh ${MAX_TRANSPORT}.`}>
+              <FormField label="Transport amount (KSh)" error={errors.transportAmount} hint={`Total for the round trip — ${form.transportFrom === 'Other' ? (form.transportFromOther || '—') : form.transportFrom} to ${form.transportTo === 'Other' ? (form.transportToOther || '—') : (form.transportTo || '—')} AND back. There's no separate field for the return trip yet, so include both in this one amount. Maximum KSh ${MAX_TRANSPORT}.`}>
                 <input type="number" min="0" max={MAX_TRANSPORT} step="1" className="sns-input" value={form.transportAmount} onChange={(e) => update('transportAmount', e.target.value)} placeholder="0" />
               </FormField>
             </>

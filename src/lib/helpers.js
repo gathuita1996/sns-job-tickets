@@ -26,10 +26,10 @@ export const CHART_COLORS = ['#1A4C93', '#F0781E', '#1DA851', '#4C5F72', '#12387
 // without being acted on.
 export const OVERDUE_HOURS = 24
 
-// Logistics cap: KSh 60 per leg. Previously this was a combined 120
-// round-trip figure; now that transport is tracked as a specific From -> To
-// journey, the cap applies to that one leg.
-export const MAX_TRANSPORT = 60
+// KSh 60 each way. Until there's a proper way to log a separate return leg,
+// members are instructed to enter the combined to-and-fro total in this one
+// field, so the cap needs to allow for both legs together, not just one.
+export const MAX_TRANSPORT = 120
 
 // "Office" is the default starting point for transport, but isn't a real
 // job site or customer location, so it's a separate list rather than
