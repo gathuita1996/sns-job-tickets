@@ -196,9 +196,9 @@ create policy "jobs_select_own_or_admin"
   on public.jobs for select
   using (member_id = auth.uid() or public.is_admin());
 
-create policy "jobs_insert_self"
+create policy "jobs_insert_self_or_admin"
   on public.jobs for insert
-  with check (member_id = auth.uid());
+  with check (member_id = auth.uid() or public.is_admin());
 
 create policy "jobs_update_own_or_admin"
   on public.jobs for update
@@ -309,10 +309,13 @@ create index customers_recorded_by_idx on public.customers(recorded_by);
 
 alter table public.customers enable row level security;
 
--- Same shape as the jobs policies: see/manage your own records, admins see/manage all.
-create policy "customers_select_own_or_admin"
+-- Any signed-in member can see all customers (needed so a technician can
+-- pick a lead sales recorded when filing a New Installation). Adding,
+-- editing, or deleting is still restricted to whoever recorded it, or an
+-- admin -- only visibility is open.
+create policy "customers_select_all_authenticated"
   on public.customers for select
-  using (recorded_by = auth.uid() or public.is_admin());
+  using (auth.role() = 'authenticated');
 
 create policy "customers_insert_self"
   on public.customers for insert
@@ -381,6 +384,137 @@ returns boolean as $$
 $$ language sql security definer stable set search_path = public;
 
 grant execute on function public.check_access_code(text) to anon, authenticated;
+
+-- ============================================================================
+-- MIGRATION — added later: customer status + first/last name, commission
+-- clearing (paid tracking), transport as a From -> To journey, and a
+-- configurable commission rate.
+-- ============================================================================
+
+-- --- Customers: split full_name into first_name/last_name, add status ------
+alter table public.customers add column if not exists first_name text;
+alter table public.customers add column if not exists last_name text;
+update public.customers set
+  first_name = coalesce(first_name, nullif(split_part(full_name, ' ', 1), ''), 'Unknown'),
+  last_name = coalesce(last_name, nullif(substring(full_name from position(' ' in full_name) + 1), ''), '-')
+where first_name is null or last_name is null;
+alter table public.customers alter column first_name set not null;
+alter table public.customers alter column last_name set not null;
+alter table public.customers drop column if exists full_name;
+
+alter table public.customers add column if not exists status text not null default 'New'
+  check (status in ('New', 'Contacted', 'Converted', 'Not Interested'));
+
+-- Tracks when a customer's commission was paid out. NULL = still owed.
+-- Never delete customer records to "clear" a commission -- that would
+-- destroy the underlying business record. This column is the only thing
+-- that changes when a commission is paid.
+alter table public.customers add column if not exists commission_paid_at timestamptz;
+
+-- --- Jobs: transport becomes a From -> To journey instead of a flat
+-- round-trip figure. transport_amount now means "this one leg", not
+-- "both ways combined".
+alter table public.jobs add column if not exists transport_from text;
+alter table public.jobs add column if not exists transport_to text;
+
+-- --- A configurable commission rate, alongside the existing access code --
+alter table public.app_settings add column if not exists commission_per_customer numeric not null default 500;
+
+-- app_settings itself stays admin-only (it holds the access code), but
+-- members need to know the commission rate too. This exposes just that one
+-- number, the same safe pattern as check_access_code above.
+create or replace function public.get_commission_rate()
+returns numeric as $$
+  select commission_per_customer from public.app_settings where id = true;
+$$ language sql security definer stable set search_path = public;
+
+grant execute on function public.get_commission_rate() to anon, authenticated;
+
+-- ============================================================================
+-- MIGRATION — added later: admin job assignment, and potential-customer
+-- scheduling (a lead who wants service on a specific future date).
+--
+-- Note on profile self-editing: no schema change is needed for this — the
+-- existing profiles_update_own and profiles_update_admin policies already
+-- allow a member to update their own name/contact/username, and an admin
+-- to update anyone's, at the database level. That gap was UI-only.
+-- ============================================================================
+
+-- --- Admin job assignment ---------------------------------------------------
+-- Tracks which admin assigned a job, if any (NULL = the member self-filed it,
+-- same as every job before this update).
+alter table public.jobs add column if not exists assigned_by uuid references public.profiles(id);
+
+-- The original insert policy required member_id to be your own id, which
+-- correctly stopped a regular member from filing a job under someone else's
+-- name, but also blocked an admin from assigning a job TO someone else.
+-- This replaces it: members still can only insert for themselves, admins can
+-- insert for anyone.
+drop policy if exists "jobs_insert_self" on public.jobs;
+drop policy if exists "jobs_insert_self_or_admin" on public.jobs;
+create policy "jobs_insert_self_or_admin"
+  on public.jobs for insert
+  with check (member_id = auth.uid() or public.is_admin());
+
+-- --- Potential-customer scheduling ------------------------------------------
+-- The date a prospective customer wants service, if they gave one (e.g.
+-- "wants installation next Monday"). When this is set, the app also creates
+-- a linked, future-dated Pending job card automatically, so the follow-up
+-- is never just a note that gets forgotten — it's a real tracked job.
+alter table public.customers add column if not exists desired_date date;
+
+-- Links an auto-created job back to the customer record it came from.
+alter table public.jobs add column if not exists customer_id bigint references public.customers(id) on delete set null;
+
+-- ============================================================================
+-- MIGRATION — added later: tracks which team member originally raised or
+-- reported an issue that an admin is now assigning to a technician. This is
+-- separate from "Requested by" (the actual client's name) and from
+-- assigned_by (which admin did the assigning) — this is "who on the team
+-- heard about it first."
+-- ============================================================================
+alter table public.jobs add column if not exists raised_by uuid references public.profiles(id);
+
+-- ============================================================================
+-- MIGRATION — added later: customer status is no longer its own tracked
+-- field (New/Contacted/Converted/Not Interested). It's now derived live from
+-- whichever job is linked to the customer (Pending/In Progress/Completed —
+-- the same statuses a job already has), or "Pending" if no job has been
+-- created for them yet. Nothing to keep in sync manually, nothing to drift.
+-- ============================================================================
+alter table public.customers drop column if exists status;
+
+-- ============================================================================
+-- MIGRATION — added later: refining the assign-a-job workflow.
+--
+-- - raised_by: which team member reported/raised the issue an admin is
+--   assigning, separate from who it's assigned TO and who filed it.
+-- - Customers become visible to every signed-in member (not just whoever
+--   recorded them), because filing a "New Installation" now needs to let
+--   any member pick from customers ANYONE recorded — a technician
+--   installing for a lead that sales found needs to see that lead.
+--   Adding/editing/deleting a customer record is still restricted to
+--   whoever recorded it (or an admin), same as before -- only SELECT
+--   changes.
+-- - customers_with_jobs(): a narrowly-scoped, safe way for the installation
+--   picker to know which customers already have a job linked, without
+--   needing to expose the full jobs table more broadly than it already is.
+-- ============================================================================
+
+alter table public.jobs add column if not exists raised_by uuid references public.profiles(id);
+
+drop policy if exists "customers_select_own_or_admin" on public.customers;
+drop policy if exists "customers_select_all_authenticated" on public.customers;
+create policy "customers_select_all_authenticated"
+  on public.customers for select
+  using (auth.role() = 'authenticated');
+
+create or replace function public.customers_with_jobs()
+returns table(customer_id bigint) as $$
+  select distinct j.customer_id from public.jobs j where j.customer_id is not null;
+$$ language sql security definer stable set search_path = public;
+
+grant execute on function public.customers_with_jobs() to authenticated;
 
 -- ============================================================================
 -- Done. Next: Authentication -> Providers -> make sure Email is enabled,
