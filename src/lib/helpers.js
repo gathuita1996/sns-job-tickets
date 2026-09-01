@@ -77,6 +77,7 @@ export function defaultJobForm() {
     jobType: '',
     jobTypeOther: '',
     location: '',
+    locationOther: '',
     requestedBy: '',
     requesterContact: '',
     visitDate: new Date().toISOString().slice(0, 10),

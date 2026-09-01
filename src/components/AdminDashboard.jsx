@@ -34,7 +34,10 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, on
   const [customerSearch, setCustomerSearch] = useState('')
 
   const members = users.filter((u) => u.role === 'member')
-  const technicalMembers = users.filter((u) => u.department === 'technical')
+  // Site visits and similar fieldwork can go to Sales & Marketing too, not
+  // just Technical -- Admin department is excluded since that's an office
+  // function, not fieldwork.
+  const assignableMembers = users.filter((u) => u.department === 'technical' || u.department === 'sales')
   const availableCustomers = useMemo(
     () => customers.filter((c) => !jobs.some((j) => j.customerId === c.id)),
     [customers, jobs]
@@ -324,7 +327,7 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, on
       {editingJob && (
         <JobFormModal
           initialJob={editingJob}
-          technicalMembers={technicalMembers}
+          assignableMembers={assignableMembers}
           allMembers={users}
           reassignOnly={!editingJob.assignedBy}
           onClose={() => setEditingJob(null)}
@@ -333,7 +336,7 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, on
       )}
       {showAssignForm && (
         <JobFormModal
-          technicalMembers={technicalMembers}
+          assignableMembers={assignableMembers}
           allMembers={users}
           availableCustomers={availableCustomers}
           onClose={() => setShowAssignForm(false)}

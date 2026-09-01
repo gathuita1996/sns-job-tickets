@@ -58,7 +58,7 @@ export default function ProfileFormModal({ profile, isSelf, onClose, onSave }) {
           <FormField label="Title (optional)" hint="e.g. Director, Operations Manager.">
             <input className="sns-input" value={form.title} onChange={(e) => update('title', e.target.value)} placeholder="Director" />
           </FormField>
-          <div className="flex gap-3" style={{ paddingTop: '0.4rem' }}>
+          <div className="flex gap-3" style={{ paddingTop: '0.4rem', marginBottom: '2rem' }}>
             <button type="button" onClick={onClose} className="sns-btn-secondary" style={{ flex: 1 }}>Cancel</button>
             <button type="submit" disabled={submitting} className="sns-btn-primary" style={{ flex: 1 }}>{submitting ? 'Saving…' : 'Save changes'}</button>
           </div>

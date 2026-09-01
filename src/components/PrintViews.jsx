@@ -57,7 +57,7 @@ export function JobPrintView({ job, filedByUser, assignedByUser, onBack }) {
           </p>
         )}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
-          <div><div style={{ borderBottom: '1px solid var(--ink-faint)', height: 36 }} /><p className="sns-eyebrow sns-text-faint" style={{ marginTop: 4 }}>Technician Signature</p></div>
+          <div><div style={{ borderBottom: '1px solid var(--ink-faint)', height: 36 }} /><p className="sns-eyebrow sns-text-faint" style={{ marginTop: 4 }}>Field Team Signature</p></div>
           <div><div style={{ borderBottom: '1px solid var(--ink-faint)', height: 36 }} /><p className="sns-eyebrow sns-text-faint" style={{ marginTop: 4 }}>Client Signature</p></div>
         </div>
       </div>

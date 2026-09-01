@@ -235,7 +235,7 @@ export default function App() {
     await refreshJobs()
   }
 
-  // Admin creating a brand-new job and handing it to a technician (a
+  // Admin creating a brand-new job and handing it to a Technical or Sales &
   // reported or raised issue), rather than a member filing their own.
   async function handleAssignJob(formData) {
     const { error } = await supabase.from('jobs').insert({
@@ -251,7 +251,7 @@ export default function App() {
   }
 
   // For a job a member filed themselves (or that was auto-created from a
-  // customer's desired date) — admin can hand it to a technician, but
+  // customer's desired date) — admin can hand it to someone else, but
   // can't touch any of its other details.
   // Note: reassigning a self-filed job (the "reassignOnly" flow in
   // JobFormModal) goes through handleUpdateJob below, not a separate

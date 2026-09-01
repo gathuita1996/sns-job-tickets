@@ -78,7 +78,7 @@ export default function CustomerFormModal({ initialCustomer, onClose, onSave }) 
           <FormField label="Notes" hint="Optional — how you met them, best time to reach them, anything useful for follow-up.">
             <textarea className="sns-input" rows={3} value={form.notes} onChange={(e) => update('notes', e.target.value)} placeholder="Optional notes…" />
           </FormField>
-          <div className="flex gap-3" style={{ paddingTop: '0.4rem' }}>
+          <div className="flex gap-3" style={{ paddingTop: '0.4rem', marginBottom: '2rem' }}>
             <button type="button" onClick={onClose} className="sns-btn-secondary" style={{ flex: 1 }}>Cancel</button>
             <button type="submit" disabled={submitting} className="sns-btn-primary" style={{ flex: 1 }}>{submitting ? 'Saving…' : (initialCustomer ? 'Save changes' : 'Record customer')}</button>
           </div>

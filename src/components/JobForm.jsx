@@ -13,19 +13,29 @@ function resolveTransportField(storedValue) {
   return { selected: 'Other', other: storedValue }
 }
 
-// technicalMembers is only passed when an admin opens this form (to assign
-// or reassign a job to a technician) -- its presence switches on admin mode.
-// reassignOnly further restricts that: used when the job was filed by a
-// member directly (not originally admin-assigned) -- admin can hand it to
-// a technician, but can't touch any of its other details.
+// Same idea for the job's own Location/site field, using the site list
+// instead of the transport list.
+function resolveLocationField(storedValue) {
+  if (!storedValue) return { selected: '', other: '' }
+  if (LOCATIONS.includes(storedValue)) return { selected: storedValue, other: '' }
+  return { selected: 'Other', other: storedValue }
+}
+
+// assignableMembers is only passed when an admin opens this form (to assign
+// or reassign a job to a Technical or Sales & Marketing member) -- its
+// presence switches on admin mode. reassignOnly further restricts that:
+// used when the job was filed by a member directly (not originally
+// admin-assigned) -- admin can hand it to someone else, but can't touch
+// any of its other details.
 // allMembers (everyone, any department) powers the "raised by" field.
 // availableCustomers is the not-yet-installed leads a member filing a New
 // Installation can pick from, to link the job back to that customer record.
-export default function JobFormModal({ initialJob, technicalMembers, allMembers, availableCustomers, filerDepartment, reassignOnly, onClose, onSave }) {
-  const adminMode = Boolean(technicalMembers)
+export default function JobFormModal({ initialJob, assignableMembers, allMembers, availableCustomers, filerDepartment, reassignOnly, onClose, onSave }) {
+  const adminMode = Boolean(assignableMembers)
   const isNewAdminAssignment = adminMode && !initialJob
   const editingOverdue = Boolean(initialJob) && isOverdue(initialJob)
   const fromResolved = initialJob ? resolveTransportField(initialJob.transportFrom) : null
+  const locationResolved = initialJob ? resolveLocationField(initialJob.location) : null
   // A job's trip can cover several stops now (Office -> A -> B -> ...), so
   // transportTo is an array -- resolve each stop the same way a single one
   // used to be resolved.
@@ -40,7 +50,8 @@ export default function JobFormModal({ initialJob, technicalMembers, allMembers,
   const requestedByOptional = !adminMode && filerDepartment === 'sales'
 
   const [form, setForm] = useState(initialJob ? {
-    jobType: initialJob.jobType, jobTypeOther: initialJob.jobTypeOther || '', location: initialJob.location,
+    jobType: initialJob.jobType, jobTypeOther: initialJob.jobTypeOther || '',
+    location: locationResolved.selected, locationOther: locationResolved.other,
     requestedBy: initialJob.requestedBy, requesterContact: initialJob.requesterContact || '',
     visitDate: initialJob.visitDate,
     transportFrom: fromResolved.selected, transportFromOther: fromResolved.other,
@@ -101,6 +112,7 @@ export default function JobFormModal({ initialJob, technicalMembers, allMembers,
     if (!form.jobType) e.jobType = 'Please select a job type'
     if (form.jobType === 'Other' && !form.jobTypeOther.trim()) e.jobTypeOther = 'Please describe the job type'
     if (!form.location) e.location = 'Please select a location'
+    else if (form.location === 'Other' && !form.locationOther.trim()) e.locationOther = 'Please describe the location'
     if (!requestedByOptional && !form.requestedBy.trim()) e.requestedBy = 'Required'
     if (!form.visitDate) e.visitDate = 'Required'
     else if (!adminMode && form.visitDate > toDateInputValue(new Date())) e.visitDate = "You can't file a job for a future date — please choose today or an earlier date."
@@ -132,6 +144,7 @@ export default function JobFormModal({ initialJob, technicalMembers, allMembers,
     setSubmitting(true)
     await onSave({
       ...form,
+      location: form.location === 'Other' ? form.locationOther.trim() : form.location,
       transportFrom: form.transportFrom === 'Other' ? form.transportFromOther.trim() : form.transportFrom,
       transportTo: form.transportStops.map((stop) => (stop.selected === 'Other' ? stop.other.trim() : stop.selected)),
       transportAmount: form.transportAmount === '' ? 0 : Number(form.transportAmount),
@@ -162,13 +175,13 @@ export default function JobFormModal({ initialJob, technicalMembers, allMembers,
                 <p className="sns-text-soft" style={{ fontSize: '0.82rem' }}>{initialJob.location} · {formatDate(initialJob.visitDate)} · {formatKSh(initialJob.transportAmount)}</p>
                 {initialJob.notes && <p className="sns-text-soft" style={{ fontSize: '0.82rem', marginTop: '0.4rem' }}>{initialJob.notes}</p>}
               </div>
-              <FormField label="Reassign to" error={errors.assignedTo} hint="Only Technical department members can be assigned a job.">
+              <FormField label="Reassign to" error={errors.assignedTo} hint="Technical and Sales & Marketing members can be assigned a job (e.g. site visits).">
                 <select className={assigneeCls} value={form.assignedTo} onChange={(e) => update('assignedTo', e.target.value)}>
-                  <option value="" disabled>select-technician</option>
-                  {technicalMembers.map((m) => <option key={m.id} value={m.id}>{m.fullName}</option>)}
+                  <option value="" disabled>select-member</option>
+                  {assignableMembers.map((m) => <option key={m.id} value={m.id}>{m.fullName}</option>)}
                 </select>
               </FormField>
-              <div className="flex gap-3" style={{ paddingTop: '0.4rem' }}>
+              <div className="flex gap-3" style={{ paddingTop: '0.4rem', marginBottom: '2rem' }}>
                 <button type="button" onClick={onClose} className="sns-btn-secondary" style={{ flex: 1 }}>Cancel</button>
                 <button type="submit" disabled={submitting} className="sns-btn-primary" style={{ flex: 1 }}>{submitting ? 'Saving…' : 'Reassign'}</button>
               </div>
@@ -181,10 +194,10 @@ export default function JobFormModal({ initialJob, technicalMembers, allMembers,
 
           {adminMode && (
             <>
-              <FormField label="Assign to" error={errors.assignedTo} hint="Only Technical department members can be assigned a job.">
+              <FormField label="Assign to" error={errors.assignedTo} hint="Technical and Sales & Marketing members can be assigned a job (e.g. site visits).">
                 <select className={assigneeCls} value={form.assignedTo} onChange={(e) => update('assignedTo', e.target.value)}>
-                  <option value="" disabled>select-technician</option>
-                  {technicalMembers.map((m) => <option key={m.id} value={m.id}>{m.fullName}</option>)}
+                  <option value="" disabled>select-member</option>
+                  {assignableMembers.map((m) => <option key={m.id} value={m.id}>{m.fullName}</option>)}
                 </select>
               </FormField>
               <FormField label="Raised by (optional)" hint="Which team member reported or flagged this, if applicable.">
@@ -222,8 +235,15 @@ export default function JobFormModal({ initialJob, technicalMembers, allMembers,
             <select className={locationCls} value={form.location} onChange={(e) => update('location', e.target.value)}>
               <option value="" disabled>select-location/site</option>
               {LOCATIONS.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
+              <option value="Other">Other</option>
             </select>
           </FormField>
+
+          {form.location === 'Other' && (
+            <FormField label="Describe the location" error={errors.locationOther}>
+              <input className="sns-input" value={form.locationOther} onChange={(e) => update('locationOther', e.target.value)} placeholder="Where was this job?" />
+            </FormField>
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <FormField label="Requested by" error={errors.requestedBy}>
@@ -323,8 +343,8 @@ export default function JobFormModal({ initialJob, technicalMembers, allMembers,
             </select>
           </FormField>
 
-          <FormField label={adminMode ? 'Job details (guidance for the technician)' : 'Job details'} error={errors.notes} hint={adminMode ? 'Include everything the technician needs to handle this in the field — what was reported, by whom, and any relevant history.' : undefined}>
-            <textarea className="sns-input" rows={adminMode ? 4 : 3} value={form.notes} onChange={(e) => update('notes', e.target.value)} placeholder={adminMode ? 'What was reported, and what does the technician need to know?' : 'Describe the issue and the work carried out…'} />
+          <FormField label={adminMode ? 'Job details (guidance for the assigned member)' : 'Job details'} error={errors.notes} hint={adminMode ? 'Include everything they need to handle this in the field — what was reported, by whom, and any relevant history.' : undefined}>
+            <textarea className="sns-input" rows={adminMode ? 4 : 3} value={form.notes} onChange={(e) => update('notes', e.target.value)} placeholder={adminMode ? 'What was reported, and what do they need to know?' : 'Describe the issue and the work carried out…'} />
           </FormField>
 
           {editingOverdue && (
@@ -333,7 +353,7 @@ export default function JobFormModal({ initialJob, technicalMembers, allMembers,
             </FormField>
           )}
 
-          <div className="flex gap-3" style={{ paddingTop: '0.4rem' }}>
+          <div className="flex gap-3" style={{ paddingTop: '0.4rem', marginBottom: '2rem' }}>
             <button type="button" onClick={onClose} className="sns-btn-secondary" style={{ flex: 1 }}>Cancel</button>
             <button type="submit" disabled={submitting} className="sns-btn-primary" style={{ flex: 1 }}>{submitting ? 'Saving…' : (initialJob ? 'Save changes' : (adminMode ? 'Assign job' : 'File job card'))}</button>
           </div>
