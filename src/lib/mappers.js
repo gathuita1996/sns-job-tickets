@@ -90,3 +90,34 @@ export function jobToDbFields(data) {
     customer_id: data.customerId || null,
   }
 }
+
+export function mapComplaint(row) {
+  return {
+    id: row.id,
+    complainantName: row.complainant_name,
+    location: row.location,
+    contact: row.contact,
+    complaintType: row.complaint_type,
+    complaintTypeOther: row.complaint_type_other || '',
+    details: row.details,
+    isRecurring: row.is_recurring,
+    status: row.status,
+    resolutionNotes: row.resolution_notes || '',
+    raisedBy: row.raised_by,
+    resolvedBy: row.resolved_by || null,
+    resolvedAt: row.resolved_at || null,
+    createdAt: row.created_at,
+  }
+}
+
+export function complaintToDbFields(data) {
+  return {
+    complainant_name: data.complainantName,
+    location: data.location,
+    contact: data.contact,
+    complaint_type: data.complaintType,
+    complaint_type_other: data.complaintType === 'Other' ? (data.complaintTypeOther || null) : null,
+    details: data.details,
+    is_recurring: Boolean(data.isRecurring),
+  }
+}

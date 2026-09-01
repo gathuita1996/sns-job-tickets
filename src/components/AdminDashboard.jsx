@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, Award, Check, CheckCircle2, Clipboard, Copy, Eye, EyeOff, Pencil, Printer, Trash2, UserPlus, Users, Wallet, X } from 'lucide-react'
+import { AlertCircle, AlertTriangle, Award, Check, CheckCircle2, Clipboard, Copy, Eye, EyeOff, Pencil, Printer, Trash2, UserPlus, Users, Wallet, X } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import Header from './Header'
 import JobFormModal from './JobForm'
@@ -7,10 +7,11 @@ import { JobPrintView, BatchPrintView, CustomerPrintView } from './PrintViews'
 import ProfileFormModal from './ProfileForm'
 import JobsTable from './JobsTable'
 import TeamList from './TeamList'
+import ComplaintsQueue from './ComplaintsQueue'
 import { ConfirmDialog, EmptyState, FormField, PeriodSelector, SearchInput, StatCard, StatusBadge, StatusFilterSelect } from './shared'
 import { JOB_TYPES, PRIORITY_OPTIONS, CHART_COLORS, COMMISSION_DEPARTMENTS, departmentLabel, formatKSh, formatDate, formatDateTime, isOverdue, isInPeriod, getPeriodRange, isInRange } from '../lib/helpers'
 
-export default function AdminDashboard({ currentUser, users, jobs, customers, onLogout, onUpdateJob, onDeleteJob, onAssignJob, onPromote, onUpdateDepartment, onUpdateProfile, accessCode, onUpdateAccessCode, commissionRate, onUpdateCommissionRate, onClearCommission, onDeleteCustomer }) {
+export default function AdminDashboard({ currentUser, users, jobs, customers, complaints, onLogout, onUpdateJob, onDeleteJob, onAssignJob, onPromote, onUpdateDepartment, onUpdateProfile, accessCode, onUpdateAccessCode, commissionRate, onUpdateCommissionRate, onClearCommission, onDeleteCustomer, onUpdateComplaintStatus, onResolveComplaint }) {
   const [tab, setTab] = useState('overview')
   const [periodGranularity, setPeriodGranularity] = useState('day')
   const [periodAnchor, setPeriodAnchor] = useState(() => new Date())
@@ -134,6 +135,9 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, on
           <button className={`sns-tab ${tab === 'team' ? 'active' : ''}`} onClick={() => setTab('team')}>Team</button>
           <button className={`sns-tab ${tab === 'commissions' ? 'active' : ''}`} onClick={() => setTab('commissions')}>Commissions</button>
           <button className={`sns-tab ${tab === 'customers' ? 'active' : ''}`} onClick={() => setTab('customers')}>Customers</button>
+          <button className={`sns-tab ${tab === 'complaints' ? 'active' : ''}`} onClick={() => setTab('complaints')}>
+            Complaints{(complaints || []).filter((c) => c.status !== 'Resolved').length > 0 && <span className="sns-badge sns-badge-overdue" style={{ marginLeft: '0.4rem' }}>{(complaints || []).filter((c) => c.status !== 'Resolved').length}</span>}
+          </button>
           <button className={`sns-tab ${tab === 'settings' ? 'active' : ''}`} onClick={() => setTab('settings')}>Settings</button>
         </div>
 
@@ -314,6 +318,15 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, on
               </div>
             )}
           </div>
+        )}
+
+        {tab === 'complaints' && (
+          <ComplaintsQueue
+            complaints={complaints || []}
+            userMap={userMap}
+            onUpdateStatus={onUpdateComplaintStatus}
+            onResolve={onResolveComplaint}
+          />
         )}
 
         {tab === 'settings' && (

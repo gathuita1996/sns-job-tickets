@@ -1,15 +1,17 @@
 import { useMemo, useState } from 'react'
-import { AlertCircle, ArrowLeft, Calendar, CheckCircle2, ClipboardCheck, Clipboard, Clock, Pencil, Plus, Trash2, UserPlus, Users, Wallet } from 'lucide-react'
+import { AlertCircle, AlertTriangle, ArrowLeft, Calendar, CheckCircle2, ClipboardCheck, Clipboard, Clock, Pencil, Plus, Trash2, UserPlus, Users, Wallet } from 'lucide-react'
 import Header from './Header'
 import JobFormModal from './JobForm'
 import JobsTable from './JobsTable'
 import CustomerFormModal from './CustomerForm'
+import ComplaintFormModal from './ComplaintForm'
+import ComplaintsQueue from './ComplaintsQueue'
 import { JobPrintView } from './PrintViews'
 import { ConfirmDialog, EmptyState, NavCard, PeriodSelector, SearchInput, StatCard, StatusFilterSelect } from './shared'
 import { formatKSh, formatDate, isOverdue, isInPeriod, getPeriodRange, isInRange, COMMISSION_DEPARTMENTS } from '../lib/helpers'
 
-export default function MemberDashboard({ currentUser, jobs, customers, customerIdsWithJobs, onLogout, onAddJob, onUpdateJob, onDeleteJob, onAddCustomer, onUpdateCustomer, onDeleteCustomer, onUpdateProfile, commissionRate }) {
-  const [view, setView] = useState('home') // 'home' | 'all' | 'pending' | 'today' | 'assigned' | 'customers'
+export default function MemberDashboard({ currentUser, jobs, customers, customerIdsWithJobs, complaints, memberNames, onLogout, onAddJob, onUpdateJob, onDeleteJob, onAddCustomer, onUpdateCustomer, onDeleteCustomer, onUpdateProfile, onAddComplaint, onUpdateComplaintStatus, onResolveComplaint, commissionRate }) {
+  const [view, setView] = useState('home') // 'home' | 'all' | 'pending' | 'today' | 'assigned' | 'customers' | 'complaints'
   const [periodGranularity, setPeriodGranularity] = useState('day')
   const [periodAnchor, setPeriodAnchor] = useState(() => new Date())
   const [showForm, setShowForm] = useState(false)
@@ -17,12 +19,15 @@ export default function MemberDashboard({ currentUser, jobs, customers, customer
   const [showCustomerForm, setShowCustomerForm] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState(null)
   const [confirmDeleteCustomer, setConfirmDeleteCustomer] = useState(null)
+  const [showComplaintForm, setShowComplaintForm] = useState(false)
   const [printing, setPrinting] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
 
   const isSales = currentUser.department === 'sales'
+  const isTechnical = currentUser.department === 'technical'
+  const canReportComplaint = isSales || isTechnical
 
   // jobs here is already scoped to this member (App.jsx filters it), so
   // "assigned" just means someone else (an admin) put it there.
@@ -57,10 +62,11 @@ export default function MemberDashboard({ currentUser, jobs, customers, customer
   }, [view, jobs, pendingJobs, todayJobs, assignedJobs, search, statusFilter])
 
   const sortedMyCustomers = useMemo(() => [...myCustomers].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)), [myCustomers])
+  const activeComplaints = useMemo(() => (complaints || []).filter((c) => c.status !== 'Resolved'), [complaints])
 
   if (printing) return <JobPrintView job={printing} filedByUser={currentUser} onBack={() => setPrinting(null)} />
 
-  const viewTitles = { all: 'All my jobs', pending: 'Pending jobs', today: "Today's jobs", assigned: 'Jobs assigned to me', customers: 'My customers' }
+  const viewTitles = { all: 'All my jobs', pending: 'Pending jobs', today: "Today's jobs", assigned: 'Jobs assigned to me', customers: 'My customers', complaints: 'Complaints queue' }
 
   function openNewJob() { setEditingJob(null); setShowForm(true) }
 
@@ -100,6 +106,12 @@ export default function MemberDashboard({ currentUser, jobs, customers, customer
               <NavCard icon={UserPlus} label="Record new customer" description={COMMISSION_DEPARTMENTS.includes(currentUser.department) ? `Earn KSh ${commissionRate} commission` : 'Log a lead for follow-up'} onClick={() => setShowCustomerForm(true)} />
               {isSales && (
                 <NavCard icon={Users} label="My customers" description={`${myCustomers.length} recorded`} onClick={() => setView('customers')} />
+              )}
+              {canReportComplaint && (
+                <NavCard icon={AlertTriangle} label="Report a complaint" description="Log a customer issue" onClick={() => setShowComplaintForm(true)} />
+              )}
+              {isTechnical && (
+                <NavCard icon={AlertTriangle} label="Complaints" description={`${activeComplaints.length} active`} onClick={() => setView('complaints')} badge={activeComplaints.filter((c) => c.isRecurring).length} />
               )}
             </div>
           </>
@@ -146,6 +158,19 @@ export default function MemberDashboard({ currentUser, jobs, customers, customer
                 </div>
               </div>
             )}
+          </>
+        ) : view === 'complaints' ? (
+          <>
+            <div className="flex items-center gap-3" style={{ marginBottom: '1rem' }}>
+              <button onClick={() => setView('home')} className="sns-btn-secondary" style={{ padding: '0.5rem' }} title="Back to dashboard"><ArrowLeft size={16} /></button>
+              <h2 className="sns-display" style={{ fontSize: '1.1rem', fontWeight: 700 }}>Complaints queue</h2>
+            </div>
+            <ComplaintsQueue
+              complaints={complaints || []}
+              userMap={memberNames}
+              onUpdateStatus={onUpdateComplaintStatus}
+              onResolve={onResolveComplaint}
+            />
           </>
         ) : (
           <>
@@ -197,6 +222,12 @@ export default function MemberDashboard({ currentUser, jobs, customers, customer
             else await onAddCustomer(data)
             setShowCustomerForm(false); setEditingCustomer(null)
           }}
+        />
+      )}
+      {showComplaintForm && (
+        <ComplaintFormModal
+          onClose={() => setShowComplaintForm(false)}
+          onSave={async (data) => { await onAddComplaint(data); setShowComplaintForm(false) }}
         />
       )}
       {confirmDeleteCustomer && (

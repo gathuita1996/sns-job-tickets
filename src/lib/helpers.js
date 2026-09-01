@@ -52,6 +52,23 @@ export function departmentLabel(key) {
 // rather than importing across the two separate projects.
 export const PACKAGES = ['Swahili 10 Unlimited', 'Swahili 15 Unlimited', 'Swahili 20 Unlimited', 'Not sure yet']
 
+// Covers the realistic range of what an ISP actually hears from customers --
+// spans both technical issues (service down, speed, equipment) and
+// non-technical ones (billing, delays, conduct), since both departments can
+// raise a complaint.
+export const COMPLAINT_TYPES = [
+  'No Internet / Service Down',
+  'Slow Internet / Speed Issue',
+  'Intermittent Connection',
+  'Billing / Payment Issue',
+  'Installation Delay',
+  'Equipment Fault',
+  'Staff Conduct',
+  'Other',
+]
+
+export const COMPLAINT_STATUSES = ['New', 'In Progress', 'Resolved']
+
 // Commission rate itself now lives in app_settings.commission_per_customer
 // (admin-editable from Settings) rather than being hardcoded here.
 // Departments whose members earn a commission for recording a new customer.
@@ -100,6 +117,18 @@ export function defaultCustomerForm() {
     interestedPackage: PACKAGES[0],
     notes: '',
     desiredDate: '',
+  }
+}
+
+export function defaultComplaintForm() {
+  return {
+    complainantName: '',
+    location: '',
+    contact: '',
+    complaintType: '',
+    complaintTypeOther: '',
+    details: '',
+    isRecurring: false,
   }
 }
 

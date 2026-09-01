@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from './lib/supabaseClient'
-import { mapProfile, mapJob, jobToDbFields, mapCustomer, customerToDbFields } from './lib/mappers'
+import { mapProfile, mapJob, jobToDbFields, mapCustomer, customerToDbFields, mapComplaint, complaintToDbFields } from './lib/mappers'
 import { COMMISSION_DEPARTMENTS } from './lib/helpers'
 import { LoadingScreen, Toast } from './components/shared'
 import { LoginView, SignupView, ForgotPasswordView, ResetPasswordView } from './components/Auth'
@@ -13,6 +13,8 @@ export default function App() {
   const [jobs, setJobs] = useState([])
   const [customers, setCustomers] = useState([])
   const [customerIdsWithJobs, setCustomerIdsWithJobs] = useState(new Set())
+  const [complaints, setComplaints] = useState([])
+  const [memberNames, setMemberNames] = useState({})
   const [allUsers, setAllUsers] = useState([])
   const [accessCode, setAccessCode] = useState('')
   const [commissionRate, setCommissionRate] = useState(500)
@@ -47,7 +49,25 @@ export default function App() {
     } else {
       await refreshCommissionRate()
     }
+    if (profile.role === 'admin' || profile.department === 'technical') {
+      await refreshComplaints()
+      if (profile.role !== 'admin') await refreshMemberNames()
+    }
     setBooting(false)
+  }
+
+  async function refreshComplaints() {
+    const { data, error } = await supabase.from('complaints').select('*')
+    if (error) return
+    setComplaints((data || []).map(mapComplaint))
+  }
+
+  async function refreshMemberNames() {
+    const { data, error } = await supabase.rpc('member_names')
+    if (error) return
+    const map = {}
+    ;(data || []).forEach((row) => { map[row.id] = { fullName: row.full_name } })
+    setMemberNames(map)
   }
 
   async function refreshCommissionRate() {
@@ -307,6 +327,35 @@ export default function App() {
     await refreshCustomers()
   }
 
+  async function handleAddComplaint(formData) {
+    const { error } = await supabase.from('complaints').insert({ ...complaintToDbFields(formData), raised_by: currentUserRef.current.id })
+    if (error) { showToast('Failed to save complaint.', 'error'); return }
+    showToast('Complaint reported.')
+    // Only admins and Technical members can actually see the queue -- for
+    // everyone else (Sales raising one) there's nothing to refresh.
+    if (currentUserRef.current.role === 'admin' || currentUserRef.current.department === 'technical') {
+      await refreshComplaints()
+    }
+  }
+
+  async function handleUpdateComplaintStatus(complaint, status) {
+    const { error } = await supabase.from('complaints').update({ status }).eq('id', complaint.id)
+    if (error) { showToast('Failed to update complaint.', 'error'); return }
+    await refreshComplaints()
+  }
+
+  async function handleResolveComplaint(complaint, resolutionNotes) {
+    const { error } = await supabase.from('complaints').update({
+      status: 'Resolved',
+      resolution_notes: resolutionNotes.trim() || null,
+      resolved_by: currentUserRef.current.id,
+      resolved_at: new Date().toISOString(),
+    }).eq('id', complaint.id)
+    if (error) { showToast('Failed to resolve complaint.', 'error'); return }
+    showToast('Complaint resolved.')
+    await refreshComplaints()
+  }
+
   async function handleUpdateJob(id, formData) {
     // Reassign-only sends just { assignedTo } — nothing else about the job
     // changed, so don't run it through the full field mapper (which would
@@ -390,7 +439,7 @@ export default function App() {
   return (<>
     {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     {currentUser.role === 'admin'
-      ? <AdminDashboard currentUser={currentUser} users={allUsers} jobs={jobs} customers={customers} onLogout={handleLogout} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAssignJob={handleAssignJob} onPromote={handlePromote} onUpdateDepartment={handleUpdateDepartment} onUpdateProfile={handleUpdateProfile} accessCode={accessCode} onUpdateAccessCode={handleUpdateAccessCode} commissionRate={commissionRate} onUpdateCommissionRate={handleUpdateCommissionRate} onClearCommission={handleClearCommission} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} />
-      : <MemberDashboard currentUser={currentUser} jobs={jobs.filter((j) => j.memberId === currentUser.id)} customers={customers} customerIdsWithJobs={customerIdsWithJobs} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAddCustomer={handleAddCustomer} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onUpdateProfile={handleUpdateProfile} commissionRate={commissionRate} />}
+      ? <AdminDashboard currentUser={currentUser} users={allUsers} jobs={jobs} customers={customers} complaints={complaints} onLogout={handleLogout} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAssignJob={handleAssignJob} onPromote={handlePromote} onUpdateDepartment={handleUpdateDepartment} onUpdateProfile={handleUpdateProfile} accessCode={accessCode} onUpdateAccessCode={handleUpdateAccessCode} commissionRate={commissionRate} onUpdateCommissionRate={handleUpdateCommissionRate} onClearCommission={handleClearCommission} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onUpdateComplaintStatus={handleUpdateComplaintStatus} onResolveComplaint={handleResolveComplaint} />
+      : <MemberDashboard currentUser={currentUser} jobs={jobs.filter((j) => j.memberId === currentUser.id)} customers={customers} customerIdsWithJobs={customerIdsWithJobs} complaints={complaints} memberNames={memberNames} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAddCustomer={handleAddCustomer} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onUpdateProfile={handleUpdateProfile} onAddComplaint={handleAddComplaint} onUpdateComplaintStatus={handleUpdateComplaintStatus} onResolveComplaint={handleResolveComplaint} commissionRate={commissionRate} />}
   </>)
 }
