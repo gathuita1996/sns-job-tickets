@@ -25,7 +25,7 @@ export default function TeamList({ users, jobs, onPromote, onUpdateDepartment, o
       </div>
       <div className="sns-card">
         {users.map((m, i) => {
-          const allTimeCount = jobs.filter((j) => j.memberId === m.id).length
+          const allTimeCount = jobs.filter((j) => j.memberId === m.id || (j.coTechnicians || []).includes(m.id)).length
           const memberPeriodJobs = periodJobs.filter((j) => j.memberId === m.id)
           const periodTransport = memberPeriodJobs.reduce((s, j) => s + (Number(j.transportAmount) || 0), 0)
           const expanded = expandedId === m.id
@@ -48,7 +48,7 @@ export default function TeamList({ users, jobs, onPromote, onUpdateDepartment, o
                 <div className="flex items-center gap-3" style={{ flexWrap: 'wrap' }}>
                   <div style={{ textAlign: 'right' }}>
                     <p className="sns-mono" style={{ fontWeight: 700, fontSize: '0.95rem' }}>{allTimeCount}</p>
-                    <p className="sns-eyebrow sns-text-faint">jobs filed</p>
+                    <p className="sns-eyebrow sns-text-faint">jobs worked</p>
                   </div>
                   <button
                     onClick={() => setExpandedId(expanded ? null : m.id)}

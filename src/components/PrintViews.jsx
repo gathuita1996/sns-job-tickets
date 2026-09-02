@@ -12,7 +12,7 @@ function PrintField({ label, value, full }) {
   )
 }
 
-export function JobPrintView({ job, filedByUser, assignedByUser, onBack }) {
+export function JobPrintView({ job, filedByUser, assignedByUser, coTechnicianNames, onBack }) {
   return (
     <div className="sns-shell print-page" style={{ padding: '2rem 1rem' }}>
       <div className="no-print flex justify-between mx-auto" style={{ maxWidth: '38rem', marginBottom: '1rem' }}>
@@ -42,6 +42,9 @@ export function JobPrintView({ job, filedByUser, assignedByUser, onBack }) {
           <PrintField label="Location / Site" value={job.location} />
           <PrintField label="Requested By" value={job.requestedBy || 'General field visit'} />
           <PrintField label="Requester Contact" value={job.requesterContact || '—'} />
+          {coTechnicianNames && coTechnicianNames.length > 0 && (
+            <PrintField label="Also Attended By" value={coTechnicianNames.join(', ')} />
+          )}
           <PrintField label="Date of Visit" value={formatDate(job.visitDate)} />
           <PrintField label="Transport Route" value={[job.transportFrom || '—', ...(job.transportTo && job.transportTo.length ? job.transportTo : ['—'])].join(' → ')} />
           <PrintField label="Transport Amount" value={formatKSh(job.transportAmount)} />

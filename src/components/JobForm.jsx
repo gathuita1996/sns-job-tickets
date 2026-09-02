@@ -34,7 +34,7 @@ function resolveLocationField(storedValue) {
 // details of a customer this job is ALREADY linked to (they won't be in
 // availableCustomers anymore once linked, but the technician working the
 // job still needs to see what that customer actually wanted).
-export default function JobFormModal({ initialJob, assignableMembers, allMembers, availableCustomers, allCustomers, filerDepartment, reassignOnly, onClose, onSave }) {
+export default function JobFormModal({ initialJob, assignableMembers, allMembers, availableCustomers, allCustomers, filerDepartment, currentUserId, reassignOnly, onClose, onSave }) {
   const adminMode = Boolean(assignableMembers)
   const isNewAdminAssignment = adminMode && !initialJob
   const editingOverdue = Boolean(initialJob) && isOverdue(initialJob)
@@ -63,7 +63,8 @@ export default function JobFormModal({ initialJob, assignableMembers, allMembers
     transportAmount: initialJob.transportAmount, status: initialJob.status,
     priority: initialJob.priority || 'Normal', notes: initialJob.notes || '', overdueReason: initialJob.overdueReason || '',
     assignedTo: initialJob.memberId || '', raisedBy: initialJob.raisedBy || '', customerId: initialJob.customerId || null,
-  } : { ...defaultJobForm(), status: adminMode ? 'Pending' : '', assignedTo: '', raisedBy: '', customerId: null })
+    coTechnicians: initialJob.coTechnicians || [],
+  } : { ...defaultJobForm(), status: adminMode ? 'Pending' : '', assignedTo: '', raisedBy: '', customerId: null, coTechnicians: [] })
   const [errors, setErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
 
@@ -92,6 +93,22 @@ export default function JobFormModal({ initialJob, assignableMembers, allMembers
   function addStop() {
     setForm((f) => ({ ...f, transportStops: [...f.transportStops, { selected: '', other: '' }] }))
   }
+
+  function toggleCoTechnician(memberId) {
+    setForm((f) => ({
+      ...f,
+      coTechnicians: f.coTechnicians.includes(memberId)
+        ? f.coTechnicians.filter((id) => id !== memberId)
+        : [...f.coTechnicians, memberId],
+    }))
+  }
+
+  // Who else could have attended alongside the primary person -- Technical
+  // members only (this is specifically "which other techs were on site"),
+  // excluding whoever is already the primary on this job so the list never
+  // offers to add someone to their own job.
+  const primaryId = adminMode ? form.assignedTo : currentUserId
+  const coTechnicianOptions = (allMembers || []).filter((m) => m.department === 'technical' && m.id !== primaryId)
 
   function removeStop(index) {
     setForm((f) => ({ ...f, transportStops: f.transportStops.filter((_, i) => i !== index) }))
@@ -266,6 +283,19 @@ export default function JobFormModal({ initialJob, assignableMembers, allMembers
             </FormField>
           )}
 
+          {coTechnicianOptions.length > 0 && (
+            <FormField label="Other technicians on this visit (optional)" hint="If this was a joint visit, note who else was there — it's still one job, but everyone who worked it gets credit.">
+              <div className="flex flex-col gap-2">
+                {coTechnicianOptions.map((m) => (
+                  <label key={m.id} className="flex items-center gap-2" style={{ fontSize: '0.85rem', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={form.coTechnicians.includes(m.id)} onChange={() => toggleCoTechnician(m.id)} />
+                    {m.fullName}
+                  </label>
+                ))}
+              </div>
+            </FormField>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <FormField label="Requested by" error={errors.requestedBy}>
               <input className="sns-input" value={form.requestedBy} onChange={(e) => update('requestedBy', e.target.value)} placeholder={requestedByOptional ? 'Client / contact name (optional)' : 'Client / contact name'} />
@@ -357,12 +387,14 @@ export default function JobFormModal({ initialJob, assignableMembers, allMembers
             </>
           )}
 
-          <FormField label="Status" error={errors.status}>
-            <select className={statusCls} value={form.status} onChange={(e) => update('status', e.target.value)}>
-              <option value="" disabled>select-status</option>
-              {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </FormField>
+          {!isNewAdminAssignment && (
+            <FormField label="Status" error={errors.status}>
+              <select className={statusCls} value={form.status} onChange={(e) => update('status', e.target.value)}>
+                <option value="" disabled>select-status</option>
+                {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </FormField>
+          )}
 
           <FormField label={adminMode ? 'Job details (guidance for the assigned member)' : 'Job details'} error={errors.notes} hint={adminMode ? 'Include everything they need to handle this in the field — what was reported, by whom, and any relevant history.' : undefined}>
             <textarea className="sns-input" rows={adminMode ? 4 : 3} value={form.notes} onChange={(e) => update('notes', e.target.value)} placeholder={adminMode ? 'What was reported, and what do they need to know?' : 'Describe the issue and the work carried out…'} />

@@ -75,20 +75,22 @@ function useCountUp(value, duration = 650) {
   return display
 }
 
-export function StatCard({ label, value, icon: Icon, masked, tone = 'default' }) {
+export function StatCard({ label, value, icon: Icon, masked, tone = 'default', onClick }) {
   const [revealed, setRevealed] = useState(false)
   const showValue = !masked || revealed
   const animatedValue = useCountUp(showValue ? value : null)
   function toggle() { setRevealed((r) => !r) }
+  const clickable = masked || Boolean(onClick)
+  function handleClick() { if (masked) toggle(); else if (onClick) onClick() }
   return (
     <div
       className="sns-card sns-stat-card"
-      style={{ padding: '1rem', cursor: masked ? 'pointer' : 'default', userSelect: masked ? 'none' : 'auto' }}
-      onClick={masked ? toggle : undefined}
-      onKeyDown={masked ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle() } } : undefined}
-      role={masked ? 'button' : undefined}
-      tabIndex={masked ? 0 : undefined}
-      title={masked ? (revealed ? 'Click to hide' : 'Click to reveal') : undefined}
+      style={{ padding: '1rem', cursor: clickable ? 'pointer' : 'default', userSelect: clickable ? 'none' : 'auto' }}
+      onClick={clickable ? handleClick : undefined}
+      onKeyDown={clickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleClick() } } : undefined}
+      role={clickable ? 'button' : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      title={masked ? (revealed ? 'Click to hide' : 'Click to reveal') : (onClick ? 'Click to view' : undefined)}
     >
       <div className="flex items-center justify-between" style={{ marginBottom: '0.6rem' }}>
         <div className="flex items-center gap-2">

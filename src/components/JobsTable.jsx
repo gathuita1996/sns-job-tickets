@@ -87,7 +87,10 @@ export default function JobsTable({ jobs, showFiledBy, userMap, onView, onEdit, 
                   <td className="sns-text-soft">{j.requestedBy || 'General field visit'}</td>
                   {showFiledBy && <td className="sns-text-soft">{userMap?.[j.memberId]?.fullName || '—'}</td>}
                   <td className="sns-mono">
-                    <div style={{ fontWeight: 600 }}>{formatKSh(j.transportAmount)}</div>
+                    <div className="flex items-center gap-1">
+                      <span style={{ fontWeight: 600 }}>{formatKSh(j.transportAmount)}</span>
+                      {j.transportPaidAt && <span className="sns-badge sns-badge-done" style={{ fontSize: '0.62rem', padding: '0.1rem 0.4rem' }}>Paid</span>}
+                    </div>
                     {(j.transportFrom || (j.transportTo && j.transportTo.length > 0)) && (
                       <div className="sns-text-faint" style={{ fontSize: '0.7rem', fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 500 }}>{[j.transportFrom || '—', ...(j.transportTo && j.transportTo.length ? j.transportTo : ['—'])].join(' → ')}</div>
                     )}

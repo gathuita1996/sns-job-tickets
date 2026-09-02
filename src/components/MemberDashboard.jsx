@@ -64,8 +64,12 @@ export default function MemberDashboard({ currentUser, jobs, raisedJobs, custome
 
   const sortedMyCustomers = useMemo(() => [...myCustomers].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)), [myCustomers])
   const activeComplaints = useMemo(() => (complaints || []).filter((c) => c.status !== 'Resolved'), [complaints])
+  // JobForm expects allMembers as a plain array (same shape admin already
+  // passes from `users`) -- memberNames comes in as an id-keyed object, so
+  // convert it once here rather than have JobForm handle two shapes.
+  const memberList = useMemo(() => Object.entries(memberNames || {}).map(([id, m]) => ({ id, fullName: m.fullName, department: m.department })), [memberNames])
 
-  if (printing) return <JobPrintView job={printing} filedByUser={currentUser} onBack={() => setPrinting(null)} />
+  if (printing) return <JobPrintView job={printing} filedByUser={currentUser} coTechnicianNames={(printing.coTechnicians || []).map((id) => memberNames?.[id]?.fullName).filter(Boolean)} onBack={() => setPrinting(null)} />
 
   const viewTitles = { all: 'All my jobs', pending: 'Pending jobs', today: "Today's jobs", assigned: 'Jobs assigned to me', raised: 'Jobs I raised', customers: 'My customers', complaints: 'Complaints queue' }
 
@@ -209,6 +213,8 @@ export default function MemberDashboard({ currentUser, jobs, raisedJobs, custome
           initialJob={editingJob}
           availableCustomers={availableCustomers}
           allCustomers={customers}
+          allMembers={memberList}
+          currentUserId={currentUser.id}
           filerDepartment={currentUser.department}
           onClose={() => { setShowForm(false); setEditingJob(null) }}
           onSave={async (data) => {

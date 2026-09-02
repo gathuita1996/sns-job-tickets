@@ -66,7 +66,7 @@ export default function App() {
     const { data, error } = await supabase.rpc('member_names')
     if (error) return
     const map = {}
-    ;(data || []).forEach((row) => { map[row.id] = { fullName: row.full_name } })
+    ;(data || []).forEach((row) => { map[row.id] = { fullName: row.full_name, department: row.department } })
     setMemberNames(map)
   }
 
@@ -357,6 +357,20 @@ export default function App() {
     await refreshComplaints()
   }
 
+  // Marks every one of a member's jobs within the given day range as paid
+  // in one go -- a batch update, not one job at a time, since that's how
+  // transport actually gets settled (the whole day's total, at once).
+  async function handleMarkTransportPaid(member, dayStart, dayEnd) {
+    const { error } = await supabase.from('jobs').update({ transport_paid_at: new Date().toISOString() })
+      .eq('member_id', member.id)
+      .is('transport_paid_at', null)
+      .gte('created_at', dayStart.toISOString())
+      .lt('created_at', dayEnd.toISOString())
+    if (error) { showToast('Failed to mark transport as paid.', 'error'); return }
+    showToast(`Marked ${member.fullName}'s transport as paid.`)
+    await refreshJobs()
+  }
+
   async function handleUpdateJob(id, formData) {
     // Reassign-only sends just { assignedTo } — nothing else about the job
     // changed, so don't run it through the full field mapper (which would
@@ -440,7 +454,7 @@ export default function App() {
   return (<>
     {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     {currentUser.role === 'admin'
-      ? <AdminDashboard currentUser={currentUser} users={allUsers} jobs={jobs} customers={customers} complaints={complaints} onLogout={handleLogout} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAssignJob={handleAssignJob} onPromote={handlePromote} onUpdateDepartment={handleUpdateDepartment} onUpdateProfile={handleUpdateProfile} accessCode={accessCode} onUpdateAccessCode={handleUpdateAccessCode} commissionRate={commissionRate} onUpdateCommissionRate={handleUpdateCommissionRate} onClearCommission={handleClearCommission} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onUpdateComplaintStatus={handleUpdateComplaintStatus} onResolveComplaint={handleResolveComplaint} />
+      ? <AdminDashboard currentUser={currentUser} users={allUsers} jobs={jobs} customers={customers} complaints={complaints} onLogout={handleLogout} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAssignJob={handleAssignJob} onPromote={handlePromote} onUpdateDepartment={handleUpdateDepartment} onUpdateProfile={handleUpdateProfile} accessCode={accessCode} onUpdateAccessCode={handleUpdateAccessCode} commissionRate={commissionRate} onUpdateCommissionRate={handleUpdateCommissionRate} onClearCommission={handleClearCommission} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onUpdateComplaintStatus={handleUpdateComplaintStatus} onResolveComplaint={handleResolveComplaint} onMarkTransportPaid={handleMarkTransportPaid} />
       : <MemberDashboard currentUser={currentUser} jobs={jobs.filter((j) => j.memberId === currentUser.id)} raisedJobs={jobs.filter((j) => j.raisedBy === currentUser.id && j.memberId !== currentUser.id)} customers={customers} customerIdsWithJobs={customerIdsWithJobs} complaints={complaints} memberNames={memberNames} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAddCustomer={handleAddCustomer} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onUpdateProfile={handleUpdateProfile} onAddComplaint={handleAddComplaint} onUpdateComplaintStatus={handleUpdateComplaintStatus} onResolveComplaint={handleResolveComplaint} commissionRate={commissionRate} />}
   </>)
 }

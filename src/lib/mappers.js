@@ -9,6 +9,7 @@ export function mapProfile(row) {
     username: row.username,
     fullName: row.full_name,
     contact: row.contact,
+    email: row.email || '',
     role: row.role,
     title: row.title || '',
     department: row.department || 'technical',
@@ -67,6 +68,8 @@ export function mapJob(row) {
     assignedBy: row.assigned_by || null,
     raisedBy: row.raised_by || null,
     customerId: row.customer_id || null,
+    coTechnicians: row.co_technicians || [],
+    transportPaidAt: row.transport_paid_at || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
@@ -88,6 +91,7 @@ export function jobToDbFields(data) {
     notes: data.notes || null,
     overdue_reason: data.overdueReason || null,
     customer_id: data.customerId || null,
+    co_technicians: data.coTechnicians && data.coTechnicians.length ? data.coTechnicians : null,
   }
 }
 

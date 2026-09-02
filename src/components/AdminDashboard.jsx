@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, AlertTriangle, Award, Check, CheckCircle2, Clipboard, Copy, Eye, EyeOff, Pencil, Printer, Trash2, UserPlus, Users, Wallet, X } from 'lucide-react'
+import { AlertCircle, AlertTriangle, Award, Check, CheckCircle2, Clipboard, Copy, Eye, EyeOff, Mail, MessageCircle, Pencil, Printer, Trash2, UserPlus, Users, Wallet, X } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import Header from './Header'
 import JobFormModal from './JobForm'
@@ -8,10 +8,11 @@ import ProfileFormModal from './ProfileForm'
 import JobsTable from './JobsTable'
 import TeamList from './TeamList'
 import ComplaintsQueue from './ComplaintsQueue'
+import TransportTab from './TransportTab'
 import { ConfirmDialog, EmptyState, FormField, PeriodSelector, SearchInput, StatCard, StatusBadge, StatusFilterSelect } from './shared'
-import { JOB_TYPES, PRIORITY_OPTIONS, CHART_COLORS, COMMISSION_DEPARTMENTS, departmentLabel, formatKSh, formatDate, formatDateTime, isOverdue, isInPeriod, getPeriodRange, isInRange } from '../lib/helpers'
+import { JOB_TYPES, PRIORITY_OPTIONS, CHART_COLORS, COMMISSION_DEPARTMENTS, departmentLabel, formatKSh, formatDate, formatDateTime, isOverdue, isInPeriod, getPeriodRange, isInRange, toWhatsAppNumber } from '../lib/helpers'
 
-export default function AdminDashboard({ currentUser, users, jobs, customers, complaints, onLogout, onUpdateJob, onDeleteJob, onAssignJob, onPromote, onUpdateDepartment, onUpdateProfile, accessCode, onUpdateAccessCode, commissionRate, onUpdateCommissionRate, onClearCommission, onDeleteCustomer, onUpdateComplaintStatus, onResolveComplaint }) {
+export default function AdminDashboard({ currentUser, users, jobs, customers, complaints, onLogout, onUpdateJob, onDeleteJob, onAssignJob, onPromote, onUpdateDepartment, onUpdateProfile, accessCode, onUpdateAccessCode, commissionRate, onUpdateCommissionRate, onClearCommission, onDeleteCustomer, onUpdateComplaintStatus, onResolveComplaint, onMarkTransportPaid }) {
   const [tab, setTab] = useState('overview')
   const [periodGranularity, setPeriodGranularity] = useState('day')
   const [periodAnchor, setPeriodAnchor] = useState(() => new Date())
@@ -25,6 +26,7 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
   const [printing, setPrinting] = useState(null)
   const [editingJob, setEditingJob] = useState(null)
   const [showAssignForm, setShowAssignForm] = useState(false)
+  const [justAssigned, setJustAssigned] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [viewingCustomer, setViewingCustomer] = useState(null)
   const [printingCustomer, setPrintingCustomer] = useState(null)
@@ -106,7 +108,7 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
     }
   }, [jobs, periodJobs, members, overdueJobs])
 
-  if (printing?.type === 'single') return <JobPrintView job={printing.job} filedByUser={userMap[printing.job.memberId]} assignedByUser={printing.job.assignedBy ? userMap[printing.job.assignedBy] : null} onBack={() => setPrinting(null)} />
+  if (printing?.type === 'single') return <JobPrintView job={printing.job} filedByUser={userMap[printing.job.memberId]} assignedByUser={printing.job.assignedBy ? userMap[printing.job.assignedBy] : null} coTechnicianNames={(printing.job.coTechnicians || []).map((id) => userMap[id]?.fullName).filter(Boolean)} onBack={() => setPrinting(null)} />
   if (printing?.type === 'batch') return <BatchPrintView jobs={printing.jobs} userMap={userMap} onBack={() => setPrinting(null)} generatedBy={currentUser} />
   if (printingCustomer) {
     const linkedJob = jobs.find((j) => j.customerId === printingCustomer.id)
@@ -134,6 +136,7 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
           <button className={`sns-tab ${tab === 'jobs' ? 'active' : ''}`} onClick={() => setTab('jobs')}>All Jobs</button>
           <button className={`sns-tab ${tab === 'team' ? 'active' : ''}`} onClick={() => setTab('team')}>Team</button>
           <button className={`sns-tab ${tab === 'commissions' ? 'active' : ''}`} onClick={() => setTab('commissions')}>Commissions</button>
+          <button className={`sns-tab ${tab === 'transport' ? 'active' : ''}`} onClick={() => setTab('transport')}>Transport</button>
           <button className={`sns-tab ${tab === 'customers' ? 'active' : ''}`} onClick={() => setTab('customers')}>Customers</button>
           <button className={`sns-tab ${tab === 'complaints' ? 'active' : ''}`} onClick={() => setTab('complaints')}>
             Complaints{(complaints || []).filter((c) => c.status !== 'Resolved').length > 0 && <span className="sns-badge sns-badge-overdue" style={{ marginLeft: '0.4rem' }}>{(complaints || []).filter((c) => c.status !== 'Resolved').length}</span>}
@@ -148,11 +151,11 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
               <PeriodSelector granularity={periodGranularity} anchor={periodAnchor} onGranularityChange={setPeriodGranularity} onAnchorChange={setPeriodAnchor} />
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3" style={{ marginBottom: '1.5rem' }}>
-              <StatCard label="Total Jobs" value={stats.periodCount} icon={Clipboard} />
+              <StatCard label="Total Jobs" value={stats.periodCount} icon={Clipboard} onClick={() => setTab('jobs')} />
               <StatCard label="Transport" value={formatKSh(stats.periodTransport)} icon={Wallet} masked tone="warning" />
-              <StatCard label="Completed" value={stats.periodCompleted} icon={CheckCircle2} tone="success" />
-              <StatCard label="Active Members" value={stats.activeMembers} icon={Users} />
-              <StatCard label="Overdue" value={stats.overdue} icon={AlertCircle} tone="danger" />
+              <StatCard label="Completed" value={stats.periodCompleted} icon={CheckCircle2} tone="success" onClick={() => { setTab('jobs'); setStatusFilter('Completed') }} />
+              <StatCard label="Active Members" value={stats.activeMembers} icon={Users} onClick={() => setTab('team')} />
+              <StatCard label="Overdue" value={stats.overdue} icon={AlertCircle} tone="danger" onClick={() => { setTab('jobs'); setOverdueOnly(true) }} />
             </div>
             <div className="sns-card" style={{ padding: '1.25rem' }}>
               <h3 className="sns-display" style={{ fontWeight: 700, marginBottom: '1rem', fontSize: '0.95rem' }}>Jobs by type</h3>
@@ -275,6 +278,10 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
           </div>
         )}
 
+        {tab === 'transport' && (
+          <TransportTab users={users} jobs={jobs} onMarkPaid={onMarkTransportPaid} />
+        )}
+
         {tab === 'customers' && (
           <div>
             <div className="no-print" style={{ marginBottom: '1rem' }}>
@@ -353,7 +360,15 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
           allMembers={users}
           availableCustomers={availableCustomers}
           onClose={() => setShowAssignForm(false)}
-          onSave={async (data) => { await onAssignJob(data); setShowAssignForm(false) }}
+          onSave={async (data) => {
+            await onAssignJob(data)
+            setShowAssignForm(false)
+            const assignee = userMap[data.assignedTo]
+            if (assignee) {
+              const jobSummary = `${data.jobType === 'Other' ? data.jobTypeOther : data.jobType} at ${data.location === 'Other' ? data.locationOther : data.location}, scheduled for ${formatDate(data.visitDate)}`
+              setJustAssigned({ member: assignee, jobSummary })
+            }
+          }}
         />
       )}
       {confirmDelete && (
@@ -391,6 +406,13 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
           onSave={async (updates) => { await onUpdateProfile(editingMember.id, updates); setEditingMember(null) }}
         />
       )}
+      {justAssigned && (
+        <AssignmentNotifyModal
+          member={justAssigned.member}
+          jobSummary={justAssigned.jobSummary}
+          onClose={() => setJustAssigned(null)}
+        />
+      )}
       {confirmClear && (
         <ConfirmDialog
           title="Clear commission"
@@ -400,6 +422,38 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
           onConfirm={async () => { await onClearCommission(confirmClear.member); setConfirmClear(null); setExpandedMemberId(null) }}
         />
       )}
+    </div>
+  )
+}
+
+function AssignmentNotifyModal({ member, jobSummary, onClose }) {
+  const message = `Hi ${member.fullName}, you've been assigned a new job: ${jobSummary}. Please check the job card system for full details.`
+  const emailHref = member.email ? `mailto:${member.email}?subject=${encodeURIComponent('New Job Assigned')}&body=${encodeURIComponent(message)}` : null
+  const waNumber = member.contact ? toWhatsAppNumber(member.contact) : null
+  const whatsappHref = waNumber ? `https://wa.me/${waNumber}?text=${encodeURIComponent(message)}` : null
+
+  return (
+    <div className="no-print flex items-center justify-center p-4" style={{ position: 'fixed', inset: 0, background: 'rgba(27,36,48,0.55)', zIndex: 60 }}>
+      <div className="sns-card sns-fade-in" style={{ width: '100%', maxWidth: '26rem', textAlign: 'center', padding: '2rem 1.6rem' }}>
+        <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'var(--confirmed-pale)', color: 'var(--confirmed)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}>
+          <CheckCircle2 size={28} />
+        </div>
+        <h3 className="sns-display" style={{ fontWeight: 700, fontSize: '1.1rem', marginBottom: '0.4rem' }}>Job assigned successfully!</h3>
+        <p style={{ fontSize: '0.85rem', color: 'var(--ink-soft)', marginBottom: '1.4rem' }}>Let {member.fullName} know right away:</p>
+        <div className="flex flex-col gap-2">
+          {emailHref ? (
+            <a href={emailHref} className="sns-btn-secondary" style={{ justifyContent: 'center' }}><Mail size={16} /> Notify via Email</a>
+          ) : (
+            <button disabled className="sns-btn-secondary" style={{ justifyContent: 'center', opacity: 0.5, cursor: 'not-allowed' }} title="No email on file for this member"><Mail size={16} /> Notify via Email</button>
+          )}
+          {whatsappHref ? (
+            <a href={whatsappHref} target="_blank" rel="noopener noreferrer" className="sns-btn-secondary" style={{ justifyContent: 'center' }}><MessageCircle size={16} /> Notify via WhatsApp</a>
+          ) : (
+            <button disabled className="sns-btn-secondary" style={{ justifyContent: 'center', opacity: 0.5, cursor: 'not-allowed' }} title="No contact on file for this member"><MessageCircle size={16} /> Notify via WhatsApp</button>
+          )}
+          <button onClick={onClose} className="sns-btn-primary" style={{ marginTop: '0.4rem' }}>Done</button>
+        </div>
+      </div>
     </div>
   )
 }
