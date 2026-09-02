@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { AlertCircle, AlertTriangle, ArrowLeft, Calendar, CheckCircle2, ClipboardCheck, Clipboard, Clock, Pencil, Plus, Trash2, UserPlus, Users, Wallet } from 'lucide-react'
+import { AlertCircle, AlertTriangle, ArrowLeft, Calendar, CheckCircle2, ClipboardCheck, Clipboard, Clock, Pencil, Plus, Send, Trash2, UserPlus, Users, Wallet } from 'lucide-react'
 import Header from './Header'
 import JobFormModal from './JobForm'
 import JobsTable from './JobsTable'
@@ -10,8 +10,8 @@ import { JobPrintView } from './PrintViews'
 import { ConfirmDialog, EmptyState, NavCard, PeriodSelector, SearchInput, StatCard, StatusFilterSelect } from './shared'
 import { formatKSh, formatDate, isOverdue, isInPeriod, getPeriodRange, isInRange, COMMISSION_DEPARTMENTS } from '../lib/helpers'
 
-export default function MemberDashboard({ currentUser, jobs, customers, customerIdsWithJobs, complaints, memberNames, onLogout, onAddJob, onUpdateJob, onDeleteJob, onAddCustomer, onUpdateCustomer, onDeleteCustomer, onUpdateProfile, onAddComplaint, onUpdateComplaintStatus, onResolveComplaint, commissionRate }) {
-  const [view, setView] = useState('home') // 'home' | 'all' | 'pending' | 'today' | 'assigned' | 'customers' | 'complaints'
+export default function MemberDashboard({ currentUser, jobs, raisedJobs, customers, customerIdsWithJobs, complaints, memberNames, onLogout, onAddJob, onUpdateJob, onDeleteJob, onAddCustomer, onUpdateCustomer, onDeleteCustomer, onUpdateProfile, onAddComplaint, onUpdateComplaintStatus, onResolveComplaint, commissionRate }) {
+  const [view, setView] = useState('home') // 'home' | 'all' | 'pending' | 'today' | 'assigned' | 'raised' | 'customers' | 'complaints'
   const [periodGranularity, setPeriodGranularity] = useState('day')
   const [periodAnchor, setPeriodAnchor] = useState(() => new Date())
   const [showForm, setShowForm] = useState(false)
@@ -53,20 +53,21 @@ export default function MemberDashboard({ currentUser, jobs, customers, customer
     if (view === 'pending') base = pendingJobs
     else if (view === 'today') base = todayJobs
     else if (view === 'assigned') base = assignedJobs
+    else if (view === 'raised') base = raisedJobs || []
     return base.filter((j) => {
       const q = search.toLowerCase()
       const matchesSearch = !q || [j.location, j.requestedBy, j.jobId].some((f) => (f || '').toLowerCase().includes(q))
       const matchesStatus = statusFilter === 'all' || j.status === statusFilter
       return matchesSearch && matchesStatus
     }).sort((a, b) => new Date(b.visitDate) - new Date(a.visitDate))
-  }, [view, jobs, pendingJobs, todayJobs, assignedJobs, search, statusFilter])
+  }, [view, jobs, pendingJobs, todayJobs, assignedJobs, raisedJobs, search, statusFilter])
 
   const sortedMyCustomers = useMemo(() => [...myCustomers].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)), [myCustomers])
   const activeComplaints = useMemo(() => (complaints || []).filter((c) => c.status !== 'Resolved'), [complaints])
 
   if (printing) return <JobPrintView job={printing} filedByUser={currentUser} onBack={() => setPrinting(null)} />
 
-  const viewTitles = { all: 'All my jobs', pending: 'Pending jobs', today: "Today's jobs", assigned: 'Jobs assigned to me', customers: 'My customers', complaints: 'Complaints queue' }
+  const viewTitles = { all: 'All my jobs', pending: 'Pending jobs', today: "Today's jobs", assigned: 'Jobs assigned to me', raised: 'Jobs I raised', customers: 'My customers', complaints: 'Complaints queue' }
 
   function openNewJob() { setEditingJob(null); setShowForm(true) }
 
@@ -103,6 +104,7 @@ export default function MemberDashboard({ currentUser, jobs, customers, customer
               <NavCard icon={Clock} label="Pending jobs" description={`${pendingJobs.length} waiting`} onClick={() => setView('pending')} badge={stats.overdue} />
               <NavCard icon={Calendar} label="Jobs today" description={`${todayJobs.length} filed today`} onClick={() => setView('today')} />
               <NavCard icon={ClipboardCheck} label="Assigned to me" description={`${assignedJobs.length} from admin`} onClick={() => setView('assigned')} />
+              <NavCard icon={Send} label="Jobs I raised" description={`${(raisedJobs || []).length} handed off — updates automatically`} onClick={() => setView('raised')} />
               <NavCard icon={UserPlus} label="Record new customer" description={COMMISSION_DEPARTMENTS.includes(currentUser.department) ? `Earn KSh ${commissionRate} commission` : 'Log a lead for follow-up'} onClick={() => setShowCustomerForm(true)} />
               {isSales && (
                 <NavCard icon={Users} label="My customers" description={`${myCustomers.length} recorded`} onClick={() => setView('customers')} />
@@ -189,12 +191,14 @@ export default function MemberDashboard({ currentUser, jobs, customers, customer
             </div>
             {view === 'assigned' && filtered.length === 0 ? (
               <EmptyState message="No jobs have been assigned to you yet." />
+            ) : view === 'raised' && filtered.length === 0 ? (
+              <EmptyState message="Nothing you've raised has been handed off to someone else yet." />
             ) : (
               <JobsTable
                 jobs={filtered}
                 onView={(j) => setPrinting(j)}
-                onEdit={(j) => { setEditingJob(j); setShowForm(true) }}
-                onDelete={(j) => setConfirmDelete(j)}
+                onEdit={view === 'raised' ? undefined : (j) => { setEditingJob(j); setShowForm(true) }}
+                onDelete={view === 'raised' ? undefined : (j) => setConfirmDelete(j)}
               />
             )}
           </>
@@ -204,6 +208,7 @@ export default function MemberDashboard({ currentUser, jobs, customers, customer
         <JobFormModal
           initialJob={editingJob}
           availableCustomers={availableCustomers}
+          allCustomers={customers}
           filerDepartment={currentUser.department}
           onClose={() => { setShowForm(false); setEditingJob(null) }}
           onSave={async (data) => {

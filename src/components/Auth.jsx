@@ -8,7 +8,7 @@ export function AuthLayout({ children }) {
   return (
     <div className="sns-shell">
       <div className="flex flex-col sm:flex-row" style={{ minHeight: '100vh' }}>
-        <div className="w-full sm:w-2/5 flex flex-col justify-between p-8 sm:p-10" style={{ background: 'var(--ink)', color: 'white', position: 'relative', overflow: 'hidden' }}>
+        <div className="w-full sm:w-2/5 flex flex-col justify-between p-8 sm:p-10" style={{ background: 'var(--ink-fixed-dark)', color: 'white', position: 'relative', overflow: 'hidden' }}>
           <svg viewBox="0 0 400 400" preserveAspectRatio="xMaxYMax slice" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0.5, pointerEvents: 'none' }}>
             <path d="M400,120 C300,180 340,300 250,400 L400,400 Z" fill="var(--signal-deep)" opacity="0.55" />
             <path d="M400,220 C330,260 360,330 300,400 L400,400 Z" fill="var(--stamp)" opacity="0.28" />

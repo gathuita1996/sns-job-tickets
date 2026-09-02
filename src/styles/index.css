@@ -8,7 +8,25 @@
   --danger: #B3432F; --danger-pale: #FBEAE6;
   --overdue: #C0392B; --overdue-pale: #FBE4E1;
   --paper: #F7F9FC; --card: #FFFFFF; --line: #E1E7F0; --line-soft: #EEF2F8;
+  /* Deliberately NOT overridden in dark mode -- for the couple of spots
+     (toast notifications, the auth screen's branded panel) that always
+     want a dark background with white text, regardless of theme, since
+     --ink itself inverts to a light color in dark mode. */
+  --ink-fixed-dark: #16232E;
 }
+
+[data-theme="dark"] {
+  --ink: #EDF1F5; --ink-soft: #A3B1BE; --ink-faint: #667482;
+  --signal: #3D7DCC; --signal-deep: #6FA3E0; --signal-pale: #1C2E45;
+  --stamp: #F5904A; --stamp-deep: #FBB27D; --stamp-pale: #3A2A18;
+  --confirmed: #34C874; --confirmed-pale: #163825;
+  --danger: #E17A63; --danger-pale: #3D211C;
+  --overdue: #E0584A; --overdue-pale: #3D1E1A;
+  --paper: #10161D; --card: #1A222B; --line: #2B3542; --line-soft: #222A34;
+}
+
+/* Smooth, not jarring, when the toggle is used. */
+.sns-shell, .sns-card, .sns-input, .sns-btn-primary, .sns-btn-secondary { transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease; }
 
 * { box-sizing: border-box; }
 body { margin: 0; }
@@ -24,14 +42,14 @@ body { margin: 0; }
 .sns-card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
 .sns-brand-mark { width: 42px; height: 42px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .sns-brand-mark img { width: 100%; height: 100%; object-fit: contain; display: block; }
-.sns-input { width: 100%; padding: 0.6rem 0.85rem; border: 1px solid var(--line); border-radius: 9px; font-size: 0.875rem; font-family: 'IBM Plex Sans', sans-serif; outline: none; background: white; color: var(--ink); transition: border-color 0.15s, box-shadow 0.15s; }
+.sns-input { width: 100%; padding: 0.6rem 0.85rem; border: 1px solid var(--line); border-radius: 9px; font-size: 0.875rem; font-family: 'IBM Plex Sans', sans-serif; outline: none; background: var(--card); color: var(--ink); transition: border-color 0.15s, box-shadow 0.15s; }
 .sns-input:focus { border-color: var(--signal); box-shadow: 0 0 0 3px var(--signal-pale); }
 .sns-input::placeholder { color: var(--ink-faint); }
 .sns-input:disabled { background: var(--line-soft); cursor: not-allowed; }
 .sns-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 0.65rem 1.25rem; background: var(--signal); color: white; font-weight: 600; font-size: 0.875rem; border-radius: 9px; border: none; cursor: pointer; transition: background 0.15s, transform 0.15s; font-family: 'IBM Plex Sans', sans-serif; }
 .sns-btn-primary:hover:not(:disabled) { background: var(--signal-deep); transform: translateY(-1px); }
 .sns-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-.sns-btn-secondary { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 0.65rem 1.25rem; background: white; color: var(--ink); font-weight: 600; font-size: 0.875rem; border-radius: 9px; border: 1px solid var(--line); cursor: pointer; transition: background 0.15s; font-family: 'IBM Plex Sans', sans-serif; }
+.sns-btn-secondary { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 0.65rem 1.25rem; background: var(--card); color: var(--ink); font-weight: 600; font-size: 0.875rem; border-radius: 9px; border: 1px solid var(--line); cursor: pointer; transition: background 0.15s; font-family: 'IBM Plex Sans', sans-serif; }
 .sns-btn-secondary:hover { background: var(--paper); }
 .sns-btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
 .sns-btn-danger { background: var(--danger); color: white; border: none; }

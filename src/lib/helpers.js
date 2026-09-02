@@ -84,6 +84,18 @@ export function formatDateTime(iso) {
   return new Date(iso).toLocaleString('en-KE', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
+// Converts a locally-formatted Kenyan number (e.g. "0712 345 678") into the
+// digits-only, country-code-prefixed form wa.me links need. Already-
+// international numbers pass through unchanged.
+export function toWhatsAppNumber(contact) {
+  if (!contact) return null
+  let digits = contact.replace(/[^\d+]/g, '').replace(/^\+/, '')
+  if (!digits) return null
+  if (digits.startsWith('0')) digits = '254' + digits.slice(1)
+  else if (!digits.startsWith('254')) digits = '254' + digits
+  return digits
+}
+
 export function formatKSh(amount) {
   const n = Number(amount) || 0
   return `KSh ${n.toLocaleString('en-KE')}`

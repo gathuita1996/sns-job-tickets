@@ -30,7 +30,11 @@ function resolveLocationField(storedValue) {
 // allMembers (everyone, any department) powers the "raised by" field.
 // availableCustomers is the not-yet-installed leads a member filing a New
 // Installation can pick from, to link the job back to that customer record.
-export default function JobFormModal({ initialJob, assignableMembers, allMembers, availableCustomers, filerDepartment, reassignOnly, onClose, onSave }) {
+// allCustomers (unfiltered) is separate -- needed to look up the full
+// details of a customer this job is ALREADY linked to (they won't be in
+// availableCustomers anymore once linked, but the technician working the
+// job still needs to see what that customer actually wanted).
+export default function JobFormModal({ initialJob, assignableMembers, allMembers, availableCustomers, allCustomers, filerDepartment, reassignOnly, onClose, onSave }) {
   const adminMode = Boolean(assignableMembers)
   const isNewAdminAssignment = adminMode && !initialJob
   const editingOverdue = Boolean(initialJob) && isOverdue(initialJob)
@@ -70,7 +74,7 @@ export default function JobFormModal({ initialJob, assignableMembers, allMembers
 
   function selectExistingCustomer(customerId) {
     if (!customerId) { update('customerId', null); return }
-    const c = availableCustomers.find((c) => String(c.id) === String(customerId))
+    const c = (allCustomers || availableCustomers || []).find((c) => String(c.id) === String(customerId))
     setForm((f) => ({
       ...f,
       customerId: customerId ? Number(customerId) : null,
@@ -79,6 +83,11 @@ export default function JobFormModal({ initialJob, assignableMembers, allMembers
       location: c ? c.location : f.location,
     }))
   }
+
+  // Whatever customer this job is linked to (freshly picked, or already
+  // linked from before) -- looked up from the full list since an
+  // already-linked customer won't be in availableCustomers anymore.
+  const linkedCustomer = form.customerId ? (allCustomers || []).find((c) => c.id === form.customerId) : null
 
   function addStop() {
     setForm((f) => ({ ...f, transportStops: [...f.transportStops, { selected: '', other: '' }] }))
@@ -229,6 +238,18 @@ export default function JobFormModal({ initialJob, assignableMembers, allMembers
                 {availableCustomers.map((c) => <option key={c.id} value={c.id}>{c.fullName} — {c.location}</option>)}
               </select>
             </FormField>
+          )}
+
+          {linkedCustomer && (
+            <div className="sns-card" style={{ padding: '0.9rem 1.1rem', background: 'var(--signal-pale)', border: 'none' }}>
+              <p className="sns-eyebrow" style={{ color: 'var(--signal-deep)', marginBottom: '0.4rem' }}>Recorded customer details</p>
+              <p style={{ fontSize: '0.85rem', marginBottom: linkedCustomer.notes ? '0.3rem' : 0 }}>
+                <strong>Interested in:</strong> {linkedCustomer.interestedPackage || 'Not specified'}
+              </p>
+              {linkedCustomer.notes && (
+                <p style={{ fontSize: '0.85rem' }}><strong>Notes:</strong> {linkedCustomer.notes}</p>
+              )}
+            </div>
           )}
 
           <FormField label="Location / site" error={errors.location}>

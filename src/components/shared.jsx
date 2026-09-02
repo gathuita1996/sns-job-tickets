@@ -126,7 +126,7 @@ export function Toast({ message, type, onClose }) {
   useEffect(() => { const t = setTimeout(onClose, 3000); return () => clearTimeout(t) }, [])
   return (
     <div className="no-print" style={{ position: 'fixed', top: '1rem', right: '1rem', zIndex: 60 }}>
-      <div className="flex items-center gap-2" style={{ background: type === 'error' ? 'var(--danger)' : 'var(--ink)', color: 'white', padding: '0.7rem 1rem', borderRadius: 10, fontSize: '0.85rem', fontWeight: 500, boxShadow: '0 8px 24px rgba(0,0,0,0.18)' }}>
+      <div className="flex items-center gap-2" style={{ background: type === 'error' ? 'var(--danger)' : 'var(--ink-fixed-dark)', color: 'white', padding: '0.7rem 1rem', borderRadius: 10, fontSize: '0.85rem', fontWeight: 500, boxShadow: '0 8px 24px rgba(0,0,0,0.18)' }}>
         {type === 'error' ? <AlertCircle size={16} /> : <Check size={16} />}
         {message}
       </div>

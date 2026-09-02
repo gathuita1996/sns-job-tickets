@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
-import { ChevronDown, ChevronUp, Eye, Pencil, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronUp, Eye, MessageCircle, Pencil, Trash2 } from 'lucide-react'
 import { EmptyState, StatusBadge, PriorityBadge } from './shared'
-import { formatDate, formatKSh, isOverdue } from '../lib/helpers'
+import { formatDate, formatKSh, isOverdue, toWhatsAppNumber } from '../lib/helpers'
 
 const PRIORITY_RANK = { Urgent: 3, High: 2, Normal: 1, Low: 0 }
 
@@ -96,9 +96,20 @@ export default function JobsTable({ jobs, showFiledBy, userMap, onView, onEdit, 
                   <td>{j.priority && j.priority !== 'Normal' && j.priority !== 'Low' ? <PriorityBadge priority={j.priority} /> : <span className="sns-text-faint">{j.priority || 'Normal'}</span>}</td>
                   <td>
                     <div className="flex items-center justify-end gap-1">
+                      {j.assignedBy && userMap?.[j.memberId]?.contact && (
+                        <a
+                          href={`https://wa.me/${toWhatsAppNumber(userMap[j.memberId].contact)}?text=${encodeURIComponent(`Hi ${userMap[j.memberId].fullName}, you've been assigned a new job: ${j.jobType === 'Other' && j.jobTypeOther ? j.jobTypeOther : j.jobType} at ${j.location}, scheduled for ${formatDate(j.visitDate)}. Please check the job card system for full details.`)}`}
+                          target="_blank" rel="noopener noreferrer"
+                          title={`Notify ${userMap[j.memberId].fullName} via WhatsApp`}
+                          className="sns-icon-btn"
+                          style={{ color: 'var(--confirmed)' }}
+                        >
+                          <MessageCircle size={15} />
+                        </a>
+                      )}
                       <button onClick={() => onView(j)} title="View / print" className="sns-icon-btn"><Eye size={15} /></button>
-                      <button onClick={() => onEdit(j)} title="Edit" className="sns-icon-btn"><Pencil size={15} /></button>
-                      <button onClick={() => onDelete(j)} title="Delete" className="sns-icon-btn danger"><Trash2 size={15} /></button>
+                      {onEdit && <button onClick={() => onEdit(j)} title="Edit" className="sns-icon-btn"><Pencil size={15} /></button>}
+                      {onDelete && <button onClick={() => onDelete(j)} title="Delete" className="sns-icon-btn danger"><Trash2 size={15} /></button>}
                     </div>
                   </td>
                 </tr>
