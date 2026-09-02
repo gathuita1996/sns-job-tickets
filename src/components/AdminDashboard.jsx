@@ -33,7 +33,6 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
   const [confirmDeleteCustomer, setConfirmDeleteCustomer] = useState(null)
   const [editingMember, setEditingMember] = useState(null)
   const [expandedMemberId, setExpandedMemberId] = useState(null)
-  const [confirmClear, setConfirmClear] = useState(null)
   const [customerSearch, setCustomerSearch] = useState('')
 
   const members = users.filter((u) => u.role === 'member')
@@ -247,8 +246,8 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
                             <td className="sns-mono">{r.count}</td>
                             <td className="sns-mono" style={{ fontWeight: 700, color: 'var(--confirmed)' }}>{formatKSh(r.commission)}</td>
                             <td style={{ textAlign: 'right' }}>
-                              <button onClick={(e) => { e.stopPropagation(); setConfirmClear(r) }} className="sns-btn-secondary" style={{ fontSize: '0.78rem', padding: '0.4rem 0.7rem' }}>
-                                <Check size={13} /> Clear
+                              <button onClick={(e) => { e.stopPropagation(); onClearCommission(r.member) }} className="sns-btn-primary" style={{ fontSize: '0.78rem', padding: '0.5rem 0.9rem' }}>
+                                Mark as Paid
                               </button>
                             </td>
                           </tr>
@@ -411,15 +410,6 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
           member={justAssigned.member}
           jobSummary={justAssigned.jobSummary}
           onClose={() => setJustAssigned(null)}
-        />
-      )}
-      {confirmClear && (
-        <ConfirmDialog
-          title="Clear commission"
-          message={`Mark ${confirmClear.count} commission${confirmClear.count === 1 ? '' : 's'} (${formatKSh(confirmClear.commission)}) as paid for ${confirmClear.member.fullName}? This only makes sense once you've actually paid them — it can't be undone.`}
-          danger
-          onCancel={() => setConfirmClear(null)}
-          onConfirm={async () => { await onClearCommission(confirmClear.member); setConfirmClear(null); setExpandedMemberId(null) }}
         />
       )}
     </div>

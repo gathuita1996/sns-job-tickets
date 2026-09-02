@@ -94,11 +94,11 @@ export default function MemberDashboard({ currentUser, jobs, raisedJobs, custome
               <PeriodSelector granularity={periodGranularity} anchor={periodAnchor} onGranularityChange={setPeriodGranularity} onAnchorChange={setPeriodAnchor} />
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3" style={{ marginBottom: '2rem' }}>
-              <StatCard label="Total Jobs" value={stats.periodCount} icon={Clipboard} />
+              <StatCard label="Total Jobs" value={stats.periodCount} icon={Clipboard} onClick={() => setView('all')} />
               <StatCard label="Transport" value={formatKSh(stats.periodTransport)} icon={Wallet} masked tone="warning" />
-              <StatCard label="Completed" value={stats.periodCompleted} icon={CheckCircle2} tone="success" />
-              <StatCard label="Pending" value={stats.pending} icon={Clock} />
-              <StatCard label="Overdue" value={stats.overdue} icon={AlertCircle} tone="danger" />
+              <StatCard label="Completed" value={stats.periodCompleted} icon={CheckCircle2} tone="success" onClick={() => { setView('all'); setStatusFilter('Completed') }} />
+              <StatCard label="Pending" value={stats.pending} icon={Clock} onClick={() => setView('pending')} />
+              <StatCard label="Overdue" value={stats.overdue} icon={AlertCircle} tone="danger" onClick={() => setView('pending')} />
             </div>
 
             <h2 className="sns-display" style={{ fontSize: '1.05rem', fontWeight: 700, marginBottom: '0.75rem' }}>Quick actions</h2>
@@ -141,7 +141,7 @@ export default function MemberDashboard({ currentUser, jobs, raisedJobs, custome
                 <div style={{ overflowX: 'auto' }}>
                   <table className="sns-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
-                      <tr><th>Name</th><th>Contact</th><th>Location</th><th>Interested package</th><th>Recorded</th><th style={{ textAlign: 'right' }}>Actions</th></tr>
+                      <tr><th>Name</th><th>Contact</th><th>Location</th><th>Interested package</th><th>Recorded</th><th>Commission</th><th style={{ textAlign: 'right' }}>Actions</th></tr>
                     </thead>
                     <tbody>
                       {sortedMyCustomers.map((c) => (
@@ -151,6 +151,13 @@ export default function MemberDashboard({ currentUser, jobs, raisedJobs, custome
                           <td className="sns-text-soft">{c.location}</td>
                           <td className="sns-text-soft">{c.interestedPackage || '—'}</td>
                           <td className="sns-text-soft">{formatDate(c.createdAt)}</td>
+                          <td>
+                            {c.commissionPaidAt ? (
+                              <span className="sns-badge sns-badge-done">Paid</span>
+                            ) : (
+                              <span className="sns-badge" style={{ background: 'var(--stamp-pale)', color: 'var(--stamp-deep)' }}>Unpaid</span>
+                            )}
+                          </td>
                           <td>
                             <div className="flex items-center justify-end gap-1">
                               <button onClick={() => { setEditingCustomer(c); setShowCustomerForm(true) }} title="Edit" className="sns-icon-btn"><Pencil size={15} /></button>
