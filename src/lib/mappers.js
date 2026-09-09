@@ -134,8 +134,9 @@ export function mapExpense(row) {
     description: row.description,
     amount: Number(row.amount) || 0,
     category: row.category,
-    purchaseDate: row.purchase_date,
-    receiptPath: row.receipt_path,
+    purchaseDate: row.purchase_date || null,
+    receiptPath: row.receipt_path || null,
+    receiptUploadedAt: row.receipt_uploaded_at || null,
     status: row.status,
     adminNotes: row.admin_notes || '',
     submittedBy: row.submitted_by,
@@ -146,12 +147,13 @@ export function mapExpense(row) {
   }
 }
 
+// Only the request-stage fields -- attaching a receipt later goes through
+// its own update, not this mapper, since it's a different action on an
+// existing row rather than a new insert.
 export function expenseToDbFields(data) {
   return {
     description: data.description,
     amount: Number(data.amount),
     category: data.category,
-    purchase_date: data.purchaseDate,
-    receipt_path: data.receiptPath,
   }
 }

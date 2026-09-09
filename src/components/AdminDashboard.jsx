@@ -14,7 +14,7 @@ import ExpenseFormModal from './ExpenseForm'
 import { ConfirmDialog, EmptyState, FormField, PeriodSelector, SearchInput, StatCard, StatusBadge, StatusFilterSelect } from './shared'
 import { JOB_TYPES, PRIORITY_OPTIONS, CHART_COLORS, COMMISSION_DEPARTMENTS, departmentLabel, formatKSh, formatDate, formatDateTime, isOverdue, isInPeriod, getPeriodRange, isInRange, toWhatsAppNumber } from '../lib/helpers'
 
-export default function AdminDashboard({ currentUser, users, jobs, customers, complaints, expenses, onLogout, onAddJob, onUpdateJob, onDeleteJob, onAssignJob, onPromote, onUpdateDepartment, onUpdateProfile, accessCode, onUpdateAccessCode, commissionRate, onUpdateCommissionRate, onClearCommission, onDeleteCustomer, onUpdateComplaintStatus, onResolveComplaint, onMarkTransportPaid, onAddExpense, onApproveExpense, onRejectExpense, onMarkExpensePaid, onDeleteExpense, onViewReceipt, onToggleTeamLead, onSetDirector }) {
+export default function AdminDashboard({ currentUser, users, jobs, customers, complaints, expenses, onLogout, onAddJob, onUpdateJob, onDeleteJob, onAssignJob, onPromote, onUpdateDepartment, onUpdateProfile, accessCode, onUpdateAccessCode, commissionRate, onUpdateCommissionRate, onClearCommission, onDeleteCustomer, onUpdateComplaintStatus, onResolveComplaint, onMarkTransportPaid, onAddExpense, onApproveExpense, onRejectExpense, onAttachReceipt, onMarkExpensePaid, onDeleteExpense, onViewReceipt, onToggleTeamLead, onSetDirector }) {
   const [tab, setTab] = useState('overview')
   const [periodGranularity, setPeriodGranularity] = useState('day')
   const [periodAnchor, setPeriodAnchor] = useState(() => new Date())
@@ -141,7 +141,7 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
           <button className={`sns-tab ${tab === 'commissions' ? 'active' : ''}`} onClick={() => setTab('commissions')}>Commissions</button>
           <button className={`sns-tab ${tab === 'transport' ? 'active' : ''}`} onClick={() => setTab('transport')}>Transport</button>
           <button className={`sns-tab ${tab === 'expenses' ? 'active' : ''}`} onClick={() => setTab('expenses')}>
-            Expense/Purchases{(expenses || []).filter((e) => e.status === 'Submitted').length > 0 && <span className="sns-badge sns-badge-overdue" style={{ marginLeft: '0.4rem' }}>{(expenses || []).filter((e) => e.status === 'Submitted').length}</span>}
+            Expense/Purchases{(expenses || []).filter((e) => e.status === 'Requested').length > 0 && <span className="sns-badge sns-badge-overdue" style={{ marginLeft: '0.4rem' }}>{(expenses || []).filter((e) => e.status === 'Requested').length}</span>}
           </button>
           <button className={`sns-tab ${tab === 'customers' ? 'active' : ''}`} onClick={() => setTab('customers')}>Customers</button>
           <button className={`sns-tab ${tab === 'complaints' ? 'active' : ''}`} onClick={() => setTab('complaints')}>
@@ -302,8 +302,10 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
             <ExpensesList
               expenses={expenses || []}
               userMap={userMap}
+              currentUserId={currentUser.id}
               onApprove={currentUser.isDirector ? onApproveExpense : undefined}
               onReject={currentUser.isDirector ? onRejectExpense : undefined}
+              onAttachReceipt={onAttachReceipt}
               onMarkPaid={currentUser.isDirector ? onMarkExpensePaid : undefined}
               onDelete={onDeleteExpense}
               onViewReceipt={onViewReceipt}

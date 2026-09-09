@@ -12,7 +12,7 @@ import { JobPrintView } from './PrintViews'
 import { ConfirmDialog, EmptyState, NavCard, PeriodSelector, SearchInput, StatCard, StatusFilterSelect } from './shared'
 import { formatKSh, formatDate, isOverdue, isInPeriod, getPeriodRange, isInRange, COMMISSION_DEPARTMENTS } from '../lib/helpers'
 
-export default function MemberDashboard({ currentUser, jobs, raisedJobs, customers, customerIdsWithJobs, complaints, expenses, memberNames, onLogout, onAddJob, onUpdateJob, onDeleteJob, onAddCustomer, onUpdateCustomer, onDeleteCustomer, onUpdateProfile, onAddComplaint, onUpdateComplaintStatus, onResolveComplaint, onAddExpense, onDeleteExpense, onViewReceipt, commissionRate }) {
+export default function MemberDashboard({ currentUser, jobs, raisedJobs, customers, customerIdsWithJobs, complaints, expenses, memberNames, onLogout, onAddJob, onUpdateJob, onDeleteJob, onAddCustomer, onUpdateCustomer, onDeleteCustomer, onUpdateProfile, onAddComplaint, onUpdateComplaintStatus, onResolveComplaint, onAddExpense, onAttachReceipt, onDeleteExpense, onViewReceipt, commissionRate }) {
   const [view, setView] = useState('home') // 'home' | 'all' | 'pending' | 'today' | 'assigned' | 'raised' | 'customers' | 'complaints' | 'expenses'
   const [periodGranularity, setPeriodGranularity] = useState('day')
   const [periodAnchor, setPeriodAnchor] = useState(() => new Date())
@@ -208,6 +208,8 @@ export default function MemberDashboard({ currentUser, jobs, raisedJobs, custome
             </div>
             <ExpensesList
               expenses={expenses || []}
+              currentUserId={currentUser.id}
+              onAttachReceipt={onAttachReceipt}
               onDelete={onDeleteExpense}
               onViewReceipt={onViewReceipt}
             />

@@ -1,12 +1,14 @@
 import { useState } from 'react'
-import { Check, Eye, Loader2, Trash2, X } from 'lucide-react'
+import { Check, Eye, Loader2, Receipt as ReceiptIcon, Trash2, X } from 'lucide-react'
 import { EmptyState, FormField, SearchInput } from './shared'
+import AttachReceiptModal from './AttachReceiptModal'
 import { formatKSh, formatDate } from '../lib/helpers'
 
 const STATUS_BADGE = {
-  Submitted: { bg: 'var(--line-soft)', color: 'var(--ink-soft)' },
+  Requested: { bg: 'var(--line-soft)', color: 'var(--ink-soft)' },
   Approved: { bg: 'var(--signal-pale)', color: 'var(--signal-deep)' },
   Rejected: { bg: 'var(--overdue-pale)', color: 'var(--overdue)' },
+  Purchased: { bg: 'var(--stamp-pale)', color: 'var(--stamp-deep)' },
   Paid: { bg: 'var(--confirmed-pale)', color: 'var(--confirmed)' },
 }
 
@@ -26,13 +28,13 @@ function RejectExpenseModal({ expense, onClose, onConfirm }) {
     <div className="no-print flex items-center justify-center p-4" style={{ position: 'fixed', inset: 0, background: 'rgba(27,36,48,0.55)', zIndex: 60 }}>
       <div className="sns-card sns-fade-in" style={{ width: '100%', maxWidth: '26rem' }}>
         <div className="flex items-center justify-between sns-border-b" style={{ padding: '1.1rem 1.4rem' }}>
-          <h3 className="sns-display" style={{ fontWeight: 700 }}>Reject purchase</h3>
+          <h3 className="sns-display" style={{ fontWeight: 700 }}>Reject request</h3>
           <button onClick={onClose} className="sns-icon-btn"><X size={18} /></button>
         </div>
         <div style={{ padding: '1.4rem' }}>
-          <p style={{ fontSize: '0.85rem', marginBottom: '0.3rem' }}><strong>{expense.description}</strong> — {formatKSh(expense.amount)}</p>
-          <FormField label="Reason for rejecting" error={error} hint="Lets the person know why, so they can fix it and resubmit if needed.">
-            <textarea className="sns-input" rows={3} value={notes} onChange={(e) => { setNotes(e.target.value); setError('') }} placeholder="e.g. Receipt is unreadable, please reupload…" autoFocus />
+          <p style={{ fontSize: '0.85rem', marginBottom: '0.3rem' }}><strong>{expense.description}</strong> — est. {formatKSh(expense.amount)}</p>
+          <FormField label="Reason for rejecting" error={error} hint="Lets the person know why, so they can adjust and resubmit if needed.">
+            <textarea className="sns-input" rows={3} value={notes} onChange={(e) => { setNotes(e.target.value); setError('') }} placeholder="e.g. Not needed right now, or over budget for this month…" autoFocus />
           </FormField>
           <div className="flex gap-3" style={{ paddingTop: '1rem' }}>
             <button type="button" onClick={onClose} className="sns-btn-secondary" style={{ flex: 1 }}>Cancel</button>
@@ -72,12 +74,15 @@ function ReceiptViewerModal({ url, loading, onClose }) {
 }
 
 // Shared between AdminDashboard (full review actions) and MemberDashboard
-// ("My Expenses/Purchases" -- read-only status, own submissions only via
-// RLS). Which action buttons appear is driven entirely by which callbacks
-// are actually passed in, same pattern JobsTable already uses.
-export default function ExpensesList({ expenses, userMap, onApprove, onReject, onMarkPaid, onDelete, onViewReceipt }) {
+// ("My Expenses/Purchases" -- own submissions only via RLS). Which action
+// buttons appear is driven by which callbacks are passed in (same pattern
+// JobsTable already uses) plus, for Attach Receipt specifically, whether
+// this row belongs to the person looking at it -- a Director can approve
+// anyone's request, but only the person who asked for it goes and buys it.
+export default function ExpensesList({ expenses, userMap, currentUserId, onApprove, onReject, onAttachReceipt, onMarkPaid, onDelete, onViewReceipt }) {
   const [search, setSearch] = useState('')
   const [rejecting, setRejecting] = useState(null)
+  const [attaching, setAttaching] = useState(null)
   const [receiptUrl, setReceiptUrl] = useState(null)
   const [receiptLoading, setReceiptLoading] = useState(false)
 
@@ -97,7 +102,7 @@ export default function ExpensesList({ expenses, userMap, onApprove, onReject, o
     })
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
 
-  if (expenses.length === 0) return <EmptyState message="No purchases recorded yet." />
+  if (expenses.length === 0) return <EmptyState message="No purchase requests yet." />
 
   return (
     <div>
@@ -109,7 +114,8 @@ export default function ExpensesList({ expenses, userMap, onApprove, onReject, o
       ) : (
         <div className="flex flex-col gap-3">
           {filtered.map((e) => {
-            const badge = STATUS_BADGE[e.status] || STATUS_BADGE.Submitted
+            const badge = STATUS_BADGE[e.status] || STATUS_BADGE.Requested
+            const isOwn = e.submittedBy === currentUserId
             return (
               <div key={e.id} className="sns-card" style={{ padding: '1.1rem 1.3rem' }}>
                 <div className="flex items-center justify-between" style={{ flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.4rem' }}>
@@ -118,35 +124,44 @@ export default function ExpensesList({ expenses, userMap, onApprove, onReject, o
                     <span className="sns-badge sns-badge-pending">{e.category}</span>
                     <span className="sns-badge" style={{ background: badge.bg, color: badge.color }}>{e.status}</span>
                   </div>
-                  <p className="sns-mono" style={{ fontWeight: 700, fontSize: '1rem' }}>{formatKSh(e.amount)}</p>
+                  <p className="sns-mono" style={{ fontWeight: 700, fontSize: '1rem' }}>
+                    {e.status === 'Requested' || e.status === 'Approved' ? `est. ${formatKSh(e.amount)}` : formatKSh(e.amount)}
+                  </p>
                 </div>
                 <p className="sns-text-faint" style={{ fontSize: '0.76rem', marginBottom: '0.6rem' }}>
-                  {formatDate(e.purchaseDate)}
-                  {userMap?.[e.submittedBy]?.fullName && ` · Submitted by ${userMap[e.submittedBy].fullName}`}
+                  {e.purchaseDate ? formatDate(e.purchaseDate) : 'Not yet purchased'}
+                  {userMap?.[e.submittedBy]?.fullName && ` · Requested by ${userMap[e.submittedBy].fullName}`}
                 </p>
                 {e.adminNotes && (
                   <p style={{ fontSize: '0.82rem', color: 'var(--overdue)', marginBottom: '0.6rem' }}><strong>Reason for rejection:</strong> {e.adminNotes}</p>
                 )}
                 <div className="flex items-center gap-2" style={{ flexWrap: 'wrap' }}>
-                  <button onClick={() => handleViewReceipt(e.receiptPath)} className="sns-btn-secondary" style={{ fontSize: '0.78rem', padding: '0.45rem 0.75rem' }}>
-                    <Eye size={14} /> View Receipt
-                  </button>
-                  {onApprove && e.status === 'Submitted' && (
+                  {e.receiptPath && (
+                    <button onClick={() => handleViewReceipt(e.receiptPath)} className="sns-btn-secondary" style={{ fontSize: '0.78rem', padding: '0.45rem 0.75rem' }}>
+                      <Eye size={14} /> View Receipt
+                    </button>
+                  )}
+                  {onApprove && e.status === 'Requested' && (
                     <button onClick={() => onApprove(e)} className="sns-btn-primary" style={{ fontSize: '0.78rem', padding: '0.45rem 0.75rem' }}>
                       <Check size={14} /> Approve
                     </button>
                   )}
-                  {onReject && e.status === 'Submitted' && (
+                  {onReject && e.status === 'Requested' && (
                     <button onClick={() => setRejecting(e)} className="sns-btn-secondary" style={{ fontSize: '0.78rem', padding: '0.45rem 0.75rem', color: 'var(--overdue)' }}>
                       <X size={14} /> Reject
                     </button>
                   )}
-                  {onMarkPaid && e.status === 'Approved' && (
+                  {onAttachReceipt && isOwn && e.status === 'Approved' && (
+                    <button onClick={() => setAttaching(e)} className="sns-btn-primary" style={{ fontSize: '0.78rem', padding: '0.45rem 0.75rem' }}>
+                      <ReceiptIcon size={14} /> Attach Receipt
+                    </button>
+                  )}
+                  {onMarkPaid && e.status === 'Purchased' && (
                     <button onClick={() => onMarkPaid(e)} className="sns-btn-primary" style={{ fontSize: '0.78rem', padding: '0.45rem 0.75rem' }}>
                       Mark as Paid
                     </button>
                   )}
-                  {onDelete && e.status === 'Submitted' && (
+                  {onDelete && e.status === 'Requested' && (
                     <button onClick={() => onDelete(e)} className="sns-icon-btn danger" title="Delete">
                       <Trash2 size={15} />
                     </button>
@@ -162,6 +177,13 @@ export default function ExpensesList({ expenses, userMap, onApprove, onReject, o
           expense={rejecting}
           onClose={() => setRejecting(null)}
           onConfirm={async (notes) => { await onReject(rejecting, notes); setRejecting(null) }}
+        />
+      )}
+      {attaching && (
+        <AttachReceiptModal
+          expense={attaching}
+          onClose={() => setAttaching(null)}
+          onSave={async (formData) => { await onAttachReceipt(attaching, formData); setAttaching(null) }}
         />
       )}
       {receiptUrl !== null && (

@@ -81,7 +81,7 @@ export const EXPENSE_CATEGORIES = [
   'Other',
 ]
 
-export const EXPENSE_STATUSES = ['Submitted', 'Approved', 'Rejected', 'Paid']
+export const EXPENSE_STATUSES = ['Requested', 'Approved', 'Rejected', 'Purchased', 'Paid']
 
 // Commission rate itself now lives in app_settings.commission_per_customer
 // (admin-editable from Settings) rather than being hardcoded here.
@@ -158,11 +158,20 @@ export function defaultComplaintForm() {
   }
 }
 
+// The request stage only needs what's being asked for and roughly how
+// much -- no receipt or purchase date exist yet, since nothing's been
+// bought. Those get added later, once the request is approved.
 export function defaultExpenseForm() {
   return {
     description: '',
     amount: '',
     category: '',
+  }
+}
+
+export function defaultReceiptForm(expense) {
+  return {
+    amount: String(expense.amount),
     purchaseDate: new Date().toISOString().slice(0, 10),
     receiptFile: null,
   }
