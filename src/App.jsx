@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from './lib/supabaseClient'
-import { mapProfile, mapJob, jobToDbFields, mapCustomer, customerToDbFields, mapComplaint, complaintToDbFields } from './lib/mappers'
+import { mapProfile, mapJob, jobToDbFields, mapCustomer, customerToDbFields, mapComplaint, complaintToDbFields, mapExpense, expenseToDbFields } from './lib/mappers'
 import { COMMISSION_DEPARTMENTS } from './lib/helpers'
 import { LoadingScreen, Toast } from './components/shared'
 import { LoginView, SignupView, ForgotPasswordView, ResetPasswordView } from './components/Auth'
@@ -14,6 +14,7 @@ export default function App() {
   const [customers, setCustomers] = useState([])
   const [customerIdsWithJobs, setCustomerIdsWithJobs] = useState(new Set())
   const [complaints, setComplaints] = useState([])
+  const [expenses, setExpenses] = useState([])
   const [memberNames, setMemberNames] = useState({})
   const [allUsers, setAllUsers] = useState([])
   const [accessCode, setAccessCode] = useState('')
@@ -43,6 +44,7 @@ export default function App() {
     setCurrentUser(profile)
     await refreshJobs()
     await refreshCustomers()
+    await refreshExpenses()
     if (profile.role === 'admin') {
       await refreshUsers()
       await refreshAppSettings()
@@ -60,6 +62,15 @@ export default function App() {
     const { data, error } = await supabase.from('complaints').select('*')
     if (error) return
     setComplaints((data || []).map(mapComplaint))
+  }
+
+  // Unlike complaints, this needs no role/department check -- RLS already
+  // scopes it correctly for everyone (admin sees all, a member sees only
+  // their own submissions), same as customers already works.
+  async function refreshExpenses() {
+    const { data, error } = await supabase.from('expenses').select('*')
+    if (error) return
+    setExpenses((data || []).map(mapExpense))
   }
 
   async function refreshMemberNames() {
@@ -371,6 +382,64 @@ export default function App() {
     await refreshJobs()
   }
 
+  async function handleAddExpense(formData) {
+    const filePath = `${currentUserRef.current.id}/${Date.now()}-${formData.receiptFile.name}`
+    const { error: uploadError } = await supabase.storage.from('receipts').upload(filePath, formData.receiptFile)
+    if (uploadError) { showToast('Failed to upload receipt.', 'error'); return }
+
+    const { error } = await supabase.from('expenses').insert({
+      ...expenseToDbFields({ ...formData, receiptPath: filePath }),
+      submitted_by: currentUserRef.current.id,
+    })
+    if (error) { showToast('Failed to save expense.', 'error'); return }
+    showToast('Expense submitted for review.')
+    await refreshExpenses()
+  }
+
+  async function handleApproveExpense(expense) {
+    const { error } = await supabase.from('expenses').update({
+      status: 'Approved', reviewed_by: currentUserRef.current.id, reviewed_at: new Date().toISOString(), admin_notes: null,
+    }).eq('id', expense.id)
+    if (error) { showToast('Failed to approve expense.', 'error'); return }
+    showToast('Expense approved.')
+    await refreshExpenses()
+  }
+
+  async function handleRejectExpense(expense, notes) {
+    const { error } = await supabase.from('expenses').update({
+      status: 'Rejected', reviewed_by: currentUserRef.current.id, reviewed_at: new Date().toISOString(), admin_notes: notes?.trim() || null,
+    }).eq('id', expense.id)
+    if (error) { showToast('Failed to reject expense.', 'error'); return }
+    showToast('Expense rejected.')
+    await refreshExpenses()
+  }
+
+  async function handleMarkExpensePaid(expense) {
+    const { error } = await supabase.from('expenses').update({ status: 'Paid', paid_at: new Date().toISOString() }).eq('id', expense.id)
+    if (error) { showToast('Failed to mark expense as paid.', 'error'); return }
+    showToast('Expense marked as paid.')
+    await refreshExpenses()
+  }
+
+  async function handleDeleteExpense(expense) {
+    const { error } = await supabase.from('expenses').delete().eq('id', expense.id)
+    if (error) { showToast('Failed to delete expense.', 'error'); return }
+    showToast('Expense deleted.')
+    await refreshExpenses()
+  }
+
+  // The receipts bucket is private, so viewing one needs a temporary signed
+  // link generated on demand -- not a permanent public URL. The tab opens
+  // synchronously (still within the click), and only its destination loads
+  // once the signed URL comes back -- opening after the await instead would
+  // risk some browsers' popup blockers treating it as not user-initiated.
+  async function getReceiptUrl(receiptPath) {
+    const newTab = window.open('', '_blank', 'noopener,noreferrer')
+    const { data, error } = await supabase.storage.from('receipts').createSignedUrl(receiptPath, 3600)
+    if (error) { showToast('Failed to load receipt.', 'error'); if (newTab) newTab.close(); return }
+    if (newTab) newTab.location.href = data.signedUrl
+  }
+
   async function handleUpdateJob(id, formData) {
     // Reassign-only sends just { assignedTo } — nothing else about the job
     // changed, so don't run it through the full field mapper (which would
@@ -454,7 +523,7 @@ export default function App() {
   return (<>
     {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     {currentUser.role === 'admin'
-      ? <AdminDashboard currentUser={currentUser} users={allUsers} jobs={jobs} customers={customers} complaints={complaints} onLogout={handleLogout} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAssignJob={handleAssignJob} onPromote={handlePromote} onUpdateDepartment={handleUpdateDepartment} onUpdateProfile={handleUpdateProfile} accessCode={accessCode} onUpdateAccessCode={handleUpdateAccessCode} commissionRate={commissionRate} onUpdateCommissionRate={handleUpdateCommissionRate} onClearCommission={handleClearCommission} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onUpdateComplaintStatus={handleUpdateComplaintStatus} onResolveComplaint={handleResolveComplaint} onMarkTransportPaid={handleMarkTransportPaid} />
-      : <MemberDashboard currentUser={currentUser} jobs={jobs.filter((j) => j.memberId === currentUser.id)} raisedJobs={jobs.filter((j) => j.raisedBy === currentUser.id && j.memberId !== currentUser.id)} customers={customers} customerIdsWithJobs={customerIdsWithJobs} complaints={complaints} memberNames={memberNames} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAddCustomer={handleAddCustomer} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onUpdateProfile={handleUpdateProfile} onAddComplaint={handleAddComplaint} onUpdateComplaintStatus={handleUpdateComplaintStatus} onResolveComplaint={handleResolveComplaint} commissionRate={commissionRate} />}
+      ? <AdminDashboard currentUser={currentUser} users={allUsers} jobs={jobs} customers={customers} complaints={complaints} expenses={expenses} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAssignJob={handleAssignJob} onPromote={handlePromote} onUpdateDepartment={handleUpdateDepartment} onUpdateProfile={handleUpdateProfile} accessCode={accessCode} onUpdateAccessCode={handleUpdateAccessCode} commissionRate={commissionRate} onUpdateCommissionRate={handleUpdateCommissionRate} onClearCommission={handleClearCommission} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onUpdateComplaintStatus={handleUpdateComplaintStatus} onResolveComplaint={handleResolveComplaint} onMarkTransportPaid={handleMarkTransportPaid} onApproveExpense={handleApproveExpense} onRejectExpense={handleRejectExpense} onMarkExpensePaid={handleMarkExpensePaid} onDeleteExpense={handleDeleteExpense} onViewReceipt={getReceiptUrl} />
+      : <MemberDashboard currentUser={currentUser} jobs={jobs.filter((j) => j.memberId === currentUser.id)} raisedJobs={jobs.filter((j) => j.raisedBy === currentUser.id && j.memberId !== currentUser.id)} customers={customers} customerIdsWithJobs={customerIdsWithJobs} complaints={complaints} expenses={expenses.filter((e) => e.submittedBy === currentUser.id)} memberNames={memberNames} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAddCustomer={handleAddCustomer} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onUpdateProfile={handleUpdateProfile} onAddComplaint={handleAddComplaint} onUpdateComplaintStatus={handleUpdateComplaintStatus} onResolveComplaint={handleResolveComplaint} onAddExpense={handleAddExpense} onDeleteExpense={handleDeleteExpense} onViewReceipt={getReceiptUrl} commissionRate={commissionRate} />}
   </>)
 }

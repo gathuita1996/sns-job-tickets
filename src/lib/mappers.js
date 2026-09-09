@@ -125,3 +125,31 @@ export function complaintToDbFields(data) {
     is_recurring: Boolean(data.isRecurring),
   }
 }
+
+export function mapExpense(row) {
+  return {
+    id: row.id,
+    description: row.description,
+    amount: Number(row.amount) || 0,
+    category: row.category,
+    purchaseDate: row.purchase_date,
+    receiptPath: row.receipt_path,
+    status: row.status,
+    adminNotes: row.admin_notes || '',
+    submittedBy: row.submitted_by,
+    reviewedBy: row.reviewed_by || null,
+    reviewedAt: row.reviewed_at || null,
+    paidAt: row.paid_at || null,
+    createdAt: row.created_at,
+  }
+}
+
+export function expenseToDbFields(data) {
+  return {
+    description: data.description,
+    amount: Number(data.amount),
+    category: data.category,
+    purchase_date: data.purchaseDate,
+    receipt_path: data.receiptPath,
+  }
+}

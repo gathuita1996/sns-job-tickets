@@ -1,17 +1,19 @@
 import { useMemo, useState } from 'react'
-import { AlertCircle, AlertTriangle, ArrowLeft, Calendar, CheckCircle2, ClipboardCheck, Clipboard, Clock, Pencil, Plus, Send, Trash2, UserPlus, Users, Wallet } from 'lucide-react'
+import { AlertCircle, AlertTriangle, ArrowLeft, Calendar, CheckCircle2, ClipboardCheck, Clipboard, Clock, Pencil, Plus, Receipt, Send, Trash2, UserPlus, Users, Wallet } from 'lucide-react'
 import Header from './Header'
 import JobFormModal from './JobForm'
 import JobsTable from './JobsTable'
 import CustomerFormModal from './CustomerForm'
 import ComplaintFormModal from './ComplaintForm'
 import ComplaintsQueue from './ComplaintsQueue'
+import ExpenseFormModal from './ExpenseForm'
+import ExpensesList from './ExpensesList'
 import { JobPrintView } from './PrintViews'
 import { ConfirmDialog, EmptyState, NavCard, PeriodSelector, SearchInput, StatCard, StatusFilterSelect } from './shared'
 import { formatKSh, formatDate, isOverdue, isInPeriod, getPeriodRange, isInRange, COMMISSION_DEPARTMENTS } from '../lib/helpers'
 
-export default function MemberDashboard({ currentUser, jobs, raisedJobs, customers, customerIdsWithJobs, complaints, memberNames, onLogout, onAddJob, onUpdateJob, onDeleteJob, onAddCustomer, onUpdateCustomer, onDeleteCustomer, onUpdateProfile, onAddComplaint, onUpdateComplaintStatus, onResolveComplaint, commissionRate }) {
-  const [view, setView] = useState('home') // 'home' | 'all' | 'pending' | 'today' | 'assigned' | 'raised' | 'customers' | 'complaints'
+export default function MemberDashboard({ currentUser, jobs, raisedJobs, customers, customerIdsWithJobs, complaints, expenses, memberNames, onLogout, onAddJob, onUpdateJob, onDeleteJob, onAddCustomer, onUpdateCustomer, onDeleteCustomer, onUpdateProfile, onAddComplaint, onUpdateComplaintStatus, onResolveComplaint, onAddExpense, onDeleteExpense, onViewReceipt, commissionRate }) {
+  const [view, setView] = useState('home') // 'home' | 'all' | 'pending' | 'today' | 'assigned' | 'raised' | 'customers' | 'complaints' | 'expenses'
   const [periodGranularity, setPeriodGranularity] = useState('day')
   const [periodAnchor, setPeriodAnchor] = useState(() => new Date())
   const [showForm, setShowForm] = useState(false)
@@ -20,6 +22,7 @@ export default function MemberDashboard({ currentUser, jobs, raisedJobs, custome
   const [editingCustomer, setEditingCustomer] = useState(null)
   const [confirmDeleteCustomer, setConfirmDeleteCustomer] = useState(null)
   const [showComplaintForm, setShowComplaintForm] = useState(false)
+  const [showExpenseForm, setShowExpenseForm] = useState(false)
   const [printing, setPrinting] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [search, setSearch] = useState('')
@@ -119,6 +122,8 @@ export default function MemberDashboard({ currentUser, jobs, raisedJobs, custome
               {isTechnical && (
                 <NavCard icon={AlertTriangle} label="Complaints" description={`${activeComplaints.length} active`} onClick={() => setView('complaints')} badge={activeComplaints.filter((c) => c.isRecurring).length} />
               )}
+              <NavCard icon={Receipt} label="Submit an expense" description="Upload a receipt" onClick={() => setShowExpenseForm(true)} />
+              <NavCard icon={Receipt} label="My Expenses" description={`${(expenses || []).length} submitted`} onClick={() => setView('expenses')} />
             </div>
           </>
         ) : view === 'customers' ? (
@@ -185,6 +190,21 @@ export default function MemberDashboard({ currentUser, jobs, raisedJobs, custome
               onResolve={onResolveComplaint}
             />
           </>
+        ) : view === 'expenses' ? (
+          <>
+            <div className="flex items-center justify-between" style={{ marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div className="flex items-center gap-3">
+                <button onClick={() => setView('home')} className="sns-btn-secondary" style={{ padding: '0.5rem' }} title="Back to dashboard"><ArrowLeft size={16} /></button>
+                <h2 className="sns-display" style={{ fontSize: '1.1rem', fontWeight: 700 }}>My expenses</h2>
+              </div>
+              <button onClick={() => setShowExpenseForm(true)} className="sns-btn-primary"><Receipt size={17} /> Submit an expense</button>
+            </div>
+            <ExpensesList
+              expenses={expenses || []}
+              onDelete={onDeleteExpense}
+              onViewReceipt={onViewReceipt}
+            />
+          </>
         ) : (
           <>
             <div className="flex items-center gap-3" style={{ marginBottom: '1rem' }}>
@@ -246,6 +266,12 @@ export default function MemberDashboard({ currentUser, jobs, raisedJobs, custome
         <ComplaintFormModal
           onClose={() => setShowComplaintForm(false)}
           onSave={async (data) => { await onAddComplaint(data); setShowComplaintForm(false) }}
+        />
+      )}
+      {showExpenseForm && (
+        <ExpenseFormModal
+          onClose={() => setShowExpenseForm(false)}
+          onSave={async (data) => { await onAddExpense(data); setShowExpenseForm(false) }}
         />
       )}
       {confirmDeleteCustomer && (

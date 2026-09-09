@@ -69,6 +69,20 @@ export const COMPLAINT_TYPES = [
 
 export const COMPLAINT_STATUSES = ['New', 'In Progress', 'Resolved']
 
+// Relevant categories for an ISP's day-to-day purchases -- field equipment
+// and connectivity costs alongside the ordinary costs of running an office.
+export const EXPENSE_CATEGORIES = [
+  'Equipment & Tools',
+  'Fuel & Transport',
+  'Airtime & Data',
+  'Office Supplies',
+  'Utilities',
+  'Repairs & Maintenance',
+  'Other',
+]
+
+export const EXPENSE_STATUSES = ['Submitted', 'Approved', 'Rejected', 'Paid']
+
 // Commission rate itself now lives in app_settings.commission_per_customer
 // (admin-editable from Settings) rather than being hardcoded here.
 // Departments whose members earn a commission for recording a new customer.
@@ -141,6 +155,16 @@ export function defaultComplaintForm() {
     complaintTypeOther: '',
     details: '',
     isRecurring: false,
+  }
+}
+
+export function defaultExpenseForm() {
+  return {
+    description: '',
+    amount: '',
+    category: '',
+    purchaseDate: new Date().toISOString().slice(0, 10),
+    receiptFile: null,
   }
 }
 
