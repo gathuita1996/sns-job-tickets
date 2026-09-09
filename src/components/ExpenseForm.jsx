@@ -4,6 +4,7 @@ import { FormField } from './shared'
 import { EXPENSE_CATEGORIES, defaultExpenseForm, toDateInputValue } from '../lib/helpers'
 
 const MAX_RECEIPT_MB = 8
+const ALLOWED_RECEIPT_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'application/pdf']
 
 export default function ExpenseFormModal({ onClose, onSave }) {
   const [form, setForm] = useState(defaultExpenseForm())
@@ -18,6 +19,14 @@ export default function ExpenseFormModal({ onClose, onSave }) {
   function handleFileChange(ev) {
     const file = ev.target.files?.[0]
     if (!file) return
+    // The accept attribute is only a picker hint, not an enforced rule --
+    // some browsers and OS file pickers let people bypass it, so this
+    // checks the actual file before it's accepted.
+    const isPdfByName = file.name.toLowerCase().endsWith('.pdf')
+    if (!ALLOWED_RECEIPT_TYPES.includes(file.type) && !isPdfByName) {
+      setErrors((e) => ({ ...e, receiptFile: 'Only PDF or photo files (JPG, PNG, HEIC, etc.) are allowed.' }))
+      return
+    }
     if (file.size > MAX_RECEIPT_MB * 1024 * 1024) {
       setErrors((e) => ({ ...e, receiptFile: `File is too large — please keep it under ${MAX_RECEIPT_MB}MB.` }))
       return
@@ -31,7 +40,7 @@ export default function ExpenseFormModal({ onClose, onSave }) {
     if (form.amount === '' || isNaN(Number(form.amount)) || Number(form.amount) <= 0) e.amount = 'Enter a valid amount'
     if (!form.category) e.category = 'Please select a category'
     if (!form.purchaseDate) e.purchaseDate = 'Required'
-    if (!form.receiptFile) e.receiptFile = 'Please attach a photo of the receipt'
+    if (!form.receiptFile) e.receiptFile = 'Please upload the receipt'
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -50,7 +59,7 @@ export default function ExpenseFormModal({ onClose, onSave }) {
     <div className="no-print flex items-center justify-center p-4" style={{ position: 'fixed', inset: 0, background: 'rgba(27,36,48,0.55)', zIndex: 50 }}>
       <div className="sns-card sns-fade-in" style={{ width: '100%', maxWidth: '28rem', maxHeight: '90vh', overflowY: 'auto' }}>
         <div className="flex items-center justify-between sns-border-b sns-bg-card" style={{ padding: '1.1rem 1.4rem', position: 'sticky', top: 0, borderRadius: '14px 14px 0 0' }}>
-          <h3 className="sns-display" style={{ fontWeight: 700 }}>Submit an expense</h3>
+          <h3 className="sns-display" style={{ fontWeight: 700 }}>Submit a purchase</h3>
           <button onClick={onClose} className="sns-icon-btn"><X size={18} /></button>
         </div>
         <form onSubmit={handleSubmit} style={{ padding: '1.4rem' }} className="space-y-4">
@@ -74,20 +83,20 @@ export default function ExpenseFormModal({ onClose, onSave }) {
             </select>
           </FormField>
 
-          <FormField label="Receipt photo" error={errors.receiptFile} hint={`A clear photo or scan of the receipt. Max ${MAX_RECEIPT_MB}MB.`}>
+          <FormField label="Upload Receipt" error={errors.receiptFile} hint={`PDF or photo only. Max ${MAX_RECEIPT_MB}MB.`}>
             <label
               className="sns-input"
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', cursor: 'pointer', padding: '1rem', borderStyle: 'dashed' }}
             >
               <Upload size={16} />
-              <span style={{ fontSize: '0.85rem' }}>{form.receiptFile ? form.receiptFile.name : 'Tap to choose a photo'}</span>
-              <input type="file" accept="image/*,.pdf" onChange={handleFileChange} style={{ display: 'none' }} />
+              <span style={{ fontSize: '0.85rem' }}>{form.receiptFile ? form.receiptFile.name : 'Tap to upload receipt'}</span>
+              <input type="file" accept="image/*,.heic,.heif,.pdf" onChange={handleFileChange} style={{ display: 'none' }} />
             </label>
           </FormField>
 
           <div className="flex gap-3" style={{ paddingTop: '0.4rem', marginBottom: '2rem' }}>
             <button type="button" onClick={onClose} className="sns-btn-secondary" style={{ flex: 1 }}>Cancel</button>
-            <button type="submit" disabled={submitting} className="sns-btn-primary" style={{ flex: 1 }}>{submitting ? 'Uploading…' : 'Submit expense'}</button>
+            <button type="submit" disabled={submitting} className="sns-btn-primary" style={{ flex: 1 }}>{submitting ? 'Uploading…' : 'Submit purchase'}</button>
           </div>
         </form>
       </div>

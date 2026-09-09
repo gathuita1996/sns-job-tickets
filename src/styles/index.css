@@ -80,6 +80,8 @@ body { margin: 0; }
 .sns-icon-btn.danger:hover { background: var(--danger-pale); color: var(--danger); }
 .sns-fade-in { animation: snsFadeIn 0.5s ease; }
 @keyframes snsFadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes snsSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.sns-spin { animation: snsSpin 0.8s linear infinite; }
 .sns-tab { padding: 0.65rem 1rem; font-size: 0.875rem; font-weight: 600; border: none; background: transparent; cursor: pointer; border-bottom: 2px solid transparent; color: var(--ink-faint); font-family: 'IBM Plex Sans', sans-serif; }
 .sns-tab.active { color: var(--signal-deep); border-bottom-color: var(--signal); }
 .sns-table th { text-align: left; padding: 0.7rem; font-size: 0.68rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-faint); font-family: 'IBM Plex Mono', monospace; border-bottom: 1px solid var(--line); }

@@ -13,6 +13,8 @@ export function mapProfile(row) {
     role: row.role,
     title: row.title || '',
     department: row.department || 'technical',
+    isTeamLead: Boolean(row.is_team_lead),
+    isDirector: Boolean(row.is_director),
     createdAt: row.created_at,
   }
 }

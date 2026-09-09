@@ -429,15 +429,13 @@ export default function App() {
   }
 
   // The receipts bucket is private, so viewing one needs a temporary signed
-  // link generated on demand -- not a permanent public URL. The tab opens
-  // synchronously (still within the click), and only its destination loads
-  // once the signed URL comes back -- opening after the await instead would
-  // risk some browsers' popup blockers treating it as not user-initiated.
+  // link generated on demand -- not a permanent public URL. Returns the
+  // URL rather than opening it; the inline viewer (ExpensesList) displays
+  // it directly on the page, not in a new tab.
   async function getReceiptUrl(receiptPath) {
-    const newTab = window.open('', '_blank', 'noopener,noreferrer')
     const { data, error } = await supabase.storage.from('receipts').createSignedUrl(receiptPath, 3600)
-    if (error) { showToast('Failed to load receipt.', 'error'); if (newTab) newTab.close(); return }
-    if (newTab) newTab.location.href = data.signedUrl
+    if (error) { showToast('Failed to load receipt.', 'error'); return null }
+    return data.signedUrl
   }
 
   async function handleUpdateJob(id, formData) {
@@ -483,6 +481,24 @@ export default function App() {
     await refreshUsers()
   }
 
+  async function handleToggleTeamLead(member) {
+    const { error } = await supabase.from('profiles').update({ is_team_lead: !member.isTeamLead }).eq('id', member.id)
+    if (error) { showToast('Failed to update team lead status.', 'error'); return }
+    showToast(member.isTeamLead ? `${member.fullName} is no longer a team lead.` : `${member.fullName} is now a team lead.`)
+    await refreshUsers()
+  }
+
+  // Only one Director at a time -- clear whoever currently holds it before
+  // setting the new one, so this never leaves two people with the flag.
+  async function handleSetDirector(member) {
+    const { error: clearError } = await supabase.from('profiles').update({ is_director: false }).eq('is_director', true)
+    if (clearError) { showToast('Failed to update director. Please try again.', 'error'); return }
+    const { error } = await supabase.from('profiles').update({ is_director: true }).eq('id', member.id)
+    if (error) { showToast('Failed to update director. Please try again.', 'error'); return }
+    showToast(`${member.fullName} is now the Director.`)
+    await refreshUsers()
+  }
+
   async function handleUpdateDepartment(member, department) {
     const { error } = await supabase.from('profiles').update({ department }).eq('id', member.id)
     if (error) { showToast('Failed to update department.', 'error'); return }
@@ -523,7 +539,7 @@ export default function App() {
   return (<>
     {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     {currentUser.role === 'admin'
-      ? <AdminDashboard currentUser={currentUser} users={allUsers} jobs={jobs} customers={customers} complaints={complaints} expenses={expenses} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAssignJob={handleAssignJob} onPromote={handlePromote} onUpdateDepartment={handleUpdateDepartment} onUpdateProfile={handleUpdateProfile} accessCode={accessCode} onUpdateAccessCode={handleUpdateAccessCode} commissionRate={commissionRate} onUpdateCommissionRate={handleUpdateCommissionRate} onClearCommission={handleClearCommission} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onUpdateComplaintStatus={handleUpdateComplaintStatus} onResolveComplaint={handleResolveComplaint} onMarkTransportPaid={handleMarkTransportPaid} onApproveExpense={handleApproveExpense} onRejectExpense={handleRejectExpense} onMarkExpensePaid={handleMarkExpensePaid} onDeleteExpense={handleDeleteExpense} onViewReceipt={getReceiptUrl} />
+      ? <AdminDashboard currentUser={currentUser} users={allUsers} jobs={jobs} customers={customers} complaints={complaints} expenses={expenses} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAssignJob={handleAssignJob} onPromote={handlePromote} onUpdateDepartment={handleUpdateDepartment} onUpdateProfile={handleUpdateProfile} accessCode={accessCode} onUpdateAccessCode={handleUpdateAccessCode} commissionRate={commissionRate} onUpdateCommissionRate={handleUpdateCommissionRate} onClearCommission={handleClearCommission} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onUpdateComplaintStatus={handleUpdateComplaintStatus} onResolveComplaint={handleResolveComplaint} onMarkTransportPaid={handleMarkTransportPaid} onAddExpense={handleAddExpense} onApproveExpense={handleApproveExpense} onRejectExpense={handleRejectExpense} onMarkExpensePaid={handleMarkExpensePaid} onDeleteExpense={handleDeleteExpense} onViewReceipt={getReceiptUrl} onToggleTeamLead={handleToggleTeamLead} onSetDirector={handleSetDirector} />
       : <MemberDashboard currentUser={currentUser} jobs={jobs.filter((j) => j.memberId === currentUser.id)} raisedJobs={jobs.filter((j) => j.raisedBy === currentUser.id && j.memberId !== currentUser.id)} customers={customers} customerIdsWithJobs={customerIdsWithJobs} complaints={complaints} expenses={expenses.filter((e) => e.submittedBy === currentUser.id)} memberNames={memberNames} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAddCustomer={handleAddCustomer} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onUpdateProfile={handleUpdateProfile} onAddComplaint={handleAddComplaint} onUpdateComplaintStatus={handleUpdateComplaintStatus} onResolveComplaint={handleResolveComplaint} onAddExpense={handleAddExpense} onDeleteExpense={handleDeleteExpense} onViewReceipt={getReceiptUrl} commissionRate={commissionRate} />}
   </>)
 }

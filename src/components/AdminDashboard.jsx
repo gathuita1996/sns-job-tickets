@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, AlertTriangle, Award, Check, CheckCircle2, Clipboard, Copy, Eye, EyeOff, Mail, MessageCircle, Pencil, Plus, Printer, Trash2, UserPlus, Users, Wallet, X } from 'lucide-react'
+import { AlertCircle, AlertTriangle, Award, Check, CheckCircle2, Clipboard, Copy, Eye, EyeOff, Mail, MessageCircle, Pencil, Plus, Printer, Receipt, Trash2, UserPlus, Users, Wallet, X } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import Header from './Header'
 import JobFormModal from './JobForm'
@@ -10,10 +10,11 @@ import TeamList from './TeamList'
 import ComplaintsQueue from './ComplaintsQueue'
 import TransportTab from './TransportTab'
 import ExpensesList from './ExpensesList'
+import ExpenseFormModal from './ExpenseForm'
 import { ConfirmDialog, EmptyState, FormField, PeriodSelector, SearchInput, StatCard, StatusBadge, StatusFilterSelect } from './shared'
 import { JOB_TYPES, PRIORITY_OPTIONS, CHART_COLORS, COMMISSION_DEPARTMENTS, departmentLabel, formatKSh, formatDate, formatDateTime, isOverdue, isInPeriod, getPeriodRange, isInRange, toWhatsAppNumber } from '../lib/helpers'
 
-export default function AdminDashboard({ currentUser, users, jobs, customers, complaints, expenses, onLogout, onAddJob, onUpdateJob, onDeleteJob, onAssignJob, onPromote, onUpdateDepartment, onUpdateProfile, accessCode, onUpdateAccessCode, commissionRate, onUpdateCommissionRate, onClearCommission, onDeleteCustomer, onUpdateComplaintStatus, onResolveComplaint, onMarkTransportPaid, onApproveExpense, onRejectExpense, onMarkExpensePaid, onDeleteExpense, onViewReceipt }) {
+export default function AdminDashboard({ currentUser, users, jobs, customers, complaints, expenses, onLogout, onAddJob, onUpdateJob, onDeleteJob, onAssignJob, onPromote, onUpdateDepartment, onUpdateProfile, accessCode, onUpdateAccessCode, commissionRate, onUpdateCommissionRate, onClearCommission, onDeleteCustomer, onUpdateComplaintStatus, onResolveComplaint, onMarkTransportPaid, onAddExpense, onApproveExpense, onRejectExpense, onMarkExpensePaid, onDeleteExpense, onViewReceipt, onToggleTeamLead, onSetDirector }) {
   const [tab, setTab] = useState('overview')
   const [periodGranularity, setPeriodGranularity] = useState('day')
   const [periodAnchor, setPeriodAnchor] = useState(() => new Date())
@@ -28,6 +29,7 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
   const [editingJob, setEditingJob] = useState(null)
   const [showAssignForm, setShowAssignForm] = useState(false)
   const [showFileForm, setShowFileForm] = useState(false)
+  const [showExpenseForm, setShowExpenseForm] = useState(false)
   const [justAssigned, setJustAssigned] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [viewingCustomer, setViewingCustomer] = useState(null)
@@ -139,7 +141,7 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
           <button className={`sns-tab ${tab === 'commissions' ? 'active' : ''}`} onClick={() => setTab('commissions')}>Commissions</button>
           <button className={`sns-tab ${tab === 'transport' ? 'active' : ''}`} onClick={() => setTab('transport')}>Transport</button>
           <button className={`sns-tab ${tab === 'expenses' ? 'active' : ''}`} onClick={() => setTab('expenses')}>
-            Expenses{(expenses || []).filter((e) => e.status === 'Submitted').length > 0 && <span className="sns-badge sns-badge-overdue" style={{ marginLeft: '0.4rem' }}>{(expenses || []).filter((e) => e.status === 'Submitted').length}</span>}
+            Expense/Purchases{(expenses || []).filter((e) => e.status === 'Submitted').length > 0 && <span className="sns-badge sns-badge-overdue" style={{ marginLeft: '0.4rem' }}>{(expenses || []).filter((e) => e.status === 'Submitted').length}</span>}
           </button>
           <button className={`sns-tab ${tab === 'customers' ? 'active' : ''}`} onClick={() => setTab('customers')}>Customers</button>
           <button className={`sns-tab ${tab === 'complaints' ? 'active' : ''}`} onClick={() => setTab('complaints')}>
@@ -228,7 +230,7 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
           </div>
         )}
 
-        {tab === 'team' && <TeamList users={users} jobs={jobs} onPromote={onPromote} onUpdateDepartment={onUpdateDepartment} onEditMember={setEditingMember} />}
+        {tab === 'team' && <TeamList users={users} jobs={jobs} onPromote={onPromote} onUpdateDepartment={onUpdateDepartment} onEditMember={setEditingMember} onToggleTeamLead={onToggleTeamLead} onSetDirector={onSetDirector} />}
 
         {tab === 'commissions' && (
           <div>
@@ -290,15 +292,23 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
         )}
 
         {tab === 'expenses' && (
-          <ExpensesList
-            expenses={expenses || []}
-            userMap={userMap}
-            onApprove={onApproveExpense}
-            onReject={onRejectExpense}
-            onMarkPaid={onMarkExpensePaid}
-            onDelete={onDeleteExpense}
-            onViewReceipt={onViewReceipt}
-          />
+          <div>
+            <div className="flex items-center justify-between" style={{ marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+              {!currentUser.isDirector && (
+                <p className="sns-text-faint" style={{ fontSize: '0.8rem' }}>Only the Director can approve, reject, or mark purchases as paid — you can still see everything below.</p>
+              )}
+              <button onClick={() => setShowExpenseForm(true)} className="sns-btn-primary" style={{ marginLeft: 'auto' }}><Receipt size={16} /> Submit a purchase</button>
+            </div>
+            <ExpensesList
+              expenses={expenses || []}
+              userMap={userMap}
+              onApprove={currentUser.isDirector ? onApproveExpense : undefined}
+              onReject={currentUser.isDirector ? onRejectExpense : undefined}
+              onMarkPaid={currentUser.isDirector ? onMarkExpensePaid : undefined}
+              onDelete={onDeleteExpense}
+              onViewReceipt={onViewReceipt}
+            />
+          </div>
         )}
 
         {tab === 'customers' && (
@@ -399,6 +409,12 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
           filerDepartment={currentUser.department}
           onClose={() => setShowFileForm(false)}
           onSave={async (data) => { await onAddJob(data); setShowFileForm(false) }}
+        />
+      )}
+      {showExpenseForm && (
+        <ExpenseFormModal
+          onClose={() => setShowExpenseForm(false)}
+          onSave={async (data) => { await onAddExpense(data); setShowExpenseForm(false) }}
         />
       )}
       {confirmDelete && (

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Check, ExternalLink, Trash2, X } from 'lucide-react'
+import { Check, Eye, Loader2, Trash2, X } from 'lucide-react'
 import { EmptyState, FormField, SearchInput } from './shared'
 import { formatKSh, formatDate } from '../lib/helpers'
 
@@ -12,9 +12,11 @@ const STATUS_BADGE = {
 
 function RejectExpenseModal({ expense, onClose, onConfirm }) {
   const [notes, setNotes] = useState('')
+  const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
   async function handleConfirm() {
+    if (!notes.trim()) { setError('Please explain why this is being rejected'); return }
     setSubmitting(true)
     await onConfirm(notes)
     setSubmitting(false)
@@ -24,13 +26,13 @@ function RejectExpenseModal({ expense, onClose, onConfirm }) {
     <div className="no-print flex items-center justify-center p-4" style={{ position: 'fixed', inset: 0, background: 'rgba(27,36,48,0.55)', zIndex: 60 }}>
       <div className="sns-card sns-fade-in" style={{ width: '100%', maxWidth: '26rem' }}>
         <div className="flex items-center justify-between sns-border-b" style={{ padding: '1.1rem 1.4rem' }}>
-          <h3 className="sns-display" style={{ fontWeight: 700 }}>Reject expense</h3>
+          <h3 className="sns-display" style={{ fontWeight: 700 }}>Reject purchase</h3>
           <button onClick={onClose} className="sns-icon-btn"><X size={18} /></button>
         </div>
         <div style={{ padding: '1.4rem' }}>
           <p style={{ fontSize: '0.85rem', marginBottom: '0.3rem' }}><strong>{expense.description}</strong> — {formatKSh(expense.amount)}</p>
-          <FormField label="Reason (optional)" hint="Lets the person know why, so they can fix it and resubmit if needed.">
-            <textarea className="sns-input" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="e.g. Receipt is unreadable, please reupload…" autoFocus />
+          <FormField label="Reason for rejecting" error={error} hint="Lets the person know why, so they can fix it and resubmit if needed.">
+            <textarea className="sns-input" rows={3} value={notes} onChange={(e) => { setNotes(e.target.value); setError('') }} placeholder="e.g. Receipt is unreadable, please reupload…" autoFocus />
           </FormField>
           <div className="flex gap-3" style={{ paddingTop: '1rem' }}>
             <button type="button" onClick={onClose} className="sns-btn-secondary" style={{ flex: 1 }}>Cancel</button>
@@ -42,13 +44,51 @@ function RejectExpenseModal({ expense, onClose, onConfirm }) {
   )
 }
 
+// Shows the receipt right on the page rather than opening a new tab --
+// images render directly, PDFs render in an embedded frame. url is the
+// already-fetched signed link; loading is shown while that fetch is
+// still in flight.
+function ReceiptViewerModal({ url, loading, onClose }) {
+  const isPdf = url && url.split('?')[0].toLowerCase().endsWith('.pdf')
+  return (
+    <div className="no-print flex items-center justify-center p-4" style={{ position: 'fixed', inset: 0, background: 'rgba(27,36,48,0.75)', zIndex: 70 }}>
+      <div className="sns-card sns-fade-in" style={{ width: '100%', maxWidth: '42rem', maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
+        <div className="flex items-center justify-between sns-border-b" style={{ padding: '1rem 1.4rem' }}>
+          <h3 className="sns-display" style={{ fontWeight: 700 }}>Receipt</h3>
+          <button onClick={onClose} className="sns-icon-btn"><X size={18} /></button>
+        </div>
+        <div style={{ flex: 1, overflow: 'auto', padding: '1.2rem', display: 'flex', justifyContent: 'center', alignItems: loading ? 'center' : 'flex-start', minHeight: '30vh' }}>
+          {loading ? (
+            <Loader2 size={28} className="sns-spin" style={{ color: 'var(--ink-faint)' }} />
+          ) : isPdf ? (
+            <iframe src={url} title="Receipt" style={{ width: '100%', height: '75vh', border: 'none', borderRadius: 8 }} />
+          ) : (
+            <img src={url} alt="Receipt" style={{ maxWidth: '100%', borderRadius: 8 }} />
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // Shared between AdminDashboard (full review actions) and MemberDashboard
-// ("My Expenses" -- read-only status, own submissions only via RLS).
-// Which action buttons appear is driven entirely by which callbacks are
-// actually passed in, same pattern JobsTable already uses.
+// ("My Expenses/Purchases" -- read-only status, own submissions only via
+// RLS). Which action buttons appear is driven entirely by which callbacks
+// are actually passed in, same pattern JobsTable already uses.
 export default function ExpensesList({ expenses, userMap, onApprove, onReject, onMarkPaid, onDelete, onViewReceipt }) {
   const [search, setSearch] = useState('')
   const [rejecting, setRejecting] = useState(null)
+  const [receiptUrl, setReceiptUrl] = useState(null)
+  const [receiptLoading, setReceiptLoading] = useState(false)
+
+  async function handleViewReceipt(path) {
+    setReceiptLoading(true)
+    setReceiptUrl('') // truthy placeholder so the modal opens immediately, showing the spinner
+    const url = await onViewReceipt(path)
+    setReceiptLoading(false)
+    if (!url) { setReceiptUrl(null); return }
+    setReceiptUrl(url)
+  }
 
   const filtered = [...expenses]
     .filter((e) => {
@@ -57,7 +97,7 @@ export default function ExpensesList({ expenses, userMap, onApprove, onReject, o
     })
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
 
-  if (expenses.length === 0) return <EmptyState message="No expenses recorded yet." />
+  if (expenses.length === 0) return <EmptyState message="No purchases recorded yet." />
 
   return (
     <div>
@@ -65,7 +105,7 @@ export default function ExpensesList({ expenses, userMap, onApprove, onReject, o
         <SearchInput value={search} onChange={setSearch} placeholder="Search by description or category…" />
       </div>
       {filtered.length === 0 ? (
-        <EmptyState message="No expenses match your search." />
+        <EmptyState message="No purchases match your search." />
       ) : (
         <div className="flex flex-col gap-3">
           {filtered.map((e) => {
@@ -85,11 +125,11 @@ export default function ExpensesList({ expenses, userMap, onApprove, onReject, o
                   {userMap?.[e.submittedBy]?.fullName && ` · Submitted by ${userMap[e.submittedBy].fullName}`}
                 </p>
                 {e.adminNotes && (
-                  <p style={{ fontSize: '0.82rem', color: 'var(--overdue)', marginBottom: '0.6rem' }}><strong>Note:</strong> {e.adminNotes}</p>
+                  <p style={{ fontSize: '0.82rem', color: 'var(--overdue)', marginBottom: '0.6rem' }}><strong>Reason for rejection:</strong> {e.adminNotes}</p>
                 )}
                 <div className="flex items-center gap-2" style={{ flexWrap: 'wrap' }}>
-                  <button onClick={() => onViewReceipt(e.receiptPath)} className="sns-btn-secondary" style={{ fontSize: '0.78rem', padding: '0.45rem 0.75rem' }}>
-                    <ExternalLink size={14} /> View Receipt
+                  <button onClick={() => handleViewReceipt(e.receiptPath)} className="sns-btn-secondary" style={{ fontSize: '0.78rem', padding: '0.45rem 0.75rem' }}>
+                    <Eye size={14} /> View Receipt
                   </button>
                   {onApprove && e.status === 'Submitted' && (
                     <button onClick={() => onApprove(e)} className="sns-btn-primary" style={{ fontSize: '0.78rem', padding: '0.45rem 0.75rem' }}>
@@ -123,6 +163,9 @@ export default function ExpensesList({ expenses, userMap, onApprove, onReject, o
           onClose={() => setRejecting(null)}
           onConfirm={async (notes) => { await onReject(rejecting, notes); setRejecting(null) }}
         />
+      )}
+      {receiptUrl !== null && (
+        <ReceiptViewerModal url={receiptUrl} loading={receiptLoading} onClose={() => setReceiptUrl(null)} />
       )}
     </div>
   )

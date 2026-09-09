@@ -31,6 +31,9 @@ export default function MemberDashboard({ currentUser, jobs, raisedJobs, custome
   const isSales = currentUser.department === 'sales'
   const isTechnical = currentUser.department === 'technical'
   const canReportComplaint = isSales || isTechnical
+  // Regular members no longer get this at all -- only a Team Lead does.
+  // Admins get it through AdminDashboard instead, not this component.
+  const canMakePurchases = currentUser.isTeamLead
 
   // jobs here is already scoped to this member (App.jsx filters it), so
   // "assigned" just means someone else (an admin) put it there.
@@ -122,8 +125,12 @@ export default function MemberDashboard({ currentUser, jobs, raisedJobs, custome
               {isTechnical && (
                 <NavCard icon={AlertTriangle} label="Complaints" description={`${activeComplaints.length} active`} onClick={() => setView('complaints')} badge={activeComplaints.filter((c) => c.isRecurring).length} />
               )}
-              <NavCard icon={Receipt} label="Submit an expense" description="Upload a receipt" onClick={() => setShowExpenseForm(true)} />
-              <NavCard icon={Receipt} label="My Expenses" description={`${(expenses || []).length} submitted`} onClick={() => setView('expenses')} />
+              {canMakePurchases && (
+                <>
+                  <NavCard icon={Receipt} label="Submit a purchase" description="Upload a receipt" onClick={() => setShowExpenseForm(true)} />
+                  <NavCard icon={Receipt} label="My Expenses/Purchases" description={`${(expenses || []).length} submitted`} onClick={() => setView('expenses')} />
+                </>
+              )}
             </div>
           </>
         ) : view === 'customers' ? (
@@ -195,9 +202,9 @@ export default function MemberDashboard({ currentUser, jobs, raisedJobs, custome
             <div className="flex items-center justify-between" style={{ marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
               <div className="flex items-center gap-3">
                 <button onClick={() => setView('home')} className="sns-btn-secondary" style={{ padding: '0.5rem' }} title="Back to dashboard"><ArrowLeft size={16} /></button>
-                <h2 className="sns-display" style={{ fontSize: '1.1rem', fontWeight: 700 }}>My expenses</h2>
+                <h2 className="sns-display" style={{ fontSize: '1.1rem', fontWeight: 700 }}>My Expenses/Purchases</h2>
               </div>
-              <button onClick={() => setShowExpenseForm(true)} className="sns-btn-primary"><Receipt size={17} /> Submit an expense</button>
+              <button onClick={() => setShowExpenseForm(true)} className="sns-btn-primary"><Receipt size={17} /> Submit a purchase</button>
             </div>
             <ExpensesList
               expenses={expenses || []}

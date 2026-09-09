@@ -1,10 +1,10 @@
-import { Pencil, Phone, Shield } from 'lucide-react'
+import { Award, Pencil, Phone, Shield, Star } from 'lucide-react'
 import { EmptyState } from './shared'
 import { DEPARTMENTS, departmentLabel } from '../lib/helpers'
 
 const DEPT_BADGE_CLASS = { sales: 'sns-badge-progress', technical: 'sns-badge-role', admin: 'sns-badge-pending' }
 
-export default function TeamList({ users, jobs, onPromote, onUpdateDepartment, onEditMember }) {
+export default function TeamList({ users, jobs, onPromote, onUpdateDepartment, onEditMember, onToggleTeamLead, onSetDirector }) {
   if (!users.length) return <EmptyState message="No team members registered yet." />
 
   return (
@@ -22,6 +22,8 @@ export default function TeamList({ users, jobs, onPromote, onUpdateDepartment, o
                   <p style={{ fontWeight: 600, fontSize: '0.88rem' }}>{m.fullName}</p>
                   {m.role === 'admin' && <span className="sns-badge sns-badge-role">{m.title || 'Admin'}</span>}
                   <span className={`sns-badge ${DEPT_BADGE_CLASS[m.department] || 'sns-badge-pending'}`}>{departmentLabel(m.department)}</span>
+                  {m.isTeamLead && <span className="sns-badge" style={{ background: 'var(--confirmed-pale)', color: 'var(--confirmed)' }}><Star size={11} /> Team Lead</span>}
+                  {m.isDirector && <span className="sns-badge" style={{ background: 'var(--stamp-pale)', color: 'var(--stamp-deep)' }}><Award size={11} /> Director</span>}
                 </div>
                 <p className="flex items-center gap-1 sns-text-faint" style={{ fontSize: '0.75rem' }}><Phone size={11} /> {m.contact}</p>
               </div>
@@ -45,6 +47,16 @@ export default function TeamList({ users, jobs, onPromote, onUpdateDepartment, o
               {onEditMember && (
                 <button onClick={() => onEditMember(m)} className="sns-icon-btn" title="Edit profile">
                   <Pencil size={15} />
+                </button>
+              )}
+              {m.role !== 'admin' && onToggleTeamLead && (
+                <button onClick={() => onToggleTeamLead(m)} className="sns-btn-secondary" style={{ fontSize: '0.78rem', padding: '0.45rem 0.75rem' }} title={m.isTeamLead ? 'Remove team lead status' : 'Promote to team lead — can then make purchases'}>
+                  <Star size={14} /> {m.isTeamLead ? 'Remove Team Lead' : 'Make Team Lead'}
+                </button>
+              )}
+              {m.role === 'admin' && onSetDirector && !m.isDirector && (
+                <button onClick={() => onSetDirector(m)} className="sns-btn-secondary" style={{ fontSize: '0.78rem', padding: '0.45rem 0.75rem' }} title="Only one Director approves purchases at a time — this replaces the current one">
+                  <Award size={14} /> Make Director
                 </button>
               )}
               {m.role !== 'admin' && (
