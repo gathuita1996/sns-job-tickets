@@ -192,9 +192,9 @@ create policy "profiles_update_admin"
 -- is signed in — the app's UI only shows the "new job" action to members,
 -- matching the original spec that admins view/manage but don't file.
 -- ----------------------------------------------------------------------------
-create policy "jobs_select_own_or_admin"
+create policy "jobs_select_own_raised_or_admin"
   on public.jobs for select
-  using (member_id = auth.uid() or public.is_admin());
+  using (member_id = auth.uid() or raised_by = auth.uid() or public.is_admin());
 
 create policy "jobs_insert_self_or_admin"
   on public.jobs for insert
@@ -525,6 +525,426 @@ grant execute on function public.customers_with_jobs() to authenticated;
 -- The database just needs to stop rejecting an empty value outright.
 -- ============================================================================
 alter table public.jobs alter column requested_by drop not null;
+
+-- ============================================================================
+-- MIGRATION — added later: a job's transport can now cover multiple stops
+-- (Office -> Site A -> Site B -> ...), not just one destination.
+--
+-- transport_to changes from a single value to an array. Existing jobs each
+-- had exactly one destination, so this converts every existing value into a
+-- one-element array -- no data is lost, every past job just becomes "a trip
+-- with one stop", which is accurate.
+-- ============================================================================
+alter table public.jobs alter column transport_to type text[] using (
+  case when transport_to is null then null else array[transport_to] end
+);
+
+-- ============================================================================
+-- MIGRATION — added later: complaint handling.
+--
+-- A complaint is deliberately its own thing, not a job or a customer record
+-- -- it has no technician dispatch, no transport, no visit date. Sales &
+-- Marketing and Technical members can both raise one; Admin and Technical
+-- can both see and work the shared queue. This is the first place in the
+-- system where a regular member sees something beyond their own
+-- records -- Technical needs the WHOLE team's complaints, not just ones
+-- they personally raised, since resolving them is a shared responsibility.
+--
+-- Nothing is ever deleted when a complaint is resolved -- it just stops
+-- appearing in the active queue everyone works from day to day, the same
+-- way a completed job doesn't vanish, it just isn't "Pending" anymore. The
+-- historical record stays intact for admin to review later if needed.
+-- ============================================================================
+create table public.complaints (
+  id                    bigint generated always as identity primary key,
+  complainant_name      text not null,
+  location              text not null,
+  contact               text not null,
+  complaint_type        text not null,
+  complaint_type_other  text,
+  details               text not null,
+  is_recurring          boolean not null default false,
+  status                text not null default 'New' check (status in ('New', 'In Progress', 'Resolved')),
+  resolution_notes      text,
+  raised_by             uuid not null references public.profiles(id) on delete cascade,
+  resolved_by           uuid references public.profiles(id),
+  resolved_at           timestamptz,
+  created_at            timestamptz not null default now()
+);
+
+create index complaints_status_idx on public.complaints(status);
+
+alter table public.complaints enable row level security;
+
+-- Anyone can raise a complaint under their own name (the UI restricts this
+-- to Sales & Marketing and Technical, same "UI convention, not a hard DB
+-- wall" approach already used elsewhere in this schema).
+create policy "complaints_insert_self"
+  on public.complaints for insert
+  with check (raised_by = auth.uid());
+
+-- Only admins and Technical department members can see the queue.
+create policy "complaints_select_admin_or_technical"
+  on public.complaints for select
+  using (
+    public.is_admin()
+    or exists (select 1 from public.profiles where id = auth.uid() and department = 'technical')
+  );
+
+-- Same two groups can update status and add resolution notes as they work
+-- a complaint toward resolution.
+create policy "complaints_update_admin_or_technical"
+  on public.complaints for update
+  using (
+    public.is_admin()
+    or exists (select 1 from public.profiles where id = auth.uid() and department = 'technical')
+  );
+
+-- Deleting a complaint record entirely (as opposed to resolving it) is
+-- admin-only, same as customers.
+create policy "complaints_delete_admin"
+  on public.complaints for delete
+  using (public.is_admin());
+
+-- Technical members viewing the complaints queue need to see who raised
+-- each one, but can't see the full profiles table (RLS correctly blocks
+-- that -- contact numbers and usernames aren't any member's business but
+-- their own). This exposes only id + name + department, safe for any
+-- signed-in member -- also reused for the co-technician picker below, so
+-- a member filing a job can see which colleagues are Technical without
+-- needing broader profile access.
+create or replace function public.member_names()
+returns table(id uuid, full_name text, department text) as $$
+  select p.id, p.full_name, p.department from public.profiles p;
+$$ language sql security definer stable set search_path = public;
+
+grant execute on function public.member_names() to authenticated;
+
+-- ============================================================================
+-- MIGRATION — added later: a job's original raiser keeps visibility into it
+-- even after it's reassigned to someone else.
+--
+-- Previously, once admin reassigned a job away from whoever it started
+-- under (e.g. a Sales member's auto-created follow-up job, handed to a
+-- technician), the original person lost all visibility -- RLS blocked
+-- them from even seeing it, regardless of raised_by being set. This is
+-- specifically what makes "the sales person sees it marked Complete
+-- without doing anything" possible: they're reading the exact same row
+-- the technician is updating, not a copy.
+-- ============================================================================
+drop policy if exists "jobs_select_own_or_admin" on public.jobs;
+drop policy if exists "jobs_select_own_raised_or_admin" on public.jobs;
+create policy "jobs_select_own_raised_or_admin"
+  on public.jobs for select
+  using (member_id = auth.uid() or raised_by = auth.uid() or public.is_admin());
+
+-- ============================================================================
+-- MIGRATION — added later: co-attending technicians, member email (for
+-- notifications), and transport payment tracking.
+--
+-- co_technicians: in practice, one, two, or three technicians often attend
+-- the same visit together, but each job card is still one row filed by one
+-- person. Without this, if two techs each filed their own card for the
+-- same visit, "Jobs by Type" would double-count a single job. This lets
+-- the filer note who else was there, on the SAME row, so a co-attended
+-- visit is still exactly one job, one count -- and everyone who actually
+-- worked it gets fair credit in their own job-count, not just whoever
+-- happened to file the paperwork.
+--
+-- profiles.email: needed so admin can notify a member by email when
+-- assigning a job. auth.users has this, but it isn't queryable from the
+-- client the way profiles is -- mirroring it here at signup makes it
+-- available the same way everything else about a member already is.
+-- ============================================================================
+alter table public.jobs add column if not exists co_technicians uuid[];
+
+alter table public.profiles add column if not exists email text;
+
+-- Backfill existing members -- this only works because the SQL Editor runs
+-- with full database privileges, including read access to auth.users. New
+-- signups get this from the trigger update below, going forward.
+update public.profiles set email = (select u.email from auth.users u where u.id = profiles.id) where email is null;
+
+create or replace function public.handle_new_user()
+returns trigger as $$
+declare
+  first_user boolean;
+  required_code text;
+begin
+  select signup_access_code into required_code from public.app_settings where id = true;
+
+  if new.raw_user_meta_data->>'access_code' is distinct from required_code then
+    raise exception 'invalid_access_code';
+  end if;
+
+  select not exists(select 1 from public.profiles) into first_user;
+
+  insert into public.profiles (id, username, full_name, contact, role, title, department, email)
+  values (
+    new.id,
+    new.raw_user_meta_data->>'username',
+    new.raw_user_meta_data->>'full_name',
+    new.raw_user_meta_data->>'contact',
+    case when first_user then 'admin' else 'member' end,
+    new.raw_user_meta_data->>'title',
+    coalesce(new.raw_user_meta_data->>'department', 'technical'),
+    new.email
+  );
+  return new;
+end;
+$$ language plpgsql security definer set search_path = public;
+
+-- Transport payments: tracks when a job's transport cost was actually paid
+-- out to the member, same non-destructive pattern as commission -- nothing
+-- is ever deleted, a job just stops showing as "unpaid" once marked.
+alter table public.jobs add column if not exists transport_paid_at timestamptz;
+
+-- member_names() gains a department column, for the co-technician picker.
+-- Postgres won't let CREATE OR REPLACE change a function's return type, so
+-- existing databases need it dropped first -- this is a no-op on a fresh
+-- install where it doesn't exist yet.
+drop function if exists public.member_names();
+create or replace function public.member_names()
+returns table(id uuid, full_name text, department text) as $$
+  select p.id, p.full_name, p.department from public.profiles p;
+$$ language sql security definer stable set search_path = public;
+
+grant execute on function public.member_names() to authenticated;
+
+-- ============================================================================
+-- MIGRATION — added later: expense/purchase tracking with receipt uploads.
+--
+-- Anyone can submit a purchase or expense with a receipt photo. Admin
+-- reviews and approves (or rejects) it, then separately marks it paid once
+-- reimbursed -- the same "approve, then pay" two-step most real expense
+-- workflows actually use, not one flag doing double duty.
+--
+-- This is the first feature in the app that stores an actual file, not
+-- just data -- so it needs a Storage bucket alongside the usual table.
+-- The bucket is private: receipts aren't public URLs, they're only
+-- reachable via a signed link the app generates for someone who's
+-- actually allowed to see that specific receipt.
+-- ============================================================================
+create table public.expenses (
+  id                   bigint generated always as identity primary key,
+  description          text not null,
+  amount               numeric(10,2) not null,
+  category             text not null,
+  purchase_date        date,
+  receipt_path         text,
+  receipt_uploaded_at  timestamptz,
+  status               text not null default 'Requested' check (status in ('Requested', 'Approved', 'Rejected', 'Purchased', 'Paid')),
+  admin_notes          text,
+  submitted_by         uuid not null references public.profiles(id) on delete cascade,
+  reviewed_by          uuid references public.profiles(id),
+  reviewed_at          timestamptz,
+  paid_at              timestamptz,
+  created_at           timestamptz not null default now()
+);
+
+create index expenses_status_idx on public.expenses(status);
+
+alter table public.expenses enable row level security;
+
+create policy "expenses_insert_self"
+  on public.expenses for insert
+  with check (submitted_by = auth.uid());
+
+create policy "expenses_select_own_or_admin"
+  on public.expenses for select
+  using (submitted_by = auth.uid() or public.is_admin());
+
+-- Approving, rejecting, and marking paid are all admin actions -- a member
+-- submits and can see their own submission's status change, but can't
+-- move it through the workflow themselves.
+create policy "expenses_update_admin"
+  on public.expenses for update
+  using (public.is_admin());
+
+-- A member can withdraw their own submission only before anyone's acted on
+-- it -- once admin has reviewed it, deleting it would erase the record of
+-- that decision, so only admin can remove it from that point on.
+create policy "expenses_delete_own_pending_or_admin"
+  on public.expenses for delete
+  using ((submitted_by = auth.uid() and status = 'Submitted') or public.is_admin());
+
+-- --- Storage bucket for receipt photos ---
+insert into storage.buckets (id, name, public)
+values ('receipts', 'receipts', false)
+on conflict (id) do nothing;
+
+-- Receipts are stored under a path starting with the uploader's own user
+-- id (e.g. "{user_id}/167..._receipt.jpg"), which is what these policies
+-- check against -- the same own-record-or-admin shape used everywhere
+-- else, just expressed through a file path instead of a table column.
+create policy "receipts_insert_own"
+  on storage.objects for insert
+  with check (bucket_id = 'receipts' and (storage.foldername(name))[1] = auth.uid()::text);
+
+create policy "receipts_select_own_or_admin"
+  on storage.objects for select
+  using (bucket_id = 'receipts' and ((storage.foldername(name))[1] = auth.uid()::text or public.is_admin()));
+
+create policy "receipts_delete_own_or_admin"
+  on storage.objects for delete
+  using (bucket_id = 'receipts' and ((storage.foldername(name))[1] = auth.uid()::text or public.is_admin()));
+
+-- ============================================================================
+-- MIGRATION — added later: expenses become Team Lead + Director only.
+--
+-- Two new flags on top of the existing role system, not a replacement for
+-- it -- a Team Lead is still a regular member, just one admin has marked
+-- as trusted to make purchases. A Director is still an admin, just the
+-- specific one the owner has designated to approve them. Both are
+-- deliberately independent of role/department, since "who can approve
+-- purchases" isn't the same question as "who is an admin".
+--
+-- Only one Director should exist at a time (setting a new one clears any
+-- previous one) -- multiple admins can still see the queue for oversight,
+-- but only the Director can actually approve, reject, or mark paid.
+-- ============================================================================
+alter table public.profiles add column if not exists is_team_lead boolean not null default false;
+alter table public.profiles add column if not exists is_director boolean not null default false;
+
+drop policy if exists "expenses_insert_self" on public.expenses;
+create policy "expenses_insert_team_lead_or_admin"
+  on public.expenses for insert
+  with check (
+    submitted_by = auth.uid()
+    and (
+      public.is_admin()
+      or exists (select 1 from public.profiles where id = auth.uid() and is_team_lead = true)
+    )
+  );
+
+-- Approving, rejecting, and marking paid are Director-only now -- not
+-- just any admin. Viewing the queue (select) stays open to every admin,
+-- so the rest of the admin team keeps visibility even though only one
+-- person can act on it.
+drop policy if exists "expenses_update_admin" on public.expenses;
+create policy "expenses_update_director"
+  on public.expenses for update
+  using (exists (select 1 from public.profiles where id = auth.uid() and role = 'admin' and is_director = true));
+
+-- ============================================================================
+-- MIGRATION — added later: purchases become request-first, not
+-- reimbursement-after-the-fact.
+--
+-- Previously a submission already had a receipt attached (buy first,
+-- report after). Now the first submission is a REQUEST -- no receipt yet,
+-- just what's needed and roughly how much. Only once the Director
+-- approves does the person go buy it, then come back and attach the
+-- receipt as proof. Paying out only happens after that proof exists, not
+-- before -- the whole point of asking first is that money doesn't move
+-- without approval, so nothing should be markable "Paid" before a receipt
+-- backs it up.
+--
+-- Existing "Submitted" rows are treated as already having been requests,
+-- and renamed to "Requested" so the status vocabulary stays consistent
+-- going forward, rather than leaving old and new naming mixed together.
+-- ============================================================================
+alter table public.expenses alter column receipt_path drop not null;
+alter table public.expenses alter column purchase_date drop not null;
+alter table public.expenses add column if not exists receipt_uploaded_at timestamptz;
+
+update public.expenses set status = 'Requested' where status = 'Submitted';
+
+alter table public.expenses drop constraint if exists expenses_status_check;
+alter table public.expenses add constraint expenses_status_check
+  check (status in ('Requested', 'Approved', 'Rejected', 'Purchased', 'Paid'));
+alter table public.expenses alter column status set default 'Requested';
+
+-- A request can only be withdrawn by its own submitter while it's still
+-- just a request -- once the Director has acted on it (approved or
+-- rejected), that decision is a record worth keeping.
+drop policy if exists "expenses_delete_own_pending_or_admin" on public.expenses;
+create policy "expenses_delete_own_pending_or_admin"
+  on public.expenses for delete
+  using ((submitted_by = auth.uid() and status = 'Requested') or public.is_admin());
+
+-- The one narrow thing a submitter can do themselves: once their own
+-- request is Approved, move it to Purchased by attaching the receipt.
+-- The USING clause only allows touching a row they own that's currently
+-- Approved; the WITH CHECK clause only allows the result to be Purchased
+-- -- so this exact transition is all it permits. They still can't approve
+-- their own request, jump straight to Paid, or touch anyone else's row.
+create policy "expenses_update_submitter_attach_receipt"
+  on public.expenses for update
+  using (submitted_by = auth.uid() and status = 'Approved')
+  with check (submitted_by = auth.uid() and status = 'Purchased');
+
+-- ============================================================================
+-- MIGRATION — added later: employee statutory details, locking edited-once
+-- records, and expenses gaining a Services type alongside Purchases.
+--
+-- Jobs: once transport for a job has been paid, or the job is both
+-- Completed and its visit date is in the past, a member can no longer
+-- edit it -- admin keeps override ability, since fixing a genuine mistake
+-- should still be possible for the people responsible for the records.
+--
+-- Expenses: a Service (paying an outside person -- e.g. a cleaner who
+-- isn't SNS staff) is a different shape of thing than a Purchase. It has
+-- no receipt at all, so it skips the attach-receipt step entirely and
+-- goes straight from Approved to Paid. Only admin can file one, since the
+-- provider isn't a Team Lead making their own purchase.
+-- ============================================================================
+alter table public.profiles add column if not exists gender text;
+alter table public.profiles add column if not exists date_of_birth date;
+alter table public.profiles add column if not exists id_number text;
+alter table public.profiles add column if not exists kra_pin text;
+alter table public.profiles add column if not exists sha_number text;
+
+drop policy if exists "jobs_update_own_or_admin" on public.jobs;
+create policy "jobs_update_own_or_admin"
+  on public.jobs for update
+  using (
+    public.is_admin()
+    or (
+      member_id = auth.uid()
+      and transport_paid_at is null
+      and not (status = 'Completed' and visit_date < current_date)
+    )
+  );
+
+alter table public.expenses add column if not exists entry_type text not null default 'purchase' check (entry_type in ('purchase', 'service'));
+alter table public.expenses add column if not exists provider_name text;
+alter table public.expenses add column if not exists provider_contact text;
+
+-- A Purchase can be filed by a Team Lead or any admin (unchanged). A
+-- Service can only be filed by admin, since it's paying someone who
+-- isn't SNS staff and has no Team Lead status to check.
+drop policy if exists "expenses_insert_team_lead_or_admin" on public.expenses;
+create policy "expenses_insert_team_lead_or_service_admin"
+  on public.expenses for insert
+  with check (
+    submitted_by = auth.uid()
+    and (
+      (entry_type = 'purchase' and (public.is_admin() or exists (select 1 from public.profiles where id = auth.uid() and is_team_lead = true)))
+      or (entry_type = 'service' and public.is_admin())
+    )
+  );
+
+-- The submitter's one narrow allowed move is attaching a receipt
+-- (Approved -> Purchased, from an earlier migration) -- this closes the
+-- gap where that same update could also sneak in a changed amount. Admin
+-- and the Director are untouched by this, since it only fires for the
+-- row's own submitter acting as a non-admin.
+create or replace function public.expenses_lock_amount_for_submitter()
+returns trigger as $$
+begin
+  if old.submitted_by = auth.uid() and not public.is_admin() then
+    if new.amount is distinct from old.amount then
+      raise exception 'Amount cannot be changed when attaching a receipt.';
+    end if;
+  end if;
+  return new;
+end;
+$$ language plpgsql security definer set search_path = public;
+
+drop trigger if exists expenses_lock_amount_for_submitter_trigger on public.expenses;
+create trigger expenses_lock_amount_for_submitter_trigger
+  before update on public.expenses
+  for each row execute function public.expenses_lock_amount_for_submitter();
 
 -- ============================================================================
 -- Done. Next: Authentication -> Providers -> make sure Email is enabled,

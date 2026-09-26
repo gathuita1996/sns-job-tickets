@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from './lib/supabaseClient'
-import { mapProfile, mapJob, jobToDbFields, mapCustomer, customerToDbFields, mapComplaint, complaintToDbFields, mapExpense, expenseToDbFields } from './lib/mappers'
+import { mapProfile, mapJob, jobToDbFields, mapCustomer, customerToDbFields, mapComplaint, complaintToDbFields, mapExpense, expenseToDbFields, serviceToDbFields } from './lib/mappers'
 import { COMMISSION_DEPARTMENTS } from './lib/helpers'
 import { LoadingScreen, Toast } from './components/shared'
 import { LoginView, SignupView, ForgotPasswordView, ResetPasswordView } from './components/Auth'
@@ -392,6 +392,18 @@ export default function App() {
     await refreshExpenses()
   }
 
+  // Admin-only, per RLS -- the provider isn't SNS staff, so there's no
+  // Team Lead check to make here the way there is for a Purchase.
+  async function handleAddService(formData) {
+    const { error } = await supabase.from('expenses').insert({
+      ...serviceToDbFields(formData),
+      submitted_by: currentUserRef.current.id,
+    })
+    if (error) { showToast('Failed to submit service request.', 'error'); return }
+    showToast('Service request submitted for approval.')
+    await refreshExpenses()
+  }
+
   // The one thing a submitter can do to their own row: once it's Approved,
   // attach the receipt and move it to Purchased. RLS backs this up with
   // its own narrow rule -- this can't accidentally jump straight to Paid
@@ -413,12 +425,22 @@ export default function App() {
     await refreshExpenses()
   }
 
-  async function handleApproveExpense(expense) {
+  // payNow reflects the Director's choice between "Approve and Pay" (money
+  // moves right away) and "Approve" alone (pay later, once there's proof
+  // of purchase). For a Service -- which never goes through the
+  // attach-receipt step -- approving with payNow has nothing left to wait
+  // for, so it goes straight to Paid instead of sitting at Approved.
+  async function handleApproveExpense(expense, payNow) {
+    const isServicePaidNow = expense.entryType === 'service' && payNow
     const { error } = await supabase.from('expenses').update({
-      status: 'Approved', reviewed_by: currentUserRef.current.id, reviewed_at: new Date().toISOString(), admin_notes: null,
+      status: isServicePaidNow ? 'Paid' : 'Approved',
+      reviewed_by: currentUserRef.current.id,
+      reviewed_at: new Date().toISOString(),
+      admin_notes: null,
+      paid_at: payNow ? new Date().toISOString() : null,
     }).eq('id', expense.id)
     if (error) { showToast('Failed to approve expense.', 'error'); return }
-    showToast('Expense approved.')
+    showToast(payNow ? 'Approved and marked as paid.' : 'Approved — pay once purchased.')
     await refreshExpenses()
   }
 
@@ -556,7 +578,7 @@ export default function App() {
   return (<>
     {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     {currentUser.role === 'admin'
-      ? <AdminDashboard currentUser={currentUser} users={allUsers} jobs={jobs} customers={customers} complaints={complaints} expenses={expenses} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAssignJob={handleAssignJob} onPromote={handlePromote} onUpdateDepartment={handleUpdateDepartment} onUpdateProfile={handleUpdateProfile} accessCode={accessCode} onUpdateAccessCode={handleUpdateAccessCode} commissionRate={commissionRate} onUpdateCommissionRate={handleUpdateCommissionRate} onClearCommission={handleClearCommission} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onUpdateComplaintStatus={handleUpdateComplaintStatus} onResolveComplaint={handleResolveComplaint} onMarkTransportPaid={handleMarkTransportPaid} onAddExpense={handleAddExpense} onAttachReceipt={handleAttachReceipt} onApproveExpense={handleApproveExpense} onRejectExpense={handleRejectExpense} onMarkExpensePaid={handleMarkExpensePaid} onDeleteExpense={handleDeleteExpense} onViewReceipt={getReceiptUrl} onToggleTeamLead={handleToggleTeamLead} onSetDirector={handleSetDirector} />
+      ? <AdminDashboard currentUser={currentUser} users={allUsers} jobs={jobs} customers={customers} complaints={complaints} expenses={expenses} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAssignJob={handleAssignJob} onPromote={handlePromote} onUpdateDepartment={handleUpdateDepartment} onUpdateProfile={handleUpdateProfile} accessCode={accessCode} onUpdateAccessCode={handleUpdateAccessCode} commissionRate={commissionRate} onUpdateCommissionRate={handleUpdateCommissionRate} onClearCommission={handleClearCommission} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onUpdateComplaintStatus={handleUpdateComplaintStatus} onResolveComplaint={handleResolveComplaint} onMarkTransportPaid={handleMarkTransportPaid} onAddExpense={handleAddExpense} onAddService={handleAddService} onAttachReceipt={handleAttachReceipt} onApproveExpense={handleApproveExpense} onRejectExpense={handleRejectExpense} onMarkExpensePaid={handleMarkExpensePaid} onDeleteExpense={handleDeleteExpense} onViewReceipt={getReceiptUrl} onToggleTeamLead={handleToggleTeamLead} onSetDirector={handleSetDirector} />
       : <MemberDashboard currentUser={currentUser} jobs={jobs.filter((j) => j.memberId === currentUser.id)} raisedJobs={jobs.filter((j) => j.raisedBy === currentUser.id && j.memberId !== currentUser.id)} customers={customers} customerIdsWithJobs={customerIdsWithJobs} complaints={complaints} expenses={expenses.filter((e) => e.submittedBy === currentUser.id)} memberNames={memberNames} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAddCustomer={handleAddCustomer} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onUpdateProfile={handleUpdateProfile} onAddComplaint={handleAddComplaint} onUpdateComplaintStatus={handleUpdateComplaintStatus} onResolveComplaint={handleResolveComplaint} onAddExpense={handleAddExpense} onAttachReceipt={handleAttachReceipt} onDeleteExpense={handleDeleteExpense} onViewReceipt={getReceiptUrl} commissionRate={commissionRate} />}
   </>)
 }

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, AlertTriangle, Award, Check, CheckCircle2, Clipboard, Copy, Eye, EyeOff, Mail, MessageCircle, Pencil, Plus, Printer, Receipt, Trash2, UserPlus, Users, Wallet, X } from 'lucide-react'
+import { AlertCircle, AlertTriangle, Award, Check, CheckCircle2, Clipboard, Copy, Eye, EyeOff, Mail, MessageCircle, Pencil, Plus, Printer, Receipt, Trash2, UserPlus, Users, Wallet, Wrench, X } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import Header from './Header'
 import JobFormModal from './JobForm'
@@ -11,10 +11,12 @@ import ComplaintsQueue from './ComplaintsQueue'
 import TransportTab from './TransportTab'
 import ExpensesList from './ExpensesList'
 import ExpenseFormModal from './ExpenseForm'
+import MoneyReportModal from './MoneyReportModal'
+import ServiceFormModal from './ServiceForm'
 import { ConfirmDialog, EmptyState, FormField, PeriodSelector, SearchInput, StatCard, StatusBadge, StatusFilterSelect } from './shared'
 import { JOB_TYPES, PRIORITY_OPTIONS, CHART_COLORS, COMMISSION_DEPARTMENTS, departmentLabel, formatKSh, formatDate, formatDateTime, isOverdue, isInPeriod, getPeriodRange, isInRange, toWhatsAppNumber } from '../lib/helpers'
 
-export default function AdminDashboard({ currentUser, users, jobs, customers, complaints, expenses, onLogout, onAddJob, onUpdateJob, onDeleteJob, onAssignJob, onPromote, onUpdateDepartment, onUpdateProfile, accessCode, onUpdateAccessCode, commissionRate, onUpdateCommissionRate, onClearCommission, onDeleteCustomer, onUpdateComplaintStatus, onResolveComplaint, onMarkTransportPaid, onAddExpense, onApproveExpense, onRejectExpense, onAttachReceipt, onMarkExpensePaid, onDeleteExpense, onViewReceipt, onToggleTeamLead, onSetDirector }) {
+export default function AdminDashboard({ currentUser, users, jobs, customers, complaints, expenses, onLogout, onAddJob, onUpdateJob, onDeleteJob, onAssignJob, onPromote, onUpdateDepartment, onUpdateProfile, accessCode, onUpdateAccessCode, commissionRate, onUpdateCommissionRate, onClearCommission, onDeleteCustomer, onUpdateComplaintStatus, onResolveComplaint, onMarkTransportPaid, onAddExpense, onAddService, onApproveExpense, onRejectExpense, onAttachReceipt, onMarkExpensePaid, onDeleteExpense, onViewReceipt, onToggleTeamLead, onSetDirector }) {
   const [tab, setTab] = useState('overview')
   const [periodGranularity, setPeriodGranularity] = useState('day')
   const [periodAnchor, setPeriodAnchor] = useState(() => new Date())
@@ -30,6 +32,9 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
   const [showAssignForm, setShowAssignForm] = useState(false)
   const [showFileForm, setShowFileForm] = useState(false)
   const [showExpenseForm, setShowExpenseForm] = useState(false)
+  const [showCommissionReport, setShowCommissionReport] = useState(false)
+  const [showTransportReport, setShowTransportReport] = useState(false)
+  const [showServiceForm, setShowServiceForm] = useState(false)
   const [justAssigned, setJustAssigned] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [viewingCustomer, setViewingCustomer] = useState(null)
@@ -82,6 +87,15 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
       .filter((r) => r.count > 0)
       .sort((a, b) => b.commission - a.commission)
   }, [members, customers, commissionRate])
+
+  // For the report specifically -- every customer recorded in the period
+  // counts as commission earned then, regardless of whether it's since
+  // been paid. The report is about activity over time, not current
+  // outstanding balance (that's what the table above already shows).
+  const commissionEntries = useMemo(
+    () => customers.map((c) => ({ memberId: c.recordedBy, amount: commissionRate, date: c.createdAt })),
+    [customers, commissionRate]
+  )
 
   const totalCommissionThisMonth = useMemo(() => {
     const count = customers.filter((c) =>
@@ -234,9 +248,12 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
 
         {tab === 'commissions' && (
           <div>
-            <div className="grid grid-cols-2 gap-3" style={{ marginBottom: '1.5rem', maxWidth: '24rem' }}>
-              <StatCard label="Members owed" value={commissionRows.length} icon={Users} />
-              <StatCard label="Owed this month" value={formatKSh(totalCommissionThisMonth)} icon={Award} tone="success" />
+            <div className="flex items-center justify-between" style={{ marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+              <div className="grid grid-cols-2 gap-3" style={{ maxWidth: '24rem' }}>
+                <StatCard label="Members owed" value={commissionRows.length} icon={Users} />
+                <StatCard label="Owed this month" value={formatKSh(totalCommissionThisMonth)} icon={Award} tone="success" />
+              </div>
+              <button onClick={() => setShowCommissionReport(true)} className="sns-btn-secondary">View Report</button>
             </div>
             {commissionRows.length === 0 ? (
               <EmptyState message="No commission currently owed." />
@@ -288,7 +305,7 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
         )}
 
         {tab === 'transport' && (
-          <TransportTab users={users} jobs={jobs} onMarkPaid={onMarkTransportPaid} />
+          <TransportTab users={users} jobs={jobs} userMap={userMap} onMarkPaid={onMarkTransportPaid} />
         )}
 
         {tab === 'expenses' && (
@@ -297,7 +314,10 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
               {!currentUser.isDirector && (
                 <p className="sns-text-faint" style={{ fontSize: '0.8rem' }}>Only the Director can approve, reject, or mark purchases as paid — you can still see everything below.</p>
               )}
-              <button onClick={() => setShowExpenseForm(true)} className="sns-btn-primary" style={{ marginLeft: 'auto' }}><Receipt size={16} /> Submit a purchase</button>
+              <div className="flex gap-2" style={{ marginLeft: 'auto' }}>
+                <button onClick={() => setShowServiceForm(true)} className="sns-btn-secondary"><Wrench size={16} /> Log a service</button>
+                <button onClick={() => setShowExpenseForm(true)} className="sns-btn-primary"><Receipt size={16} /> Submit a purchase</button>
+              </div>
             </div>
             <ExpensesList
               expenses={expenses || []}
@@ -417,6 +437,20 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
         <ExpenseFormModal
           onClose={() => setShowExpenseForm(false)}
           onSave={async (data) => { await onAddExpense(data); setShowExpenseForm(false) }}
+        />
+      )}
+      {showCommissionReport && (
+        <MoneyReportModal
+          title="Commission Report"
+          entries={commissionEntries}
+          userMap={userMap}
+          onClose={() => setShowCommissionReport(false)}
+        />
+      )}
+      {showServiceForm && (
+        <ServiceFormModal
+          onClose={() => setShowServiceForm(false)}
+          onSave={async (data) => { await onAddService(data); setShowServiceForm(false) }}
         />
       )}
       {confirmDelete && (

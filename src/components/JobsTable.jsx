@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
-import { ChevronDown, ChevronUp, Eye, MessageCircle, Pencil, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronUp, Eye, Lock, MessageCircle, Pencil, Trash2 } from 'lucide-react'
 import { EmptyState, StatusBadge, PriorityBadge } from './shared'
-import { formatDate, formatKSh, isOverdue, toWhatsAppNumber } from '../lib/helpers'
+import { formatDate, formatKSh, isJobLocked, isOverdue, toWhatsAppNumber } from '../lib/helpers'
 
 const PRIORITY_RANK = { Urgent: 3, High: 2, Normal: 1, Low: 0 }
 
@@ -21,7 +21,7 @@ function SortableTh({ label, sortKey, activeKey, dir, onSort, align }) {
   )
 }
 
-export default function JobsTable({ jobs, showFiledBy, userMap, onView, onEdit, onDelete, selectable, selected, onToggleSelect, onSelectAll, onClearSelect }) {
+export default function JobsTable({ jobs, showFiledBy, userMap, onView, onEdit, onDelete, selectable, selected, onToggleSelect, onSelectAll, onClearSelect, restrictEditing }) {
   const [sortKey, setSortKey] = useState('visitDate')
   const [sortDir, setSortDir] = useState('desc')
 
@@ -111,7 +111,13 @@ export default function JobsTable({ jobs, showFiledBy, userMap, onView, onEdit, 
                         </a>
                       )}
                       <button onClick={() => onView(j)} title="View / print" className="sns-icon-btn"><Eye size={15} /></button>
-                      {onEdit && <button onClick={() => onEdit(j)} title="Edit" className="sns-icon-btn"><Pencil size={15} /></button>}
+                      {onEdit && (restrictEditing && isJobLocked(j) ? (
+                        <span className="sns-icon-btn" style={{ cursor: 'default', color: 'var(--ink-faint)' }} title={j.transportPaidAt ? 'Locked — transport already paid' : 'Locked — completed and past its visit date'}>
+                          <Lock size={14} />
+                        </span>
+                      ) : (
+                        <button onClick={() => onEdit(j)} title="Edit" className="sns-icon-btn"><Pencil size={15} /></button>
+                      ))}
                       {onDelete && <button onClick={() => onDelete(j)} title="Delete" className="sns-icon-btn danger"><Trash2 size={15} /></button>}
                     </div>
                   </td>

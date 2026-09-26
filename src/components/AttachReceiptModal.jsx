@@ -1,54 +1,44 @@
 import { useState } from 'react'
 import { Upload, X } from 'lucide-react'
 import { FormField } from './shared'
-import { defaultReceiptForm, formatKSh, toDateInputValue } from '../lib/helpers'
+import { formatDate, formatKSh, toDateInputValue } from '../lib/helpers'
 
 const MAX_RECEIPT_MB = 8
 const ALLOWED_RECEIPT_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'application/pdf']
 
 // Shown once a request has been Approved -- the person has now actually
-// gone and made the purchase, and this is where they attach proof. The
-// estimated amount from the request carries over here, editable, since
-// the real price is rarely exactly the estimate.
+// gone and made the purchase, and this is where they attach proof.
+// Deliberately locked down to just the receipt: the amount was fixed at
+// approval time (the database itself rejects a change here, this UI just
+// doesn't offer one), and the purchase date is today, not something to
+// pick -- this step is "prove it happened," not "revise the request."
 export default function AttachReceiptModal({ expense, onClose, onSave }) {
-  const [form, setForm] = useState(() => defaultReceiptForm(expense))
-  const [errors, setErrors] = useState({})
+  const [receiptFile, setReceiptFile] = useState(null)
+  const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
-
-  function update(key, value) {
-    setForm((f) => ({ ...f, [key]: value }))
-    setErrors((e) => ({ ...e, [key]: undefined }))
-  }
+  const today = toDateInputValue(new Date())
 
   function handleFileChange(ev) {
     const file = ev.target.files?.[0]
     if (!file) return
     const isPdfByName = file.name.toLowerCase().endsWith('.pdf')
     if (!ALLOWED_RECEIPT_TYPES.includes(file.type) && !isPdfByName) {
-      setErrors((e) => ({ ...e, receiptFile: 'Only PDF or photo files (JPG, PNG, HEIC, etc.) are allowed.' }))
+      setError('Only PDF or photo files (JPG, PNG, HEIC, etc.) are allowed.')
       return
     }
     if (file.size > MAX_RECEIPT_MB * 1024 * 1024) {
-      setErrors((e) => ({ ...e, receiptFile: `File is too large — please keep it under ${MAX_RECEIPT_MB}MB.` }))
+      setError(`File is too large — please keep it under ${MAX_RECEIPT_MB}MB.`)
       return
     }
-    update('receiptFile', file)
-  }
-
-  function validate() {
-    const e = {}
-    if (form.amount === '' || isNaN(Number(form.amount)) || Number(form.amount) <= 0) e.amount = 'Enter a valid amount'
-    if (!form.purchaseDate) e.purchaseDate = 'Required'
-    if (!form.receiptFile) e.receiptFile = 'Please upload the receipt'
-    setErrors(e)
-    return Object.keys(e).length === 0
+    setError('')
+    setReceiptFile(file)
   }
 
   async function handleSubmit(ev) {
     ev.preventDefault()
-    if (!validate()) return
+    if (!receiptFile) { setError('Please upload the receipt'); return }
     setSubmitting(true)
-    await onSave(form)
+    await onSave({ amount: expense.amount, purchaseDate: today, receiptFile })
     setSubmitting(false)
   }
 
@@ -61,25 +51,29 @@ export default function AttachReceiptModal({ expense, onClose, onSave }) {
         </div>
         <form onSubmit={handleSubmit} style={{ padding: '1.4rem' }} className="space-y-4">
           <p style={{ fontSize: '0.85rem', color: 'var(--ink-soft)' }}>
-            <strong>{expense.description}</strong> was approved with an estimate of {formatKSh(expense.amount)}. Confirm the actual amount and attach proof of purchase.
+            <strong>{expense.description}</strong> was approved. Attach a photo or PDF of the receipt to confirm the purchase was made.
           </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <FormField label="Actual amount (KSh)" error={errors.amount}>
-              <input type="number" min="0" step="1" className="sns-input" value={form.amount} onChange={(e) => update('amount', e.target.value)} placeholder="0" />
+            <FormField label="Approved amount (KSh)">
+              <div className="sns-input" style={{ background: 'var(--paper)', color: 'var(--ink-soft)', cursor: 'not-allowed' }}>
+                {formatKSh(expense.amount)}
+              </div>
             </FormField>
-            <FormField label="Date of purchase" error={errors.purchaseDate}>
-              <input type="date" max={toDateInputValue(new Date())} className="sns-input" value={form.purchaseDate} onChange={(e) => update('purchaseDate', e.target.value)} />
+            <FormField label="Date of purchase">
+              <div className="sns-input" style={{ background: 'var(--paper)', color: 'var(--ink-soft)', cursor: 'not-allowed' }}>
+                {formatDate(today)}
+              </div>
             </FormField>
           </div>
 
-          <FormField label="Upload Receipt" error={errors.receiptFile} hint={`PDF or photo only. Max ${MAX_RECEIPT_MB}MB.`}>
+          <FormField label="Upload Receipt" error={error} hint={`PDF or photo only. Max ${MAX_RECEIPT_MB}MB.`}>
             <label
               className="sns-input"
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', cursor: 'pointer', padding: '1rem', borderStyle: 'dashed' }}
             >
               <Upload size={16} />
-              <span style={{ fontSize: '0.85rem' }}>{form.receiptFile ? form.receiptFile.name : 'Tap to upload receipt'}</span>
+              <span style={{ fontSize: '0.85rem' }}>{receiptFile ? receiptFile.name : 'Tap to upload receipt'}</span>
               <input type="file" accept="image/*,.heic,.heif,.pdf" onChange={handleFileChange} style={{ display: 'none' }} />
             </label>
           </FormField>

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Wallet } from 'lucide-react'
 import { EmptyState, StatCard } from './shared'
+import MoneyReportModal from './MoneyReportModal'
 import { formatKSh, formatDate, toDateInputValue } from '../lib/helpers'
 
 function dayRange(anchor) {
@@ -11,11 +12,20 @@ function dayRange(anchor) {
   return { start, end }
 }
 
-export default function TransportTab({ users, jobs, onMarkPaid }) {
+export default function TransportTab({ users, jobs, userMap, onMarkPaid }) {
   const [anchor, setAnchor] = useState(() => new Date())
   const [expandedId, setExpandedId] = useState(null)
+  const [showReport, setShowReport] = useState(false)
   const { start, end } = useMemo(() => dayRange(anchor), [anchor])
   const isToday = toDateInputValue(anchor) === toDateInputValue(new Date())
+
+  // For the report -- every job's transport cost counts as spent on the
+  // day it was created, regardless of paid/unpaid status, same "activity
+  // over time" reasoning as the commission report.
+  const transportEntries = useMemo(
+    () => jobs.map((j) => ({ memberId: j.memberId, amount: Number(j.transportAmount) || 0, date: j.createdAt })),
+    [jobs]
+  )
 
   const dayJobs = useMemo(
     () => jobs.filter((j) => { const t = new Date(j.createdAt); return t >= start && t < end }),
@@ -44,6 +54,7 @@ export default function TransportTab({ users, jobs, onMarkPaid }) {
           <StatCard label="Members with transport" value={rows.length} icon={Wallet} />
           <StatCard label="Unpaid today" value={formatKSh(totalUnpaid)} icon={Wallet} tone={totalUnpaid > 0 ? 'warning' : 'default'} />
         </div>
+        <button onClick={() => setShowReport(true)} className="sns-btn-secondary">View Report</button>
         <div className="flex items-center gap-2">
           <button onClick={() => setAnchor((a) => { const d = new Date(a); d.setDate(d.getDate() - 1); return d }) } className="sns-icon-btn" title="Previous day">
             <ChevronLeft size={18} />
@@ -112,6 +123,14 @@ export default function TransportTab({ users, jobs, onMarkPaid }) {
             )
           })}
         </div>
+      )}
+      {showReport && (
+        <MoneyReportModal
+          title="Transport Report"
+          entries={transportEntries}
+          userMap={userMap}
+          onClose={() => setShowReport(false)}
+        />
       )}
     </div>
   )

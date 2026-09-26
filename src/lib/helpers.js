@@ -205,6 +205,17 @@ export function isOverdue(job) {
   return hoursSince(job.createdAt) > OVERDUE_HOURS
 }
 
+// Matches the database's own RLS rule exactly: once transport for a job
+// has been paid, or the job is both Completed and its visit date is in
+// the past, a member can no longer edit it. Admin overrides this
+// everywhere it's checked -- this helper only covers the member-facing
+// rule, not the admin one.
+export function isJobLocked(job) {
+  if (job.transportPaidAt) return true
+  if (job.status === 'Completed' && job.visitDate < toDateInputValue(new Date())) return true
+  return false
+}
+
 function startOfToday() {
   const d = new Date()
   d.setHours(0, 0, 0, 0)

@@ -6,6 +6,8 @@ export default function ProfileFormModal({ profile, isSelf, onClose, onSave }) {
   const [form, setForm] = useState({
     fullName: profile.fullName, username: profile.username,
     contact: profile.contact, title: profile.title || '',
+    gender: profile.gender || '', dateOfBirth: profile.dateOfBirth || '',
+    idNumber: profile.idNumber || '', kraPin: profile.kraPin || '', shaNumber: profile.shaNumber || '',
   })
   const [errors, setErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
@@ -34,6 +36,11 @@ export default function ProfileFormModal({ profile, isSelf, onClose, onSave }) {
       username: form.username.trim(),
       contact: form.contact.trim(),
       title: form.title.trim() || null,
+      gender: form.gender || null,
+      date_of_birth: form.dateOfBirth || null,
+      id_number: form.idNumber.trim() || null,
+      kra_pin: form.kraPin.trim() || null,
+      sha_number: form.shaNumber.trim() || null,
     })
     setSubmitting(false)
   }
@@ -58,6 +65,30 @@ export default function ProfileFormModal({ profile, isSelf, onClose, onSave }) {
           <FormField label="Title (optional)" hint="e.g. Director, Operations Manager.">
             <input className="sns-input" value={form.title} onChange={(e) => update('title', e.target.value)} placeholder="Director" />
           </FormField>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <FormField label="Gender">
+              <select className="sns-input" value={form.gender} onChange={(e) => update('gender', e.target.value)}>
+                <option value="">Not specified</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+              </select>
+            </FormField>
+            <FormField label="Date of birth">
+              <input type="date" className="sns-input" value={form.dateOfBirth} onChange={(e) => update('dateOfBirth', e.target.value)} />
+            </FormField>
+          </div>
+
+          <FormField label="National ID number">
+            <input className="sns-input" value={form.idNumber} onChange={(e) => update('idNumber', e.target.value)} placeholder="e.g. 12345678" />
+          </FormField>
+          <FormField label="KRA PIN">
+            <input className="sns-input" value={form.kraPin} onChange={(e) => update('kraPin', e.target.value)} placeholder="e.g. A012345678Z" />
+          </FormField>
+          <FormField label="SHA number">
+            <input className="sns-input" value={form.shaNumber} onChange={(e) => update('shaNumber', e.target.value)} />
+          </FormField>
+
           <div className="flex gap-3" style={{ paddingTop: '0.4rem', marginBottom: '2rem' }}>
             <button type="button" onClick={onClose} className="sns-btn-secondary" style={{ flex: 1 }}>Cancel</button>
             <button type="submit" disabled={submitting} className="sns-btn-primary" style={{ flex: 1 }}>{submitting ? 'Saving…' : 'Save changes'}</button>

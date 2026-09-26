@@ -42,6 +42,14 @@ export default function MemberDashboard({ currentUser, jobs, raisedJobs, custome
   const todayJobs = useMemo(() => jobs.filter((j) => isInPeriod(j.createdAt, 'day')), [jobs])
   const assignedJobs = useMemo(() => jobs.filter((j) => j.assignedBy), [jobs])
   const myCustomers = useMemo(() => customers.filter((c) => c.recordedBy === currentUser.id), [customers, currentUser.id])
+  const newThisMonthCustomers = useMemo(() => {
+    const now = new Date()
+    return myCustomers.filter((c) => {
+      const d = new Date(c.createdAt)
+      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()
+    })
+  }, [myCustomers])
+  const [customersFilter, setCustomersFilter] = useState('all') // 'all' | 'thisMonth'
   const availableCustomers = useMemo(() => customers.filter((c) => !customerIdsWithJobs.has(c.id)), [customers, customerIdsWithJobs])
 
   const { start: periodStart, end: periodEnd } = useMemo(() => getPeriodRange(periodGranularity, periodAnchor), [periodGranularity, periodAnchor])
@@ -139,15 +147,20 @@ export default function MemberDashboard({ currentUser, jobs, raisedJobs, custome
               <button onClick={() => setView('home')} className="sns-btn-secondary" style={{ padding: '0.5rem' }} title="Back to dashboard"><ArrowLeft size={16} /></button>
               <h2 className="sns-display" style={{ fontSize: '1.1rem', fontWeight: 700 }}>My customers</h2>
             </div>
-            <div className="grid grid-cols-2 gap-3" style={{ marginBottom: '1rem', maxWidth: '24rem' }}>
+            <div className="grid grid-cols-3 gap-3" style={{ marginBottom: '1rem', maxWidth: '30rem' }}>
               <StatCard label="Customers recorded" value={myCustomers.length} icon={Users} />
+              <StatCard label="New this month" value={newThisMonthCustomers.length} icon={UserPlus} tone="success" />
               <StatCard label="Commission earned" value={formatKSh(myCustomers.length * commissionRate)} icon={Wallet} tone="success" />
             </div>
-            <div className="flex justify-end" style={{ marginBottom: '1rem' }}>
+            <div className="flex items-center justify-between" style={{ marginBottom: '1rem', flexWrap: 'wrap', gap: '0.6rem' }}>
+              <div className="flex gap-2">
+                <button onClick={() => setCustomersFilter('all')} className={customersFilter === 'all' ? 'sns-btn-primary' : 'sns-btn-secondary'} style={{ fontSize: '0.8rem', padding: '0.5rem 0.9rem' }}>All</button>
+                <button onClick={() => setCustomersFilter('thisMonth')} className={customersFilter === 'thisMonth' ? 'sns-btn-primary' : 'sns-btn-secondary'} style={{ fontSize: '0.8rem', padding: '0.5rem 0.9rem' }}>New this month</button>
+              </div>
               <button onClick={() => setShowCustomerForm(true)} className="sns-btn-primary"><UserPlus size={17} /> Record new customer</button>
             </div>
-            {sortedMyCustomers.length === 0 ? (
-              <EmptyState message="No customers recorded yet." />
+            {(customersFilter === 'thisMonth' ? newThisMonthCustomers : sortedMyCustomers).length === 0 ? (
+              <EmptyState message={customersFilter === 'thisMonth' ? 'No new customers recorded this month yet.' : 'No customers recorded yet.'} />
             ) : (
               <div className="sns-card" style={{ overflow: 'hidden' }}>
                 <div style={{ overflowX: 'auto' }}>
@@ -156,7 +169,7 @@ export default function MemberDashboard({ currentUser, jobs, raisedJobs, custome
                       <tr><th>Name</th><th>Contact</th><th>Location</th><th>Interested package</th><th>Recorded</th><th>Commission</th><th style={{ textAlign: 'right' }}>Actions</th></tr>
                     </thead>
                     <tbody>
-                      {sortedMyCustomers.map((c) => (
+                      {(customersFilter === 'thisMonth' ? newThisMonthCustomers : sortedMyCustomers).map((c) => (
                         <tr key={c.id}>
                           <td style={{ fontWeight: 600 }}>{c.fullName}</td>
                           <td className="sns-text-soft">{c.contact}</td>
@@ -239,6 +252,7 @@ export default function MemberDashboard({ currentUser, jobs, raisedJobs, custome
                 onView={(j) => setPrinting(j)}
                 onEdit={view === 'raised' ? undefined : (j) => { setEditingJob(j); setShowForm(true) }}
                 onDelete={view === 'raised' ? undefined : (j) => setConfirmDelete(j)}
+                restrictEditing
               />
             )}
           </>

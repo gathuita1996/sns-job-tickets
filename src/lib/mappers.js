@@ -15,6 +15,11 @@ export function mapProfile(row) {
     department: row.department || 'technical',
     isTeamLead: Boolean(row.is_team_lead),
     isDirector: Boolean(row.is_director),
+    gender: row.gender || '',
+    dateOfBirth: row.date_of_birth || '',
+    idNumber: row.id_number || '',
+    kraPin: row.kra_pin || '',
+    shaNumber: row.sha_number || '',
     createdAt: row.created_at,
   }
 }
@@ -134,6 +139,9 @@ export function mapExpense(row) {
     description: row.description,
     amount: Number(row.amount) || 0,
     category: row.category,
+    entryType: row.entry_type || 'purchase',
+    providerName: row.provider_name || '',
+    providerContact: row.provider_contact || '',
     purchaseDate: row.purchase_date || null,
     receiptPath: row.receipt_path || null,
     receiptUploadedAt: row.receipt_uploaded_at || null,
@@ -155,5 +163,20 @@ export function expenseToDbFields(data) {
     description: data.description,
     amount: Number(data.amount),
     category: data.category,
+    entry_type: 'purchase',
+  }
+}
+
+// A Service is known in full at submission time (who did it, when, for how
+// much) -- unlike a Purchase, there's no later "attach receipt" step, so
+// purchase_date is set right away here, not left for a later action.
+export function serviceToDbFields(data) {
+  return {
+    description: data.description,
+    amount: Number(data.amount),
+    entry_type: 'service',
+    provider_name: data.providerName,
+    provider_contact: data.providerContact,
+    purchase_date: data.serviceDate,
   }
 }
