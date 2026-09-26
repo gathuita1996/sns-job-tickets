@@ -145,6 +145,7 @@ export function defaultCustomerForm() {
     lastName: '',
     contact: '',
     location: '',
+    locationOther: '',
     interestedPackage: PACKAGES[0],
     notes: '',
     desiredDate: '',
@@ -155,6 +156,7 @@ export function defaultComplaintForm() {
   return {
     complainantName: '',
     location: '',
+    locationOther: '',
     contact: '',
     complaintType: '',
     complaintTypeOther: '',
@@ -376,6 +378,18 @@ export function formatPeriodLabel(granularity, anchorDate) {
 }
 
 // 'YYYY-MM-DD' for use as an <input type="date"> value.
+// A saved value is just resolved text -- this figures out whether it
+// matches one of the known options (so a dropdown can show it directly)
+// or was custom-typed via "Other" (so "Other" should be selected and the
+// typed text restored into the accompanying text field). Shared across
+// every form with an "Other" option, rather than each one reimplementing
+// the same check against its own list.
+export function resolveOtherField(storedValue, knownOptions) {
+  if (!storedValue) return { selected: '', other: '' }
+  if (knownOptions.includes(storedValue)) return { selected: storedValue, other: '' }
+  return { selected: 'Other', other: storedValue }
+}
+
 export function toDateInputValue(date) {
   const d = new Date(date)
   const yyyy = d.getFullYear()

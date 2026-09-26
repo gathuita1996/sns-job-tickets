@@ -15,7 +15,7 @@ import MoneyReportModal from './MoneyReportModal'
 import StockTab from './StockTab'
 import ServiceFormModal from './ServiceForm'
 import { ConfirmDialog, EmptyState, FormField, PeriodSelector, SearchInput, StatCard, StatusBadge, StatusFilterSelect } from './shared'
-import { JOB_TYPES, PRIORITY_OPTIONS, CHART_COLORS, COMMISSION_DEPARTMENTS, departmentLabel, formatKSh, formatDate, formatDateTime, isOverdue, isInPeriod, getPeriodRange, isInRange, toWhatsAppNumber } from '../lib/helpers'
+import { JOB_TYPES, PRIORITY_OPTIONS, CHART_COLORS, COMMISSION_DEPARTMENTS, departmentLabel, formatKSh, formatDate, formatDateTime, isOverdue, isInPeriod, getPeriodRange, isInRange, shiftAnchor, toWhatsAppNumber } from '../lib/helpers'
 
 export default function AdminDashboard({ currentUser, users, jobs, customers, complaints, expenses, stockItems, stockIn, stockOut, onLogout, onAddJob, onUpdateJob, onDeleteJob, onAssignJob, onPromote, onUpdateDepartment, onUpdateProfile, accessCode, onUpdateAccessCode, commissionRate, onUpdateCommissionRate, onClearCommission, onDeleteCustomer, onUpdateComplaintStatus, onResolveComplaint, onMarkTransportPaid, onAddExpense, onAddService, onApproveExpense, onRejectExpense, onAttachReceipt, onMarkExpensePaid, onDeleteExpense, onViewReceipt, onToggleTeamLead, onSetDirector, onAddStockItem, onUpdateStockItem, onDeleteStockItem, onAddStockIn, onAddStockOut }) {
   const [tab, setTab] = useState('overview')
@@ -27,6 +27,7 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
   const [typeFilter, setTypeFilter] = useState('all')
   const [priorityFilter, setPriorityFilter] = useState('all')
   const [overdueOnly, setOverdueOnly] = useState(false)
+  const [jobsPeriodRow, setJobsPeriodRow] = useState('today') // 'today' | 'yesterday' | 'thisWeek' | 'lastWeek' | 'thisMonth' | 'all'
   const [selected, setSelected] = useState([])
   const [printing, setPrinting] = useState(null)
   const [editingJob, setEditingJob] = useState(null)
@@ -59,6 +60,23 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
 
   useEffect(() => { setSelected([]) }, [search, statusFilter, memberFilter, typeFilter, priorityFilter, overdueOnly])
 
+  const jobsPeriodRows = useMemo(() => {
+    const now = new Date()
+    const ranges = {
+      today: getPeriodRange('day', now),
+      yesterday: getPeriodRange('day', shiftAnchor(now, 'day', -1)),
+      thisWeek: getPeriodRange('week', now),
+      lastWeek: getPeriodRange('week', shiftAnchor(now, 'week', -1)),
+      thisMonth: getPeriodRange('month', now),
+    }
+    const labels = { today: 'Today', yesterday: 'Yesterday', thisWeek: 'This week', lastWeek: 'Last week', thisMonth: 'This month', all: 'All jobs' }
+    const rows = Object.keys(ranges).map((key) => ({
+      key, label: labels[key], count: jobs.filter((j) => isInRange(j.createdAt, ranges[key].start, ranges[key].end)).length,
+    }))
+    rows.push({ key: 'all', label: labels.all, count: jobs.length })
+    return { rows, ranges }
+  }, [jobs])
+
   const filtered = useMemo(() => {
     return jobs.filter((j) => {
       const q = search.toLowerCase()
@@ -68,9 +86,10 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
       const matchesType = typeFilter === 'all' || j.jobType === typeFilter
       const matchesPriority = priorityFilter === 'all' || j.priority === priorityFilter
       const matchesOverdue = !overdueOnly || isOverdue(j)
-      return matchesSearch && matchesStatus && matchesMember && matchesType && matchesPriority && matchesOverdue
+      const matchesPeriodRow = jobsPeriodRow === 'all' || isInRange(j.createdAt, jobsPeriodRows.ranges[jobsPeriodRow].start, jobsPeriodRows.ranges[jobsPeriodRow].end)
+      return matchesSearch && matchesStatus && matchesMember && matchesType && matchesPriority && matchesOverdue && matchesPeriodRow
     }).sort((a, b) => new Date(b.visitDate) - new Date(a.visitDate))
-  }, [jobs, search, statusFilter, memberFilter, typeFilter, priorityFilter, overdueOnly, userMap])
+  }, [jobs, search, statusFilter, memberFilter, typeFilter, priorityFilter, overdueOnly, jobsPeriodRow, jobsPeriodRows, userMap])
 
   const { start: periodStart, end: periodEnd } = useMemo(() => getPeriodRange(periodGranularity, periodAnchor), [periodGranularity, periodAnchor])
   const periodJobs = useMemo(() => jobs.filter((j) => isInRange(j.createdAt, periodStart, periodEnd)), [jobs, periodStart, periodEnd])
@@ -200,6 +219,23 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
 
         {tab === 'jobs' && (
           <div>
+            <div className="sns-card no-print" style={{ marginBottom: '1rem', overflow: 'hidden' }}>
+              {jobsPeriodRows.rows.map((row, i) => (
+                <button
+                  key={row.key}
+                  onClick={() => setJobsPeriodRow(row.key)}
+                  className={i > 0 ? 'sns-border-t' : ''}
+                  style={{
+                    width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '0.85rem 1.2rem', background: jobsPeriodRow === row.key ? 'var(--signal-pale)' : 'transparent',
+                    border: 'none', cursor: 'pointer', textAlign: 'left',
+                  }}
+                >
+                  <span style={{ fontWeight: jobsPeriodRow === row.key ? 700 : 600, fontSize: '0.9rem', color: jobsPeriodRow === row.key ? 'var(--signal-deep)' : 'var(--ink)' }}>{row.label}</span>
+                  <span className="sns-mono" style={{ fontWeight: 700, fontSize: '0.9rem', color: jobsPeriodRow === row.key ? 'var(--signal-deep)' : 'var(--ink-soft)' }}>{row.count}</span>
+                </button>
+              ))}
+            </div>
             <div className="no-print flex flex-col sm:flex-row flex-wrap gap-2" style={{ marginBottom: '1rem' }}>
               <SearchInput value={search} onChange={setSearch} placeholder="Search jobs…" />
               <select value={memberFilter} onChange={(e) => setMemberFilter(e.target.value)} className="sns-input" style={{ width: 'auto' }}>

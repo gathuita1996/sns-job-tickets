@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
-import { AlertTriangle, ArrowDownCircle, ArrowUpCircle, List, Package, Pencil, Plus, Trash2, X } from 'lucide-react'
-import { ConfirmDialog, EmptyState, FormField, SearchInput, StatCard } from './shared'
-import { STOCK_CATEGORIES, STOCK_UNITS, defaultStockItemForm, defaultStockInForm, defaultStockOutForm, formatDate, formatKSh } from '../lib/helpers'
+import { ArrowDownCircle, ArrowUpCircle, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { ConfirmDialog, EmptyState, FormField, SearchInput } from './shared'
+import { STOCK_CATEGORIES, STOCK_UNITS, defaultStockItemForm, defaultStockInForm, defaultStockOutForm, formatDate, formatKSh, toDateInputValue } from '../lib/helpers'
 
 function ItemFormModal({ item, onClose, onSave }) {
   const [form, setForm] = useState(item
@@ -104,6 +104,7 @@ function StockInFormModal({ items, onClose, onSave }) {
     const e = {}
     if (!form.itemId) e.itemId = 'Please select an item'
     if (!form.purchaseDate) e.purchaseDate = 'Required'
+    else if (form.purchaseDate > toDateInputValue(new Date())) e.purchaseDate = "You can't record a purchase for a future date."
     if (form.quantity === '' || isNaN(Number(form.quantity)) || Number(form.quantity) <= 0) e.quantity = 'Enter a valid quantity'
     if (form.unitCost === '' || isNaN(Number(form.unitCost)) || Number(form.unitCost) < 0) e.unitCost = 'Enter a valid amount'
     setErrors(e)
@@ -136,7 +137,7 @@ function StockInFormModal({ items, onClose, onSave }) {
           </FormField>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <FormField label="Date" error={errors.purchaseDate}>
-              <input type="date" className="sns-input" value={form.purchaseDate} onChange={(e) => update('purchaseDate', e.target.value)} />
+              <input type="date" max={toDateInputValue(new Date())} className="sns-input" value={form.purchaseDate} onChange={(e) => update('purchaseDate', e.target.value)} />
             </FormField>
             <FormField label="Quantity" error={errors.quantity}>
               <input type="number" min="0" step="1" className="sns-input" value={form.quantity} onChange={(e) => update('quantity', e.target.value)} placeholder="0" />
@@ -269,7 +270,7 @@ export default function StockTab({ stockItems, stockIn, stockOut, onAddItem, onU
   }, [stockItems, stockIn, stockOut])
 
   const reorderCount = summaryRows.filter((r) => r.status === 'REORDER').length
-  const stockValue = summaryRows.reduce((s, r) => s + r.currentStock * r.item.unitCost, 0)
+  const reorderRows = summaryRows.filter((r) => r.status === 'REORDER')
 
   const filteredItems = useMemo(() => {
     const q = search.toLowerCase()
@@ -281,17 +282,14 @@ export default function StockTab({ stockItems, stockIn, stockOut, onAddItem, onU
 
   return (
     <div>
-      <div className="grid grid-cols-3 gap-3" style={{ marginBottom: '1.25rem', maxWidth: '30rem' }}>
-        <StatCard label="Items tracked" value={stockItems.length} icon={Package} />
-        <StatCard label="Need reorder" value={reorderCount} icon={AlertTriangle} tone={reorderCount > 0 ? 'danger' : 'default'} />
-        <StatCard label="Stock value" value={formatKSh(stockValue)} icon={List} />
-      </div>
-
       <div className="flex gap-2" style={{ marginBottom: '1.25rem', flexWrap: 'wrap' }}>
         <button onClick={() => setView('summary')} className={view === 'summary' ? 'sns-btn-primary' : 'sns-btn-secondary'} style={{ fontSize: '0.82rem' }}>Summary</button>
         <button onClick={() => setView('items')} className={view === 'items' ? 'sns-btn-primary' : 'sns-btn-secondary'} style={{ fontSize: '0.82rem' }}>Item Master</button>
         <button onClick={() => setView('in')} className={view === 'in' ? 'sns-btn-primary' : 'sns-btn-secondary'} style={{ fontSize: '0.82rem' }}>Stock In</button>
         <button onClick={() => setView('out')} className={view === 'out' ? 'sns-btn-primary' : 'sns-btn-secondary'} style={{ fontSize: '0.82rem' }}>Stock Out</button>
+        <button onClick={() => setView('reorder')} className={view === 'reorder' ? 'sns-btn-primary' : 'sns-btn-secondary'} style={{ fontSize: '0.82rem' }}>
+          Need Reorder{reorderCount > 0 && <span className="sns-badge sns-badge-overdue" style={{ marginLeft: '0.4rem' }}>{reorderCount}</span>}
+        </button>
       </div>
 
       {view === 'summary' && (
@@ -425,6 +423,31 @@ export default function StockTab({ stockItems, stockIn, stockOut, onAddItem, onU
             </div>
           )}
         </>
+      )}
+
+      {view === 'reorder' && (
+        reorderRows.length === 0 ? <EmptyState message="Nothing needs reordering right now." /> : (
+          <div className="sns-card" style={{ overflow: 'hidden' }}>
+            <div style={{ overflowX: 'auto' }}>
+              <table className="sns-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr><th>Item</th><th>Unit</th><th>Current stock</th><th>Reorder level</th><th>Supplier</th></tr>
+                </thead>
+                <tbody>
+                  {reorderRows.map((r) => (
+                    <tr key={r.item.id}>
+                      <td style={{ fontWeight: 600 }}>{r.item.itemName}</td>
+                      <td className="sns-text-soft">{r.item.unit}</td>
+                      <td className="sns-mono" style={{ fontWeight: 700, color: 'var(--overdue)' }}>{r.currentStock}</td>
+                      <td className="sns-text-soft">{r.item.reorderLevel}</td>
+                      <td className="sns-text-soft">{r.item.supplier || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )
       )}
 
       {(showItemForm || editingItem) && (

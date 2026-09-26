@@ -1,12 +1,14 @@
 import { useState } from 'react'
 import { X } from 'lucide-react'
 import { FormField } from './shared'
-import { LOCATIONS, PACKAGES, defaultCustomerForm, toDateInputValue } from '../lib/helpers'
+import { LOCATIONS, PACKAGES, defaultCustomerForm, resolveOtherField, toDateInputValue } from '../lib/helpers'
 
 export default function CustomerFormModal({ initialCustomer, onClose, onSave }) {
+  const locationResolved = initialCustomer ? resolveOtherField(initialCustomer.location, LOCATIONS) : null
   const [form, setForm] = useState(initialCustomer ? {
     firstName: initialCustomer.firstName, lastName: initialCustomer.lastName, contact: initialCustomer.contact,
-    location: initialCustomer.location, interestedPackage: initialCustomer.interestedPackage || PACKAGES[0],
+    location: locationResolved.selected, locationOther: locationResolved.other,
+    interestedPackage: initialCustomer.interestedPackage || PACKAGES[0],
     notes: initialCustomer.notes || '', desiredDate: initialCustomer.desiredDate || '',
   } : defaultCustomerForm())
   const [errors, setErrors] = useState({})
@@ -23,6 +25,7 @@ export default function CustomerFormModal({ initialCustomer, onClose, onSave }) 
     if (!form.lastName.trim()) e.lastName = 'Required'
     if (!form.contact.trim()) e.contact = 'Required'
     if (!form.location) e.location = 'Please select a location'
+    else if (form.location === 'Other' && !form.locationOther.trim()) e.locationOther = 'Please describe the location'
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -31,7 +34,7 @@ export default function CustomerFormModal({ initialCustomer, onClose, onSave }) 
     ev.preventDefault()
     if (!validate()) return
     setSubmitting(true)
-    await onSave(form)
+    await onSave({ ...form, location: form.location === 'Other' ? form.locationOther.trim() : form.location })
     setSubmitting(false)
   }
 
@@ -60,8 +63,15 @@ export default function CustomerFormModal({ initialCustomer, onClose, onSave }) 
             <select className={locationCls} value={form.location} onChange={(e) => update('location', e.target.value)}>
               <option value="" disabled>select-location/site</option>
               {LOCATIONS.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
+              <option value="Other">Other</option>
             </select>
           </FormField>
+
+          {form.location === 'Other' && (
+            <FormField label="Describe the location" error={errors.locationOther}>
+              <input className="sns-input" value={form.locationOther} onChange={(e) => update('locationOther', e.target.value)} placeholder="Where is this customer based?" />
+            </FormField>
+          )}
           <FormField label="Interested package">
             <select className="sns-input" value={form.interestedPackage} onChange={(e) => update('interestedPackage', e.target.value)}>
               {PACKAGES.map((p) => <option key={p} value={p}>{p}</option>)}

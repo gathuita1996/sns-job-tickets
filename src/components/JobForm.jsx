@@ -1,25 +1,7 @@
 import { useState } from 'react'
 import { Plus, Trash2, X } from 'lucide-react'
 import { FormField } from './shared'
-import { JOB_TYPES, LOCATIONS, TRANSPORT_LOCATIONS, STATUS_OPTIONS, PRIORITY_OPTIONS, defaultJobForm, isOverdue, toDateInputValue, formatDate, formatKSh } from '../lib/helpers'
-
-// A saved job's transport_from/to is just resolved text -- this figures out
-// whether that text matches a known location (so the dropdown can show it
-// directly) or was custom-typed via "Other" (so "Other" should be selected
-// and the typed text restored into the accompanying text field).
-function resolveTransportField(storedValue) {
-  if (!storedValue) return { selected: '', other: '' }
-  if (TRANSPORT_LOCATIONS.includes(storedValue)) return { selected: storedValue, other: '' }
-  return { selected: 'Other', other: storedValue }
-}
-
-// Same idea for the job's own Location/site field, using the site list
-// instead of the transport list.
-function resolveLocationField(storedValue) {
-  if (!storedValue) return { selected: '', other: '' }
-  if (LOCATIONS.includes(storedValue)) return { selected: storedValue, other: '' }
-  return { selected: 'Other', other: storedValue }
-}
+import { JOB_TYPES, LOCATIONS, TRANSPORT_LOCATIONS, STATUS_OPTIONS, PRIORITY_OPTIONS, defaultJobForm, isOverdue, resolveOtherField, toDateInputValue, formatDate, formatKSh } from '../lib/helpers'
 
 // assignableMembers is only passed when an admin opens this form (to assign
 // or reassign a job to a Technical or Sales & Marketing member) -- its
@@ -38,13 +20,13 @@ export default function JobFormModal({ initialJob, assignableMembers, allMembers
   const adminMode = Boolean(assignableMembers)
   const isNewAdminAssignment = adminMode && !initialJob
   const editingOverdue = Boolean(initialJob) && isOverdue(initialJob)
-  const fromResolved = initialJob ? resolveTransportField(initialJob.transportFrom) : null
-  const locationResolved = initialJob ? resolveLocationField(initialJob.location) : null
+  const fromResolved = initialJob ? resolveOtherField(initialJob.transportFrom, TRANSPORT_LOCATIONS) : null
+  const locationResolved = initialJob ? resolveOtherField(initialJob.location, LOCATIONS) : null
   // A job's trip can cover several stops now (Office -> A -> B -> ...), so
   // transportTo is an array -- resolve each stop the same way a single one
   // used to be resolved.
   const stopsResolved = initialJob && initialJob.transportTo && initialJob.transportTo.length
-    ? initialJob.transportTo.map(resolveTransportField)
+    ? initialJob.transportTo.map((stop) => resolveOtherField(stop, TRANSPORT_LOCATIONS))
     : null
   // Sales & Marketing members often file for a general field visit, not a
   // specific client request -- Technical stays required, since their work is
@@ -335,36 +317,23 @@ export default function JobFormModal({ initialJob, assignableMembers, allMembers
                 {form.transportStops.map((stop, idx) => (
                   <div key={idx} style={{ marginBottom: idx === form.transportStops.length - 1 ? 0 : '0.6rem' }}>
                     <div className="flex items-center gap-2">
-                      {stop.selected === 'Other' ? (
-                        <>
-                          <input
-                            className="sns-input" style={{ flex: 1 }} autoFocus
-                            value={stop.other}
-                            onChange={(e) => updateStop(idx, 'other', e.target.value)}
-                            placeholder="Type the destination"
-                          />
-                          <button type="button" onClick={() => { updateStop(idx, 'selected', ''); updateStop(idx, 'other', '') }} className="sns-icon-btn" title="Choose from the list instead">
-                            <X size={16} />
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <select className={`sns-input${stop.selected === '' ? ' sns-select-placeholder' : ''}`} style={{ flex: 1 }} value={stop.selected} onChange={(e) => updateStop(idx, 'selected', e.target.value)}>
-                            <option value="" disabled>select-destination</option>
-                            {TRANSPORT_LOCATIONS.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
-                          </select>
-                          <button type="button" onClick={() => updateStop(idx, 'selected', 'Other')} className="sns-icon-btn" title="Add a destination not on this list">
-                            <Plus size={16} />
-                          </button>
-                        </>
-                      )}
+                      <select className={`sns-input${stop.selected === '' ? ' sns-select-placeholder' : ''}`} style={{ flex: 1 }} value={stop.selected} onChange={(e) => updateStop(idx, 'selected', e.target.value)}>
+                        <option value="" disabled>select-destination</option>
+                        {TRANSPORT_LOCATIONS.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
+                        <option value="Other">Other</option>
+                      </select>
                       {form.transportStops.length > 1 && (
                         <button type="button" onClick={() => removeStop(idx)} className="sns-icon-btn danger" title="Remove this stop">
                           <Trash2 size={16} />
                         </button>
                       )}
                     </div>
-                    {errors.transportStops?.[idx] && (
+                    {stop.selected === 'Other' && (
+                      <FormField label="Describe the destination" error={errors.transportStops?.[idx]}>
+                        <input className="sns-input" value={stop.other} onChange={(e) => updateStop(idx, 'other', e.target.value)} placeholder="Where did the trip end?" />
+                      </FormField>
+                    )}
+                    {stop.selected !== 'Other' && errors.transportStops?.[idx] && (
                       <p style={{ color: 'var(--overdue)', fontSize: '0.78rem', marginTop: '0.3rem' }}>{errors.transportStops[idx]}</p>
                     )}
                   </div>

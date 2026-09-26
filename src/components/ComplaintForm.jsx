@@ -17,6 +17,7 @@ export default function ComplaintFormModal({ onClose, onSave }) {
     const e = {}
     if (!form.complainantName.trim()) e.complainantName = 'Required'
     if (!form.location) e.location = 'Please select a location'
+    else if (form.location === 'Other' && !form.locationOther.trim()) e.locationOther = 'Please describe the location'
     if (!form.contact.trim()) e.contact = 'Required'
     if (!form.complaintType) e.complaintType = 'Please select a complaint type'
     else if (form.complaintType === 'Other' && !form.complaintTypeOther.trim()) e.complaintTypeOther = 'Please describe the complaint type'
@@ -29,7 +30,7 @@ export default function ComplaintFormModal({ onClose, onSave }) {
     ev.preventDefault()
     if (!validate()) return
     setSubmitting(true)
-    await onSave(form)
+    await onSave({ ...form, location: form.location === 'Other' ? form.locationOther.trim() : form.location })
     setSubmitting(false)
   }
 
@@ -52,8 +53,15 @@ export default function ComplaintFormModal({ onClose, onSave }) {
             <select className={locationCls} value={form.location} onChange={(e) => update('location', e.target.value)}>
               <option value="" disabled>select-location</option>
               {LOCATIONS.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
+              <option value="Other">Other</option>
             </select>
           </FormField>
+
+          {form.location === 'Other' && (
+            <FormField label="Describe the location" error={errors.locationOther}>
+              <input className="sns-input" value={form.locationOther} onChange={(e) => update('locationOther', e.target.value)} placeholder="Where did this happen?" />
+            </FormField>
+          )}
 
           <FormField label="Contact" error={errors.contact}>
             <input className="sns-input" value={form.contact} onChange={(e) => update('contact', e.target.value)} placeholder="e.g. 0712 345 678" />
