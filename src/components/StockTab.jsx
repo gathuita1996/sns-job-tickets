@@ -139,7 +139,7 @@ function StockInFormModal({ items, onClose, onSave }) {
             <FormField label="Date" error={errors.purchaseDate}>
               <input type="date" max={toDateInputValue(new Date())} className="sns-input" value={form.purchaseDate} onChange={(e) => update('purchaseDate', e.target.value)} />
             </FormField>
-            <FormField label="Quantity" error={errors.quantity}>
+            <FormField label="Quantity" error={errors.quantity} hint="How many were bought — or, for this item's first entry after a stock reset, how many you currently have on hand.">
               <input type="number" min="0" step="1" className="sns-input" value={form.quantity} onChange={(e) => update('quantity', e.target.value)} placeholder="0" />
             </FormField>
           </div>

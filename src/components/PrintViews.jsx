@@ -47,8 +47,8 @@ export function JobPrintView({ job, filedByUser, assignedByUser, coTechnicianNam
           )}
           <PrintField label="Date of Visit" value={formatDate(job.visitDate)} />
           <PrintField label="Transport Route" value={[job.transportFrom || '—', ...(job.transportTo && job.transportTo.length ? job.transportTo : ['—'])].join(' → ')} />
-          <PrintField label="Transport Amount" value={formatKSh(job.transportAmount)} />
           <PrintField label="Job Details" value={job.notes || '—'} full />
+          <PrintField label="Transport Amount" value={formatKSh(job.transportAmount)} />
           {job.overdueReason && <PrintField label="Overdue — Reason for Delay" value={job.overdueReason} full />}
         </div>
         <p className="sns-text-faint" style={{ fontSize: '0.75rem', borderTop: '1px solid var(--line)', paddingTop: '1rem', marginBottom: job.assignedBy ? '0.3rem' : '2.5rem' }}>
