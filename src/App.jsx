@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from './lib/supabaseClient'
-import { mapProfile, mapJob, jobToDbFields, mapCustomer, customerToDbFields, mapComplaint, complaintToDbFields, mapExpense, expenseToDbFields, serviceToDbFields } from './lib/mappers'
+import { mapProfile, mapJob, jobToDbFields, mapCustomer, customerToDbFields, mapComplaint, complaintToDbFields, mapExpense, expenseToDbFields, serviceToDbFields, mapStockItem, stockItemToDbFields, mapStockIn, stockInToDbFields, mapStockOut, stockOutToDbFields } from './lib/mappers'
 import { COMMISSION_DEPARTMENTS } from './lib/helpers'
 import { LoadingScreen, Toast } from './components/shared'
 import { LoginView, SignupView, ForgotPasswordView, ResetPasswordView } from './components/Auth'
@@ -15,6 +15,9 @@ export default function App() {
   const [customerIdsWithJobs, setCustomerIdsWithJobs] = useState(new Set())
   const [complaints, setComplaints] = useState([])
   const [expenses, setExpenses] = useState([])
+  const [stockItems, setStockItems] = useState([])
+  const [stockIn, setStockIn] = useState([])
+  const [stockOut, setStockOut] = useState([])
   const [memberNames, setMemberNames] = useState({})
   const [allUsers, setAllUsers] = useState([])
   const [accessCode, setAccessCode] = useState('')
@@ -48,6 +51,9 @@ export default function App() {
     if (profile.role === 'admin') {
       await refreshUsers()
       await refreshAppSettings()
+      await refreshStockItems()
+      await refreshStockIn()
+      await refreshStockOut()
     } else {
       await refreshCommissionRate()
     }
@@ -71,6 +77,24 @@ export default function App() {
     const { data, error } = await supabase.from('expenses').select('*')
     if (error) return
     setExpenses((data || []).map(mapExpense))
+  }
+
+  async function refreshStockItems() {
+    const { data, error } = await supabase.from('stock_items').select('*').order('item_name')
+    if (error) return
+    setStockItems((data || []).map(mapStockItem))
+  }
+
+  async function refreshStockIn() {
+    const { data, error } = await supabase.from('stock_in').select('*')
+    if (error) return
+    setStockIn((data || []).map(mapStockIn))
+  }
+
+  async function refreshStockOut() {
+    const { data, error } = await supabase.from('stock_out').select('*')
+    if (error) return
+    setStockOut((data || []).map(mapStockOut))
   }
 
   async function refreshMemberNames() {
@@ -467,6 +491,41 @@ export default function App() {
     await refreshExpenses()
   }
 
+  async function handleAddStockItem(formData) {
+    const { error } = await supabase.from('stock_items').insert(stockItemToDbFields(formData))
+    if (error) { showToast(error.code === '23505' ? 'That item code is already in use.' : 'Failed to add item.', 'error'); return }
+    showToast('Item added to catalog.')
+    await refreshStockItems()
+  }
+
+  async function handleUpdateStockItem(id, formData) {
+    const { error } = await supabase.from('stock_items').update(stockItemToDbFields(formData)).eq('id', id)
+    if (error) { showToast(error.code === '23505' ? 'That item code is already in use.' : 'Failed to update item.', 'error'); return }
+    showToast('Item updated.')
+    await refreshStockItems()
+  }
+
+  async function handleDeleteStockItem(item) {
+    const { error } = await supabase.from('stock_items').delete().eq('id', item.id)
+    if (error) { showToast('Failed to delete — this item has stock history recorded against it.', 'error'); return }
+    showToast('Item deleted.')
+    await refreshStockItems()
+  }
+
+  async function handleAddStockIn(formData) {
+    const { error } = await supabase.from('stock_in').insert({ ...stockInToDbFields(formData), recorded_by: currentUserRef.current.id })
+    if (error) { showToast('Failed to record purchase.', 'error'); return }
+    showToast('Stock in recorded.')
+    await refreshStockIn()
+  }
+
+  async function handleAddStockOut(formData) {
+    const { error } = await supabase.from('stock_out').insert({ ...stockOutToDbFields(formData), recorded_by: currentUserRef.current.id })
+    if (error) { showToast('Failed to record issue.', 'error'); return }
+    showToast('Stock out recorded.')
+    await refreshStockOut()
+  }
+
   // The receipts bucket is private, so viewing one needs a temporary signed
   // link generated on demand -- not a permanent public URL. Returns the
   // URL rather than opening it; the inline viewer (ExpensesList) displays
@@ -578,7 +637,7 @@ export default function App() {
   return (<>
     {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     {currentUser.role === 'admin'
-      ? <AdminDashboard currentUser={currentUser} users={allUsers} jobs={jobs} customers={customers} complaints={complaints} expenses={expenses} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAssignJob={handleAssignJob} onPromote={handlePromote} onUpdateDepartment={handleUpdateDepartment} onUpdateProfile={handleUpdateProfile} accessCode={accessCode} onUpdateAccessCode={handleUpdateAccessCode} commissionRate={commissionRate} onUpdateCommissionRate={handleUpdateCommissionRate} onClearCommission={handleClearCommission} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onUpdateComplaintStatus={handleUpdateComplaintStatus} onResolveComplaint={handleResolveComplaint} onMarkTransportPaid={handleMarkTransportPaid} onAddExpense={handleAddExpense} onAddService={handleAddService} onAttachReceipt={handleAttachReceipt} onApproveExpense={handleApproveExpense} onRejectExpense={handleRejectExpense} onMarkExpensePaid={handleMarkExpensePaid} onDeleteExpense={handleDeleteExpense} onViewReceipt={getReceiptUrl} onToggleTeamLead={handleToggleTeamLead} onSetDirector={handleSetDirector} />
+      ? <AdminDashboard currentUser={currentUser} users={allUsers} jobs={jobs} customers={customers} complaints={complaints} expenses={expenses} stockItems={stockItems} stockIn={stockIn} stockOut={stockOut} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAssignJob={handleAssignJob} onPromote={handlePromote} onUpdateDepartment={handleUpdateDepartment} onUpdateProfile={handleUpdateProfile} accessCode={accessCode} onUpdateAccessCode={handleUpdateAccessCode} commissionRate={commissionRate} onUpdateCommissionRate={handleUpdateCommissionRate} onClearCommission={handleClearCommission} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onUpdateComplaintStatus={handleUpdateComplaintStatus} onResolveComplaint={handleResolveComplaint} onMarkTransportPaid={handleMarkTransportPaid} onAddExpense={handleAddExpense} onAddService={handleAddService} onAttachReceipt={handleAttachReceipt} onApproveExpense={handleApproveExpense} onRejectExpense={handleRejectExpense} onMarkExpensePaid={handleMarkExpensePaid} onDeleteExpense={handleDeleteExpense} onViewReceipt={getReceiptUrl} onToggleTeamLead={handleToggleTeamLead} onSetDirector={handleSetDirector} onAddStockItem={handleAddStockItem} onUpdateStockItem={handleUpdateStockItem} onDeleteStockItem={handleDeleteStockItem} onAddStockIn={handleAddStockIn} onAddStockOut={handleAddStockOut} />
       : <MemberDashboard currentUser={currentUser} jobs={jobs.filter((j) => j.memberId === currentUser.id)} raisedJobs={jobs.filter((j) => j.raisedBy === currentUser.id && j.memberId !== currentUser.id)} customers={customers} customerIdsWithJobs={customerIdsWithJobs} complaints={complaints} expenses={expenses.filter((e) => e.submittedBy === currentUser.id)} memberNames={memberNames} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAddCustomer={handleAddCustomer} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onUpdateProfile={handleUpdateProfile} onAddComplaint={handleAddComplaint} onUpdateComplaintStatus={handleUpdateComplaintStatus} onResolveComplaint={handleResolveComplaint} onAddExpense={handleAddExpense} onAttachReceipt={handleAttachReceipt} onDeleteExpense={handleDeleteExpense} onViewReceipt={getReceiptUrl} commissionRate={commissionRate} />}
   </>)
 }

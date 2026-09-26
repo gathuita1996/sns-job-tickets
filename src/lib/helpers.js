@@ -83,6 +83,11 @@ export const EXPENSE_CATEGORIES = [
 
 export const EXPENSE_STATUSES = ['Requested', 'Approved', 'Rejected', 'Purchased', 'Paid']
 
+// Matches the categories and units already in real use in the company's
+// actual item catalog, not an arbitrary invented list.
+export const STOCK_CATEGORIES = ['Networking', 'Power & Adapters', 'Accessories', 'Splitters', 'Connectors', 'Other']
+export const STOCK_UNITS = ['pcs', 'box', 'roll', 'pack']
+
 // Commission rate itself now lives in app_settings.commission_per_customer
 // (admin-editable from Settings) rather than being hardcoded here.
 // Departments whose members earn a commission for recording a new customer.
@@ -174,6 +179,43 @@ export function defaultReceiptForm(expense) {
     amount: String(expense.amount),
     purchaseDate: new Date().toISOString().slice(0, 10),
     receiptFile: null,
+  }
+}
+
+export function defaultStockItemForm() {
+  return {
+    itemCode: '',
+    itemName: '',
+    category: '',
+    unit: 'pcs',
+    reorderLevel: '',
+    unitCost: '',
+    supplier: '',
+    notes: '',
+  }
+}
+
+export function defaultStockInForm() {
+  return {
+    itemId: '',
+    purchaseDate: new Date().toISOString().slice(0, 10),
+    quantity: '',
+    unitCost: '',
+    supplier: '',
+    invoiceNo: '',
+    receivedBy: '',
+  }
+}
+
+export function defaultStockOutForm() {
+  return {
+    itemId: '',
+    issueDate: new Date().toISOString().slice(0, 10),
+    quantity: '',
+    issuedTo: '',
+    purpose: '',
+    referenceNo: '',
+    issuedBy: '',
   }
 }
 

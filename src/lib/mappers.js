@@ -180,3 +180,85 @@ export function serviceToDbFields(data) {
     purchase_date: data.serviceDate,
   }
 }
+
+export function mapStockItem(row) {
+  return {
+    id: row.id,
+    itemCode: row.item_code,
+    itemName: row.item_name,
+    category: row.category || '',
+    unit: row.unit,
+    reorderLevel: Number(row.reorder_level) || 0,
+    unitCost: Number(row.unit_cost) || 0,
+    supplier: row.supplier || '',
+    notes: row.notes || '',
+    createdAt: row.created_at,
+  }
+}
+
+export function stockItemToDbFields(data) {
+  return {
+    item_code: data.itemCode.trim(),
+    item_name: data.itemName.trim(),
+    category: data.category || null,
+    unit: data.unit,
+    reorder_level: Number(data.reorderLevel) || 0,
+    unit_cost: Number(data.unitCost) || 0,
+    supplier: data.supplier.trim() || null,
+    notes: data.notes.trim() || null,
+  }
+}
+
+export function mapStockIn(row) {
+  return {
+    id: row.id,
+    itemId: row.item_id,
+    purchaseDate: row.purchase_date,
+    quantity: Number(row.quantity) || 0,
+    unitCost: Number(row.unit_cost) || 0,
+    supplier: row.supplier || '',
+    invoiceNo: row.invoice_no || '',
+    receivedBy: row.received_by || '',
+    recordedBy: row.recorded_by,
+    createdAt: row.created_at,
+  }
+}
+
+export function stockInToDbFields(data) {
+  return {
+    item_id: Number(data.itemId),
+    purchase_date: data.purchaseDate,
+    quantity: Number(data.quantity),
+    unit_cost: Number(data.unitCost),
+    supplier: data.supplier.trim() || null,
+    invoice_no: data.invoiceNo.trim() || null,
+    received_by: data.receivedBy.trim() || null,
+  }
+}
+
+export function mapStockOut(row) {
+  return {
+    id: row.id,
+    itemId: row.item_id,
+    issueDate: row.issue_date,
+    quantity: Number(row.quantity) || 0,
+    issuedTo: row.issued_to || '',
+    purpose: row.purpose || '',
+    referenceNo: row.reference_no || '',
+    issuedBy: row.issued_by || '',
+    recordedBy: row.recorded_by,
+    createdAt: row.created_at,
+  }
+}
+
+export function stockOutToDbFields(data) {
+  return {
+    item_id: Number(data.itemId),
+    issue_date: data.issueDate,
+    quantity: Number(data.quantity),
+    issued_to: data.issuedTo.trim() || null,
+    purpose: data.purpose.trim() || null,
+    reference_no: data.referenceNo.trim() || null,
+    issued_by: data.issuedBy.trim() || null,
+  }
+}
