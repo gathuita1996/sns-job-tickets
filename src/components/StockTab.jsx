@@ -245,7 +245,7 @@ function StockOutFormModal({ items, onClose, onSave }) {
 // Admin (and, since a Director is always an admin, Director) only -- this
 // whole tab is only ever rendered inside AdminDashboard, so no extra
 // gating is needed here beyond that.
-export default function StockTab({ stockItems, stockIn, stockOut, onAddItem, onUpdateItem, onDeleteItem, onAddStockIn, onAddStockOut }) {
+export default function StockTab({ stockItems, stockIn, stockOut, onAddItem, onUpdateItem, onDeleteItem, onAddStockIn, onAddStockInBatch, onAddStockOut }) {
   const [view, setView] = useState('summary') // 'summary' | 'items' | 'in' | 'out'
   const [search, setSearch] = useState('')
   const [showItemForm, setShowItemForm] = useState(false)
@@ -253,6 +253,16 @@ export default function StockTab({ stockItems, stockIn, stockOut, onAddItem, onU
   const [confirmDeleteItem, setConfirmDeleteItem] = useState(null)
   const [showStockInForm, setShowStockInForm] = useState(false)
   const [showStockOutForm, setShowStockOutForm] = useState(false)
+
+  // Quick-entry grid on Stock In: every item in the Item Master starts at 0.
+  // A missing key means "untouched" -- quantity reads 0 and unit cost falls
+  // back to the catalog price (which the user can override, since it varies).
+  const [quantities, setQuantities] = useState({})
+  const [costs, setCosts] = useState({})
+  const [batchDate, setBatchDate] = useState(() => toDateInputValue(new Date()))
+  const [batchError, setBatchError] = useState('')
+  const [invalidIds, setInvalidIds] = useState([])
+  const [batchSaving, setBatchSaving] = useState(false)
 
   const itemMap = useMemo(() => { const m = {}; stockItems.forEach((i) => { m[i.id] = i }); return m }, [stockItems])
 
@@ -279,6 +289,56 @@ export default function StockTab({ stockItems, stockIn, stockOut, onAddItem, onU
 
   const sortedStockIn = useMemo(() => [...stockIn].sort((a, b) => new Date(b.purchaseDate) - new Date(a.purchaseDate)), [stockIn])
   const sortedStockOut = useMemo(() => [...stockOut].sort((a, b) => new Date(b.issueDate) - new Date(a.issueDate)), [stockOut])
+
+  const entryRows = useMemo(() => stockItems.map((item) => {
+    const qtyStr = quantities[item.id] ?? '0'
+    const costStr = costs[item.id] ?? String(item.unitCost)
+    const qtyNum = Number(qtyStr)
+    const costNum = Number(costStr)
+    return { item, qtyStr, costStr, qtyNum: isNaN(qtyNum) ? 0 : qtyNum, costNum: isNaN(costNum) ? 0 : costNum }
+  }), [stockItems, quantities, costs])
+  const enteredRows = entryRows.filter((r) => r.qtyNum > 0)
+  const batchTotal = enteredRows.reduce((sum, r) => sum + r.qtyNum * r.costNum, 0)
+
+  function clearRowError(id) {
+    setInvalidIds((ids) => ids.filter((x) => x !== id))
+    setBatchError('')
+  }
+
+  function setQty(id, raw) {
+    // "0" followed by a typed digit would read "05" -- strip the leading zero.
+    setQuantities((q) => ({ ...q, [id]: raw.replace(/^0+(?=\d)/, '') }))
+    clearRowError(id)
+  }
+
+  function setCost(id, raw) {
+    setCosts((c) => ({ ...c, [id]: raw }))
+    clearRowError(id)
+  }
+
+  async function handleRecordBatch() {
+    if (!batchDate) { setBatchError('Please choose a date.'); return }
+    if (batchDate > toDateInputValue(new Date())) { setBatchError("You can't record a purchase for a future date."); return }
+    const bad = entryRows.filter((r) => {
+      const qtyBad = r.qtyStr !== '' && (isNaN(Number(r.qtyStr)) || Number(r.qtyStr) < 0)
+      const costBad = r.qtyNum > 0 && (r.costStr === '' || isNaN(Number(r.costStr)) || Number(r.costStr) < 0)
+      return qtyBad || costBad
+    }).map((r) => r.item.id)
+    if (bad.length > 0) {
+      setInvalidIds(bad)
+      setBatchError('Check the highlighted rows: quantities and costs must be valid, non-negative numbers.')
+      return
+    }
+    if (enteredRows.length === 0) { setBatchError('Enter a quantity for at least one item.'); return }
+    setBatchSaving(true)
+    const ok = await onAddStockInBatch(enteredRows.map((r) => ({
+      itemId: r.item.id, purchaseDate: batchDate, quantity: r.qtyNum, unitCost: r.costNum,
+      supplier: r.item.supplier || '', invoiceNo: '', receivedBy: '',
+    })))
+    setBatchSaving(false)
+    // Only reset on success, so a failed save never wipes what was typed.
+    if (ok) { setQuantities({}); setCosts({}); setInvalidIds([]); setBatchError('') }
+  }
 
   return (
     <div>
@@ -362,8 +422,75 @@ export default function StockTab({ stockItems, stockIn, stockOut, onAddItem, onU
 
       {view === 'in' && (
         <>
-          <div className="flex justify-end" style={{ marginBottom: '1rem' }}>
-            <button onClick={() => setShowStockInForm(true)} className="sns-btn-primary"><ArrowDownCircle size={16} /> Record purchase</button>
+          <div className="flex items-end justify-between" style={{ flexWrap: 'wrap', gap: '0.8rem', marginBottom: '1rem' }}>
+            <div>
+              <p style={{ fontWeight: 700, fontSize: '0.95rem' }}>Record purchases</p>
+              <p className="sns-text-soft" style={{ fontSize: '0.8rem', marginTop: 2 }}>Enter a quantity against each item you are recording. Items left at 0 are skipped.</p>
+            </div>
+            <div className="flex items-end gap-2" style={{ flexWrap: 'wrap' }}>
+              <div>
+                <label className="sns-eyebrow sns-text-faint" style={{ display: 'block', marginBottom: 4 }}>Date</label>
+                <input type="date" max={toDateInputValue(new Date())} className="sns-input" value={batchDate} onChange={(e) => { setBatchDate(e.target.value); setBatchError('') }} />
+              </div>
+              <button onClick={handleRecordBatch} disabled={enteredRows.length === 0 || batchSaving} className="sns-btn-primary">
+                {batchSaving ? 'Saving…' : enteredRows.length > 0 ? `Record ${enteredRows.length} purchase${enteredRows.length === 1 ? '' : 's'}` : 'Record purchases'}
+              </button>
+            </div>
+          </div>
+          {batchError && <p style={{ color: 'var(--overdue)', fontSize: '0.82rem', marginBottom: '0.8rem' }}>{batchError}</p>}
+          {stockItems.length === 0 ? <EmptyState message="Add items to the Item Master first." /> : (
+            <div className="sns-card" style={{ overflow: 'hidden' }}>
+              <div style={{ overflowX: 'auto' }}>
+                <table className="sns-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr><th>Item</th><th>Unit</th><th>Quantity</th><th>Unit cost (KES)</th><th style={{ textAlign: 'right' }}>Total</th></tr>
+                  </thead>
+                  <tbody>
+                    {entryRows.map((r) => {
+                      const flagged = invalidIds.includes(r.item.id)
+                      const flagStyle = flagged ? { borderColor: 'var(--overdue)' } : {}
+                      return (
+                        <tr key={r.item.id}>
+                          <td style={{ fontWeight: 600 }}>{r.item.itemName}</td>
+                          <td className="sns-text-soft">{r.item.unit}</td>
+                          <td>
+                            <input
+                              type="number" inputMode="numeric" min="0" step="1" className="sns-input"
+                              aria-label={`Quantity for ${r.item.itemName}`}
+                              style={{ width: '5.5rem', ...flagStyle }}
+                              value={r.qtyStr}
+                              onFocus={(e) => e.target.select()}
+                              onChange={(e) => setQty(r.item.id, e.target.value)}
+                              onBlur={() => { if (r.qtyStr === '') setQty(r.item.id, '0') }}
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="number" min="0" className="sns-input"
+                              aria-label={`Unit cost for ${r.item.itemName}`}
+                              style={{ width: '7rem', ...flagStyle }}
+                              value={r.costStr}
+                              onChange={(e) => setCost(r.item.id, e.target.value)}
+                            />
+                          </td>
+                          <td className="sns-mono" style={{ textAlign: 'right', fontWeight: r.qtyNum > 0 ? 700 : 400 }}>
+                            {r.qtyNum > 0 ? formatKSh(r.qtyNum * r.costNum) : '—'}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          {enteredRows.length > 0 && (
+            <p className="sns-mono" style={{ textAlign: 'right', fontWeight: 700, marginTop: '0.7rem' }}>Total to record: {formatKSh(batchTotal)}</p>
+          )}
+
+          <div className="flex items-center justify-between" style={{ margin: '2rem 0 0.8rem', flexWrap: 'wrap', gap: '0.6rem' }}>
+            <p style={{ fontWeight: 700, fontSize: '0.95rem' }}>Purchase history</p>
+            <button onClick={() => setShowStockInForm(true)} className="sns-btn-secondary" style={{ fontSize: '0.8rem' }}><ArrowDownCircle size={15} /> Add with invoice details</button>
           </div>
           {sortedStockIn.length === 0 ? <EmptyState message="No purchases recorded yet." /> : (
             <div className="sns-card" style={{ overflow: 'hidden' }}>

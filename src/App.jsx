@@ -519,6 +519,18 @@ export default function App() {
     await refreshStockIn()
   }
 
+  // Saves every row in one insert, so a batch either fully lands or not at
+  // all -- no half-recorded baseline. Returns true/false so the caller only
+  // clears what the user typed when the save actually worked.
+  async function handleAddStockInBatch(entries) {
+    const rows = entries.map((e) => ({ ...stockInToDbFields(e), recorded_by: currentUserRef.current.id }))
+    const { error } = await supabase.from('stock_in').insert(rows)
+    if (error) { showToast('Failed to record purchases.', 'error'); return false }
+    showToast(rows.length === 1 ? 'Purchase recorded.' : `${rows.length} purchases recorded.`)
+    await refreshStockIn()
+    return true
+  }
+
   async function handleAddStockOut(formData) {
     const { error } = await supabase.from('stock_out').insert({ ...stockOutToDbFields(formData), recorded_by: currentUserRef.current.id })
     if (error) { showToast('Failed to record issue.', 'error'); return }
@@ -637,7 +649,7 @@ export default function App() {
   return (<>
     {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     {currentUser.role === 'admin'
-      ? <AdminDashboard currentUser={currentUser} users={allUsers} jobs={jobs} customers={customers} complaints={complaints} expenses={expenses} stockItems={stockItems} stockIn={stockIn} stockOut={stockOut} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAssignJob={handleAssignJob} onPromote={handlePromote} onUpdateDepartment={handleUpdateDepartment} onUpdateProfile={handleUpdateProfile} accessCode={accessCode} onUpdateAccessCode={handleUpdateAccessCode} commissionRate={commissionRate} onUpdateCommissionRate={handleUpdateCommissionRate} onClearCommission={handleClearCommission} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onUpdateComplaintStatus={handleUpdateComplaintStatus} onResolveComplaint={handleResolveComplaint} onMarkTransportPaid={handleMarkTransportPaid} onAddExpense={handleAddExpense} onAddService={handleAddService} onAttachReceipt={handleAttachReceipt} onApproveExpense={handleApproveExpense} onRejectExpense={handleRejectExpense} onMarkExpensePaid={handleMarkExpensePaid} onDeleteExpense={handleDeleteExpense} onViewReceipt={getReceiptUrl} onToggleTeamLead={handleToggleTeamLead} onSetDirector={handleSetDirector} onAddStockItem={handleAddStockItem} onUpdateStockItem={handleUpdateStockItem} onDeleteStockItem={handleDeleteStockItem} onAddStockIn={handleAddStockIn} onAddStockOut={handleAddStockOut} />
+      ? <AdminDashboard currentUser={currentUser} users={allUsers} jobs={jobs} customers={customers} complaints={complaints} expenses={expenses} stockItems={stockItems} stockIn={stockIn} stockOut={stockOut} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAssignJob={handleAssignJob} onPromote={handlePromote} onUpdateDepartment={handleUpdateDepartment} onUpdateProfile={handleUpdateProfile} accessCode={accessCode} onUpdateAccessCode={handleUpdateAccessCode} commissionRate={commissionRate} onUpdateCommissionRate={handleUpdateCommissionRate} onClearCommission={handleClearCommission} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onUpdateComplaintStatus={handleUpdateComplaintStatus} onResolveComplaint={handleResolveComplaint} onMarkTransportPaid={handleMarkTransportPaid} onAddExpense={handleAddExpense} onAddService={handleAddService} onAttachReceipt={handleAttachReceipt} onApproveExpense={handleApproveExpense} onRejectExpense={handleRejectExpense} onMarkExpensePaid={handleMarkExpensePaid} onDeleteExpense={handleDeleteExpense} onViewReceipt={getReceiptUrl} onToggleTeamLead={handleToggleTeamLead} onSetDirector={handleSetDirector} onAddStockItem={handleAddStockItem} onUpdateStockItem={handleUpdateStockItem} onDeleteStockItem={handleDeleteStockItem} onAddStockIn={handleAddStockIn} onAddStockInBatch={handleAddStockInBatch} onAddStockOut={handleAddStockOut} />
       : <MemberDashboard currentUser={currentUser} jobs={jobs.filter((j) => j.memberId === currentUser.id)} raisedJobs={jobs.filter((j) => j.raisedBy === currentUser.id && j.memberId !== currentUser.id)} customers={customers} customerIdsWithJobs={customerIdsWithJobs} complaints={complaints} expenses={expenses.filter((e) => e.submittedBy === currentUser.id)} memberNames={memberNames} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAddCustomer={handleAddCustomer} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onUpdateProfile={handleUpdateProfile} onAddComplaint={handleAddComplaint} onUpdateComplaintStatus={handleUpdateComplaintStatus} onResolveComplaint={handleResolveComplaint} onAddExpense={handleAddExpense} onAttachReceipt={handleAttachReceipt} onDeleteExpense={handleDeleteExpense} onViewReceipt={getReceiptUrl} commissionRate={commissionRate} />}
   </>)
 }

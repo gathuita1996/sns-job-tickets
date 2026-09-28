@@ -17,7 +17,7 @@ import ServiceFormModal from './ServiceForm'
 import { ConfirmDialog, EmptyState, FormField, PeriodSelector, SearchInput, StatCard, StatusBadge, StatusFilterSelect } from './shared'
 import { JOB_TYPES, PRIORITY_OPTIONS, CHART_COLORS, COMMISSION_DEPARTMENTS, departmentLabel, formatKSh, formatDate, formatDateTime, isOverdue, isInPeriod, getPeriodRange, isInRange, shiftAnchor, toWhatsAppNumber } from '../lib/helpers'
 
-export default function AdminDashboard({ currentUser, users, jobs, customers, complaints, expenses, stockItems, stockIn, stockOut, onLogout, onAddJob, onUpdateJob, onDeleteJob, onAssignJob, onPromote, onUpdateDepartment, onUpdateProfile, accessCode, onUpdateAccessCode, commissionRate, onUpdateCommissionRate, onClearCommission, onDeleteCustomer, onUpdateComplaintStatus, onResolveComplaint, onMarkTransportPaid, onAddExpense, onAddService, onApproveExpense, onRejectExpense, onAttachReceipt, onMarkExpensePaid, onDeleteExpense, onViewReceipt, onToggleTeamLead, onSetDirector, onAddStockItem, onUpdateStockItem, onDeleteStockItem, onAddStockIn, onAddStockOut }) {
+export default function AdminDashboard({ currentUser, users, jobs, customers, complaints, expenses, stockItems, stockIn, stockOut, onLogout, onAddJob, onUpdateJob, onDeleteJob, onAssignJob, onPromote, onUpdateDepartment, onUpdateProfile, accessCode, onUpdateAccessCode, commissionRate, onUpdateCommissionRate, onClearCommission, onDeleteCustomer, onUpdateComplaintStatus, onResolveComplaint, onMarkTransportPaid, onAddExpense, onAddService, onApproveExpense, onRejectExpense, onAttachReceipt, onMarkExpensePaid, onDeleteExpense, onViewReceipt, onToggleTeamLead, onSetDirector, onAddStockItem, onUpdateStockItem, onDeleteStockItem, onAddStockIn, onAddStockInBatch, onAddStockOut }) {
   const [tab, setTab] = useState('overview')
   const [periodGranularity, setPeriodGranularity] = useState('day')
   const [periodAnchor, setPeriodAnchor] = useState(() => new Date())
@@ -434,6 +434,7 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
             onUpdateItem={onUpdateStockItem}
             onDeleteItem={onDeleteStockItem}
             onAddStockIn={onAddStockIn}
+            onAddStockInBatch={onAddStockInBatch}
             onAddStockOut={onAddStockOut}
           />
         )}
