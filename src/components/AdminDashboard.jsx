@@ -118,17 +118,6 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
     [customers, commissionRate]
   )
 
-  // Every customer recorded this calendar month, paid or not -- this is
-  // "how much commission did the team generate this month", a different
-  // question from the unpaid total below ("how much do we still owe").
-  const totalCommissionGeneratedThisMonth = useMemo(() => {
-    const count = customers.filter((c) =>
-      isInPeriod(c.createdAt, 'month') &&
-      COMMISSION_DEPARTMENTS.includes(userMap[c.recordedBy]?.department)
-    ).length
-    return count * commissionRate
-  }, [customers, userMap, commissionRate])
-
   const totalCommissionThisMonth = useMemo(() => {
     const count = customers.filter((c) =>
       !c.commissionPaidAt &&
@@ -299,9 +288,8 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
         {tab === 'commissions' && (
           <div>
             <div className="flex items-center justify-between" style={{ marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
-              <div className="grid grid-cols-3 gap-3" style={{ maxWidth: '34rem' }}>
-                <StatCard label="Total commission this month" value={formatKSh(totalCommissionGeneratedThisMonth)} icon={Award} tone="success" />
-                <StatCard label="Unpaid from this month" value={formatKSh(totalCommissionThisMonth)} icon={Wallet} />
+              <div className="grid grid-cols-2 gap-3" style={{ maxWidth: '24rem' }}>
+                <StatCard label="Owed this month" value={formatKSh(totalCommissionThisMonth)} icon={Award} tone="success" />
                 <StatCard label="Members owed" value={commissionRows.length} icon={Users} />
               </div>
               <button onClick={() => setShowCommissionReport(true)} className="sns-btn-secondary">View Report</button>
