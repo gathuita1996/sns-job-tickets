@@ -97,17 +97,22 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
 
   // Commission is never stored — always derived from customers whose
   // commission hasn't been cleared yet, so it can never drift out of sync.
-  // Members with nothing currently owed are left out entirely.
+  // Scoped to this calendar month, matching the "Owed this month" stat card
+  // above -- the two should always agree with each other. Uses the full
+  // user list, not just role === 'member', since someone promoted to admin
+  // (e.g. a Team Lead who's since been made an admin) can still be in a
+  // commission-eligible department and still have commission owed to them.
+  // People with nothing owed this month are left out entirely.
   const commissionRows = useMemo(() => {
-    return members
+    return users
       .filter((m) => COMMISSION_DEPARTMENTS.includes(m.department))
       .map((m) => {
-        const unpaidCustomers = customers.filter((c) => c.recordedBy === m.id && !c.commissionPaidAt)
-        return { member: m, unpaidCustomers, count: unpaidCustomers.length, commission: unpaidCustomers.length * commissionRate }
+        const unpaidThisMonth = customers.filter((c) => c.recordedBy === m.id && !c.commissionPaidAt && isInPeriod(c.createdAt, 'month'))
+        return { member: m, unpaidCustomers: unpaidThisMonth, count: unpaidThisMonth.length, commission: unpaidThisMonth.length * commissionRate }
       })
       .filter((r) => r.count > 0)
       .sort((a, b) => b.commission - a.commission)
-  }, [members, customers, commissionRate])
+  }, [users, customers, commissionRate])
 
   // For the report specifically -- every customer recorded in the period
   // counts as commission earned then, regardless of whether it's since
