@@ -25,7 +25,10 @@ export default function TeamList({ users, jobs, onPromote, onUpdateDepartment, o
                   {m.isTeamLead && <span className="sns-badge" style={{ background: 'var(--confirmed-pale)', color: 'var(--confirmed)' }}><Star size={11} /> Team Lead</span>}
                   {m.isDirector && <span className="sns-badge" style={{ background: 'var(--stamp-pale)', color: 'var(--stamp-deep)' }}><Award size={11} /> Director</span>}
                 </div>
-                <p className="flex items-center gap-1 sns-text-faint" style={{ fontSize: '0.75rem' }}><Phone size={11} /> {m.contact}</p>
+                <p className="flex items-center gap-2 sns-text-faint" style={{ fontSize: '0.75rem' }}>
+                  <span className="flex items-center gap-1"><Phone size={11} /> {m.contact}</span>
+                  {m.employeeNumber && <span className="sns-mono">{m.employeeNumber}</span>}
+                </p>
               </div>
             </div>
             <div className="flex items-center gap-3" style={{ flexWrap: 'wrap' }}>

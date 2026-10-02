@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { AlertCircle, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, Clipboard, Eye, EyeOff, Search } from 'lucide-react'
+import { AlertCircle, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, Clipboard, Eye, EyeOff, Receipt, Search, Wrench } from 'lucide-react'
 import { STATUS_OPTIONS, PERIODS, formatPeriodLabel, shiftAnchor, toDateInputValue } from '../lib/helpers'
 
 export function FormField({ label, children, hint, error }) {
@@ -146,6 +146,28 @@ export function ConfirmDialog({ title, message, onConfirm, onCancel, danger }) {
           <button onClick={onCancel} className="sns-btn-secondary">Cancel</button>
           <button onClick={onConfirm} className={`sns-btn-primary ${danger ? 'sns-btn-danger' : ''}`}>Confirm</button>
         </div>
+      </div>
+    </div>
+  )
+}
+
+// A small picker shown before either the Purchase or Service form opens,
+// since both now live behind one entry point rather than two buttons.
+export function EntryTypeChoice({ onChoosePurchase, onChooseService, onCancel }) {
+  return (
+    <div className="no-print flex items-center justify-center p-4" style={{ position: 'fixed', inset: 0, background: 'rgba(27,36,48,0.55)', zIndex: 60 }}>
+      <div className="sns-card sns-fade-in" style={{ maxWidth: '24rem', width: '100%', padding: '1.5rem' }}>
+        <h3 className="sns-display" style={{ fontWeight: 700, marginBottom: '0.4rem' }}>What are you filing?</h3>
+        <p style={{ fontSize: '0.85rem', color: 'var(--ink-soft)', marginBottom: '1.4rem' }}>A purchased item you'll attach a receipt for, or a service paid to someone outside the team?</p>
+        <div className="flex flex-col" style={{ gap: '0.6rem' }}>
+          <button onClick={onChoosePurchase} className="sns-btn-primary" style={{ justifyContent: 'flex-start' }}>
+            <Receipt size={16} /> Purchase — receipt attached after approval
+          </button>
+          <button onClick={onChooseService} className="sns-btn-secondary" style={{ justifyContent: 'flex-start' }}>
+            <Wrench size={16} /> Service — paying someone outside the team
+          </button>
+        </div>
+        <button onClick={onCancel} className="sns-btn-secondary" style={{ width: '100%', marginTop: '0.9rem' }}>Cancel</button>
       </div>
     </div>
   )

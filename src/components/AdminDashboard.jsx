@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, AlertTriangle, Award, Check, CheckCircle2, Clipboard, Copy, Eye, EyeOff, Mail, MessageCircle, Pencil, Plus, Printer, Receipt, Trash2, UserPlus, Users, Wallet, Wrench, X } from 'lucide-react'
+import { AlertCircle, AlertTriangle, Award, Check, CheckCircle2, Clipboard, Copy, Eye, EyeOff, Mail, MessageCircle, Pencil, Plus, Printer, Receipt, Trash2, UserPlus, Users, Wallet, X } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import Header from './Header'
 import JobFormModal from './JobForm'
@@ -14,7 +14,7 @@ import ExpenseFormModal from './ExpenseForm'
 import MoneyReportModal from './MoneyReportModal'
 import StockTab from './StockTab'
 import ServiceFormModal from './ServiceForm'
-import { ConfirmDialog, EmptyState, FormField, PeriodSelector, SearchInput, StatCard, StatusBadge, StatusFilterSelect } from './shared'
+import { ConfirmDialog, EmptyState, EntryTypeChoice, FormField, PeriodSelector, SearchInput, StatCard, StatusBadge, StatusFilterSelect } from './shared'
 import { JOB_TYPES, PRIORITY_OPTIONS, CHART_COLORS, COMMISSION_DEPARTMENTS, departmentLabel, formatKSh, formatDate, formatDateTime, isOverdue, isInPeriod, getPeriodRange, isInRange, shiftAnchor, toWhatsAppNumber } from '../lib/helpers'
 
 export default function AdminDashboard({ currentUser, users, jobs, customers, complaints, expenses, stockItems, stockIn, stockOut, onLogout, onAddJob, onUpdateJob, onDeleteJob, onAssignJob, onPromote, onUpdateDepartment, onUpdateProfile, accessCode, onUpdateAccessCode, commissionRate, onUpdateCommissionRate, onClearCommission, onDeleteCustomer, onUpdateComplaintStatus, onResolveComplaint, onMarkTransportPaid, onAddExpense, onAddService, onApproveExpense, onRejectExpense, onAttachReceipt, onMarkExpensePaid, onDeleteExpense, onViewReceipt, onToggleTeamLead, onSetDirector, onAddStockItem, onUpdateStockItem, onDeleteStockItem, onAddStockIn, onAddStockInBatch, onAddStockOut }) {
@@ -33,6 +33,7 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
   const [editingJob, setEditingJob] = useState(null)
   const [showAssignForm, setShowAssignForm] = useState(false)
   const [showFileForm, setShowFileForm] = useState(false)
+  const [showEntryChoice, setShowEntryChoice] = useState(false)
   const [showExpenseForm, setShowExpenseForm] = useState(false)
   const [showCommissionReport, setShowCommissionReport] = useState(false)
   const [showTransportReport, setShowTransportReport] = useState(false)
@@ -116,6 +117,17 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
     () => customers.map((c) => ({ memberId: c.recordedBy, amount: commissionRate, date: c.createdAt })),
     [customers, commissionRate]
   )
+
+  // Every customer recorded this calendar month, paid or not -- this is
+  // "how much commission did the team generate this month", a different
+  // question from the unpaid total below ("how much do we still owe").
+  const totalCommissionGeneratedThisMonth = useMemo(() => {
+    const count = customers.filter((c) =>
+      isInPeriod(c.createdAt, 'month') &&
+      COMMISSION_DEPARTMENTS.includes(userMap[c.recordedBy]?.department)
+    ).length
+    return count * commissionRate
+  }, [customers, userMap, commissionRate])
 
   const totalCommissionThisMonth = useMemo(() => {
     const count = customers.filter((c) =>
@@ -287,9 +299,10 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
         {tab === 'commissions' && (
           <div>
             <div className="flex items-center justify-between" style={{ marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
-              <div className="grid grid-cols-2 gap-3" style={{ maxWidth: '24rem' }}>
+              <div className="grid grid-cols-3 gap-3" style={{ maxWidth: '34rem' }}>
+                <StatCard label="Total commission this month" value={formatKSh(totalCommissionGeneratedThisMonth)} icon={Award} tone="success" />
+                <StatCard label="Unpaid from this month" value={formatKSh(totalCommissionThisMonth)} icon={Wallet} />
                 <StatCard label="Members owed" value={commissionRows.length} icon={Users} />
-                <StatCard label="Owed this month" value={formatKSh(totalCommissionThisMonth)} icon={Award} tone="success" />
               </div>
               <button onClick={() => setShowCommissionReport(true)} className="sns-btn-secondary">View Report</button>
             </div>
@@ -353,8 +366,7 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
                 <p className="sns-text-faint" style={{ fontSize: '0.8rem' }}>Only the Director can approve, reject, or mark purchases as paid — you can still see everything below.</p>
               )}
               <div className="flex gap-2" style={{ marginLeft: 'auto' }}>
-                <button onClick={() => setShowServiceForm(true)} className="sns-btn-secondary"><Wrench size={16} /> Log a service</button>
-                <button onClick={() => setShowExpenseForm(true)} className="sns-btn-primary"><Receipt size={16} /> Submit a purchase</button>
+                <button onClick={() => setShowEntryChoice(true)} className="sns-btn-primary"><Receipt size={16} /> Expense / Purchase</button>
               </div>
             </div>
             <ExpensesList
@@ -483,6 +495,13 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
           filerDepartment={currentUser.department}
           onClose={() => setShowFileForm(false)}
           onSave={async (data) => { await onAddJob(data); setShowFileForm(false) }}
+        />
+      )}
+      {showEntryChoice && (
+        <EntryTypeChoice
+          onChoosePurchase={() => { setShowEntryChoice(false); setShowExpenseForm(true) }}
+          onChooseService={() => { setShowEntryChoice(false); setShowServiceForm(true) }}
+          onCancel={() => setShowEntryChoice(false)}
         />
       )}
       {showExpenseForm && (

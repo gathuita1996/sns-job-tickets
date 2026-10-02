@@ -7,6 +7,7 @@ export function mapProfile(row) {
   return {
     id: row.id,
     username: row.username,
+    employeeNumber: row.employee_number || '',
     fullName: row.full_name,
     contact: row.contact,
     email: row.email || '',
