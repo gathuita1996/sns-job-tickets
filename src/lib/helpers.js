@@ -274,7 +274,7 @@ function startOfWeek() {
   return d
 }
 
-function startOfMonth() {
+export function startOfMonth() {
   const d = startOfToday()
   d.setDate(1)
   return d

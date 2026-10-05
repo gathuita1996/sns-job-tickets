@@ -7,7 +7,6 @@ import { JobPrintView, BatchPrintView, CustomerPrintView } from './PrintViews'
 import ProfileFormModal from './ProfileForm'
 import JobsTable from './JobsTable'
 import TeamList from './TeamList'
-import ComplaintsQueue from './ComplaintsQueue'
 import TransportTab from './TransportTab'
 import ExpensesList from './ExpensesList'
 import ExpenseFormModal from './ExpenseForm'
@@ -17,7 +16,7 @@ import ServiceFormModal from './ServiceForm'
 import { ConfirmDialog, EmptyState, EntryTypeChoice, FormField, PeriodSelector, SearchInput, StatCard, StatusBadge, StatusFilterSelect } from './shared'
 import { JOB_TYPES, PRIORITY_OPTIONS, CHART_COLORS, COMMISSION_DEPARTMENTS, departmentLabel, formatKSh, formatDate, formatDateTime, isOverdue, isInPeriod, getPeriodRange, isInRange, shiftAnchor, toWhatsAppNumber } from '../lib/helpers'
 
-export default function AdminDashboard({ currentUser, users, jobs, customers, complaints, expenses, stockItems, stockIn, stockOut, onLogout, onAddJob, onUpdateJob, onDeleteJob, onAssignJob, onPromote, onUpdateDepartment, onUpdateProfile, accessCode, onUpdateAccessCode, commissionRate, onUpdateCommissionRate, onClearCommission, onDeleteCustomer, onUpdateComplaintStatus, onResolveComplaint, onMarkTransportPaid, onAddExpense, onAddService, onApproveExpense, onRejectExpense, onAttachReceipt, onMarkExpensePaid, onDeleteExpense, onViewReceipt, onToggleTeamLead, onSetDirector, onAddStockItem, onUpdateStockItem, onDeleteStockItem, onAddStockIn, onAddStockInBatch, onAddStockOut }) {
+export default function AdminDashboard({ currentUser, users, jobs, customers, expenses, stockItems, stockIn, stockOut, onLogout, onAddJob, onUpdateJob, onDeleteJob, onAssignJob, onPromote, onUpdateDepartment, onUpdateProfile, accessCode, onUpdateAccessCode, commissionRate, onUpdateCommissionRate, onClearCommission, onDeleteCustomer, onMarkTransportPaid, onAddExpense, onAddService, onApproveExpense, onRejectExpense, onAttachReceipt, onMarkExpensePaid, onDeleteExpense, onViewReceipt, onToggleTeamLead, onSetDirector, onAddStockItem, onUpdateStockItem, onDeleteStockItem, onAddStockIn, onAddStockInBatch, onAddStockOut }) {
   const [tab, setTab] = useState('overview')
   const [periodGranularity, setPeriodGranularity] = useState('day')
   const [periodAnchor, setPeriodAnchor] = useState(() => new Date())
@@ -45,6 +44,7 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
   const [confirmDeleteCustomer, setConfirmDeleteCustomer] = useState(null)
   const [editingMember, setEditingMember] = useState(null)
   const [expandedMemberId, setExpandedMemberId] = useState(null)
+  const [confirmClearCommission, setConfirmClearCommission] = useState(null)
   const [customerSearch, setCustomerSearch] = useState('')
 
   const members = users.filter((u) => u.role === 'member')
@@ -107,8 +107,12 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
     return users
       .filter((m) => COMMISSION_DEPARTMENTS.includes(m.department))
       .map((m) => {
-        const unpaidThisMonth = customers.filter((c) => c.recordedBy === m.id && !c.commissionPaidAt && isInPeriod(c.createdAt, 'month'))
-        return { member: m, unpaidCustomers: unpaidThisMonth, count: unpaidThisMonth.length, commission: unpaidThisMonth.length * commissionRate }
+        const thisMonth = customers.filter((c) => c.recordedBy === m.id && isInPeriod(c.createdAt, 'month'))
+        const unpaid = thisMonth.filter((c) => !c.commissionPaidAt)
+        // Already-paid ones are never "owed", so they don't touch the totals --
+        // they're kept only so the click-through shows the member's whole month.
+        const paid = thisMonth.filter((c) => c.commissionPaidAt)
+        return { member: m, unpaidCustomers: unpaid, paidCustomers: paid, count: unpaid.length, commission: unpaid.length * commissionRate }
       })
       .filter((r) => r.count > 0)
       .sort((a, b) => b.commission - a.commission)
@@ -123,14 +127,12 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
     [customers, commissionRate]
   )
 
-  const totalCommissionThisMonth = useMemo(() => {
-    const count = customers.filter((c) =>
-      !c.commissionPaidAt &&
-      isInPeriod(c.createdAt, 'month') &&
-      COMMISSION_DEPARTMENTS.includes(userMap[c.recordedBy]?.department)
-    ).length
-    return count * commissionRate
-  }, [customers, userMap, commissionRate])
+  // Derived straight from the table rows so the headline figure can never
+  // disagree with the records listed under it.
+  const totalCommissionThisMonth = useMemo(
+    () => commissionRows.reduce((sum, r) => sum + r.commission, 0),
+    [commissionRows]
+  )
 
   const filteredCustomers = useMemo(() => {
     const q = customerSearch.toLowerCase()
@@ -184,9 +186,6 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
             Expense/Purchases{(expenses || []).filter((e) => e.status === 'Requested').length > 0 && <span className="sns-badge sns-badge-overdue" style={{ marginLeft: '0.4rem' }}>{(expenses || []).filter((e) => e.status === 'Requested').length}</span>}
           </button>
           <button className={`sns-tab ${tab === 'customers' ? 'active' : ''}`} onClick={() => setTab('customers')}>Customers</button>
-          <button className={`sns-tab ${tab === 'complaints' ? 'active' : ''}`} onClick={() => setTab('complaints')}>
-            Complaints{(complaints || []).filter((c) => c.status !== 'Resolved').length > 0 && <span className="sns-badge sns-badge-overdue" style={{ marginLeft: '0.4rem' }}>{(complaints || []).filter((c) => c.status !== 'Resolved').length}</span>}
-          </button>
           <button className={`sns-tab ${tab === 'stock' ? 'active' : ''}`} onClick={() => setTab('stock')}>Stock</button>
           <button className={`sns-tab ${tab === 'settings' ? 'active' : ''}`} onClick={() => setTab('settings')}>Settings</button>
         </div>
@@ -317,7 +316,7 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
                             <td className="sns-mono">{r.count}</td>
                             <td className="sns-mono" style={{ fontWeight: 700, color: 'var(--confirmed)' }}>{formatKSh(r.commission)}</td>
                             <td style={{ textAlign: 'right' }}>
-                              <button onClick={(e) => { e.stopPropagation(); onClearCommission(r.member) }} className="sns-btn-primary" style={{ fontSize: '0.78rem', padding: '0.5rem 0.9rem' }}>
+                              <button onClick={(e) => { e.stopPropagation(); setConfirmClearCommission(r) }} className="sns-btn-primary" style={{ fontSize: '0.78rem', padding: '0.5rem 0.9rem' }}>
                                 Mark as Paid
                               </button>
                             </td>
@@ -335,6 +334,20 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
                                     </div>
                                   ))}
                                 </div>
+                                {r.paidCustomers.length > 0 && (
+                                  <>
+                                    <p className="sns-eyebrow sns-text-faint" style={{ margin: '1rem 0 0.6rem' }}>{r.paidCustomers.length} already paid this month</p>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                      {r.paidCustomers.map((c) => (
+                                        <div key={c.id} className="flex items-center justify-between sns-text-faint" style={{ fontSize: '0.83rem' }}>
+                                          <span>{c.fullName}</span>
+                                          <span>{formatDate(c.createdAt)}</span>
+                                          <span className="sns-mono">{formatKSh(commissionRate)} · paid {formatDate(c.commissionPaidAt)}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </>
+                                )}
                               </td>
                             </tr>
                           )}
@@ -421,15 +434,6 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
           </div>
         )}
 
-        {tab === 'complaints' && (
-          <ComplaintsQueue
-            complaints={complaints || []}
-            userMap={userMap}
-            onUpdateStatus={onUpdateComplaintStatus}
-            onResolve={onResolveComplaint}
-          />
-        )}
-
         {tab === 'stock' && (
           <StockTab
             stockItems={stockItems || []}
@@ -501,6 +505,14 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, co
         <ExpenseFormModal
           onClose={() => setShowExpenseForm(false)}
           onSave={async (data) => { await onAddExpense(data); setShowExpenseForm(false) }}
+        />
+      )}
+      {confirmClearCommission && (
+        <ConfirmDialog
+          title="Mark commission as paid"
+          message={`Mark ${confirmClearCommission.member.fullName}'s ${confirmClearCommission.count} commission${confirmClearCommission.count === 1 ? '' : 's'} this month (${formatKSh(confirmClearCommission.commission)}) as paid? This can't be undone from the app.`}
+          onCancel={() => setConfirmClearCommission(null)}
+          onConfirm={async () => { await onClearCommission(confirmClearCommission.member); setConfirmClearCommission(null) }}
         />
       )}
       {showCommissionReport && (
