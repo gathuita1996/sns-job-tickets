@@ -1,11 +1,13 @@
 import { useMemo, useState } from 'react'
-import { ArrowDownCircle, ArrowUpCircle, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { ArrowDownCircle, ArrowUpCircle, Cpu, Pencil, Plus, Trash2, X } from 'lucide-react'
+import PurchaseEntry from './PurchaseEntry'
+import DeviceLog from './DeviceLog'
 import { ConfirmDialog, EmptyState, FormField, SearchInput } from './shared'
-import { STOCK_CATEGORIES, STOCK_UNITS, defaultStockItemForm, defaultStockInForm, defaultStockOutForm, formatDate, formatKSh, toDateInputValue } from '../lib/helpers'
+import { STOCK_CATEGORIES, STOCK_UNITS, defaultStockItemForm, defaultStockInForm, defaultStockOutForm, formatDate, formatKSh, toDateInputValue, customerLabel, INSTALL_TYPES } from '../lib/helpers'
 
 function ItemFormModal({ item, onClose, onSave }) {
   const [form, setForm] = useState(item
-    ? { itemCode: item.itemCode, itemName: item.itemName, category: item.category, unit: item.unit, reorderLevel: String(item.reorderLevel), unitCost: String(item.unitCost), supplier: item.supplier, notes: item.notes }
+    ? { itemCode: item.itemCode, itemName: item.itemName, category: item.category, unit: item.unit, reorderLevel: String(item.reorderLevel), unitCost: String(item.unitCost), supplier: item.supplier, notes: item.notes, isDevice: Boolean(item.isDevice) }
     : defaultStockItemForm())
   const [errors, setErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
@@ -72,6 +74,11 @@ function ItemFormModal({ item, onClose, onSave }) {
           <FormField label="Supplier">
             <input className="sns-input" value={form.supplier} onChange={(e) => update('supplier', e.target.value)} placeholder="e.g. Data Connect Technology" />
           </FormField>
+          <label className="flex items-start gap-2" style={{ cursor: 'pointer' }}>
+            <input type="checkbox" checked={Boolean(form.isDevice)} onChange={(e) => update('isDevice', e.target.checked)} style={{ marginTop: 3 }} />
+            <span style={{ fontSize: '0.85rem' }}><strong>Field device</strong> (ONU / XPON router)<br />
+              <span className="sns-text-soft" style={{ fontSize: '0.78rem' }}>When this item is issued, ask whether it is a new installation or a replacement, and for which customer.</span></span>
+          </label>
           <FormField label="Notes">
             <textarea className="sns-input" rows={2} value={form.notes} onChange={(e) => update('notes', e.target.value)} placeholder="Optional" />
           </FormField>
@@ -167,14 +174,34 @@ function StockInFormModal({ items, onClose, onSave }) {
   )
 }
 
-function StockOutFormModal({ items, onClose, onSave }) {
+function StockOutFormModal({ items, customers, onClose, onSave }) {
   const [form, setForm] = useState(defaultStockOutForm())
   const [errors, setErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
+  const [custSearch, setCustSearch] = useState('')
+
+  const item = items.find((i) => String(i.id) === String(form.itemId))
+  const isDevice = Boolean(item && item.isDevice)
+  const sorted = useMemo(() => [...customers].sort((a, b) => customerLabel(a).localeCompare(customerLabel(b))), [customers])
+  const options = useMemo(() => {
+    const q = custSearch.trim().toLowerCase()
+    const list = q ? sorted.filter((c) => customerLabel(c).toLowerCase().includes(q) || String(c.contact || '').replace(/\s/g, '').includes(q.replace(/\s/g, ''))) : sorted
+    const shown = list.slice(0, 300)
+    const chosen = sorted.find((c) => String(c.id) === String(form.customerId))
+    return chosen && !shown.includes(chosen) ? [chosen, ...shown] : shown      // the chosen customer never disappears while filtering
+  }, [sorted, custSearch, form.customerId])
 
   function update(key, value) {
     setForm((f) => ({ ...f, [key]: value }))
     setErrors((e) => ({ ...e, [key]: undefined }))
+  }
+
+  function pickItem(itemId) {
+    const it = items.find((i) => String(i.id) === String(itemId))
+    setForm((f) => it && it.isDevice
+      ? { ...f, itemId, quantity: f.quantity === '' ? '1' : f.quantity }
+      : { ...f, itemId, installType: '', customerId: '', deviceSerial: '' })
+    setErrors({})
   }
 
   function validate() {
@@ -182,6 +209,8 @@ function StockOutFormModal({ items, onClose, onSave }) {
     if (!form.itemId) e.itemId = 'Please select an item'
     if (!form.issueDate) e.issueDate = 'Required'
     if (form.quantity === '' || isNaN(Number(form.quantity)) || Number(form.quantity) <= 0) e.quantity = 'Enter a valid quantity'
+    if (isDevice && !form.installType) e.installType = 'Choose new installation or replacement'
+    if (isDevice && form.installType === 'replacement' && !form.customerId) e.customerId = 'Choose the customer this device was replaced for'
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -195,6 +224,7 @@ function StockOutFormModal({ items, onClose, onSave }) {
   }
 
   const itemCls = `sns-input${form.itemId === '' ? ' sns-select-placeholder' : ''}`
+  const replacement = form.installType === 'replacement'
 
   return (
     <div className="no-print flex items-center justify-center p-4" style={{ position: 'fixed', inset: 0, background: 'rgba(27,36,48,0.55)', zIndex: 55 }}>
@@ -205,11 +235,36 @@ function StockOutFormModal({ items, onClose, onSave }) {
         </div>
         <form onSubmit={handleSubmit} style={{ padding: '1.4rem' }} className="space-y-4">
           <FormField label="Item" error={errors.itemId}>
-            <select className={itemCls} value={form.itemId} onChange={(e) => update('itemId', e.target.value)}>
+            <select className={itemCls} value={form.itemId} onChange={(e) => pickItem(e.target.value)}>
               <option value="" disabled>select-item</option>
-              {items.map((i) => <option key={i.id} value={i.id}>{i.itemName}</option>)}
+              {items.map((i) => <option key={i.id} value={i.id}>{i.itemName}{i.isDevice ? '  (field device)' : ''}</option>)}
             </select>
           </FormField>
+
+          {isDevice && (
+            <div className="space-y-3" style={{ background: 'rgba(0,117,204,0.06)', border: '1px solid rgba(0,117,204,0.2)', borderRadius: 10, padding: '0.9rem' }}>
+              <FormField label="Taken for" error={errors.installType}>
+                <div className="flex gap-2">
+                  {INSTALL_TYPES.map((o) => (
+                    <button type="button" key={o.key} onClick={() => update('installType', o.key)} className={form.installType === o.key ? 'sns-btn-primary' : 'sns-btn-secondary'} style={{ flex: 1, fontSize: '0.85rem' }}>{o.label}</button>
+                  ))}
+                </div>
+              </FormField>
+              {form.installType && (
+                <FormField label={replacement ? 'Replaced for customer' : 'Customer (optional)'} error={errors.customerId} hint={replacement ? 'Pick the customer whose device this one replaces.' : 'Leave empty if the customer is not in the system yet.'}>
+                  <input className="sns-input" value={custSearch} onChange={(e) => setCustSearch(e.target.value)} placeholder="Type a name or phone to filter…" style={{ marginBottom: 6 }} />
+                  <select className={`sns-input${form.customerId === '' ? ' sns-select-placeholder' : ''}`} value={form.customerId} onChange={(e) => update('customerId', e.target.value)}>
+                    <option value="">{replacement ? 'select-customer' : 'No customer yet'}</option>
+                    {options.map((c) => <option key={c.id} value={c.id}>{customerLabel(c)}</option>)}
+                  </select>
+                </FormField>
+              )}
+              <FormField label="Serial / MAC (optional)">
+                <input className="sns-input" value={form.deviceSerial} onChange={(e) => update('deviceSerial', e.target.value)} placeholder="Printed on the device label" />
+              </FormField>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <FormField label="Date" error={errors.issueDate}>
               <input type="date" className="sns-input" value={form.issueDate} onChange={(e) => update('issueDate', e.target.value)} />
@@ -218,8 +273,8 @@ function StockOutFormModal({ items, onClose, onSave }) {
               <input type="number" min="0" step="1" className="sns-input" value={form.quantity} onChange={(e) => update('quantity', e.target.value)} placeholder="0" />
             </FormField>
           </div>
-          <FormField label="Issued to / Job site">
-            <input className="sns-input" value={form.issuedTo} onChange={(e) => update('issuedTo', e.target.value)} placeholder="e.g. Site installation — Langat" />
+          <FormField label={isDevice ? 'Taken by (technician)' : 'Issued to / Job site'}>
+            <input className="sns-input" value={form.issuedTo} onChange={(e) => update('issuedTo', e.target.value)} placeholder={isDevice ? 'e.g. Langat' : 'e.g. Site installation — Langat'} />
           </FormField>
           <FormField label="Purpose">
             <input className="sns-input" value={form.purpose} onChange={(e) => update('purpose', e.target.value)} placeholder="e.g. Site installation" />
@@ -245,7 +300,7 @@ function StockOutFormModal({ items, onClose, onSave }) {
 // Admin (and, since a Director is always an admin, Director) only -- this
 // whole tab is only ever rendered inside AdminDashboard, so no extra
 // gating is needed here beyond that.
-export default function StockTab({ stockItems, stockIn, stockOut, onAddItem, onUpdateItem, onDeleteItem, onAddStockIn, onAddStockInBatch, onAddStockOut }) {
+export default function StockTab({ stockItems, stockIn, stockOut, customers, onAddItem, onUpdateItem, onDeleteItem, onAddStockIn, onAddStockInBatch, onAddStockOut }) {
   const [view, setView] = useState('summary') // 'summary' | 'items' | 'in' | 'out'
   const [search, setSearch] = useState('')
   const [showItemForm, setShowItemForm] = useState(false)
@@ -253,16 +308,6 @@ export default function StockTab({ stockItems, stockIn, stockOut, onAddItem, onU
   const [confirmDeleteItem, setConfirmDeleteItem] = useState(null)
   const [showStockInForm, setShowStockInForm] = useState(false)
   const [showStockOutForm, setShowStockOutForm] = useState(false)
-
-  // Quick-entry grid on Stock In: every item in the Item Master starts at 0.
-  // A missing key means "untouched" -- quantity reads 0 and unit cost falls
-  // back to the catalog price (which the user can override, since it varies).
-  const [quantities, setQuantities] = useState({})
-  const [costs, setCosts] = useState({})
-  const [batchDate, setBatchDate] = useState(() => toDateInputValue(new Date()))
-  const [batchError, setBatchError] = useState('')
-  const [invalidIds, setInvalidIds] = useState([])
-  const [batchSaving, setBatchSaving] = useState(false)
 
   const itemMap = useMemo(() => { const m = {}; stockItems.forEach((i) => { m[i.id] = i }); return m }, [stockItems])
 
@@ -290,55 +335,7 @@ export default function StockTab({ stockItems, stockIn, stockOut, onAddItem, onU
   const sortedStockIn = useMemo(() => [...stockIn].sort((a, b) => new Date(b.purchaseDate) - new Date(a.purchaseDate)), [stockIn])
   const sortedStockOut = useMemo(() => [...stockOut].sort((a, b) => new Date(b.issueDate) - new Date(a.issueDate)), [stockOut])
 
-  const entryRows = useMemo(() => stockItems.map((item) => {
-    const qtyStr = quantities[item.id] ?? '0'
-    const costStr = costs[item.id] ?? String(item.unitCost)
-    const qtyNum = Number(qtyStr)
-    const costNum = Number(costStr)
-    return { item, qtyStr, costStr, qtyNum: isNaN(qtyNum) ? 0 : qtyNum, costNum: isNaN(costNum) ? 0 : costNum }
-  }), [stockItems, quantities, costs])
-  const enteredRows = entryRows.filter((r) => r.qtyNum > 0)
-  const batchTotal = enteredRows.reduce((sum, r) => sum + r.qtyNum * r.costNum, 0)
-
-  function clearRowError(id) {
-    setInvalidIds((ids) => ids.filter((x) => x !== id))
-    setBatchError('')
-  }
-
-  function setQty(id, raw) {
-    // "0" followed by a typed digit would read "05" -- strip the leading zero.
-    setQuantities((q) => ({ ...q, [id]: raw.replace(/^0+(?=\d)/, '') }))
-    clearRowError(id)
-  }
-
-  function setCost(id, raw) {
-    setCosts((c) => ({ ...c, [id]: raw }))
-    clearRowError(id)
-  }
-
-  async function handleRecordBatch() {
-    if (!batchDate) { setBatchError('Please choose a date.'); return }
-    if (batchDate > toDateInputValue(new Date())) { setBatchError("You can't record a purchase for a future date."); return }
-    const bad = entryRows.filter((r) => {
-      const qtyBad = r.qtyStr !== '' && (isNaN(Number(r.qtyStr)) || Number(r.qtyStr) < 0)
-      const costBad = r.qtyNum > 0 && (r.costStr === '' || isNaN(Number(r.costStr)) || Number(r.costStr) < 0)
-      return qtyBad || costBad
-    }).map((r) => r.item.id)
-    if (bad.length > 0) {
-      setInvalidIds(bad)
-      setBatchError('Check the highlighted rows: quantities and costs must be valid, non-negative numbers.')
-      return
-    }
-    if (enteredRows.length === 0) { setBatchError('Enter a quantity for at least one item.'); return }
-    setBatchSaving(true)
-    const ok = await onAddStockInBatch(enteredRows.map((r) => ({
-      itemId: r.item.id, purchaseDate: batchDate, quantity: r.qtyNum, unitCost: r.costNum,
-      supplier: r.item.supplier || '', invoiceNo: '', receivedBy: '',
-    })))
-    setBatchSaving(false)
-    // Only reset on success, so a failed save never wipes what was typed.
-    if (ok) { setQuantities({}); setCosts({}); setInvalidIds([]); setBatchError('') }
-  }
+  const custMap = useMemo(() => { const m = {}; (customers || []).forEach((c) => { m[c.id] = c }); return m }, [customers])
 
   return (
     <div>
@@ -347,6 +344,7 @@ export default function StockTab({ stockItems, stockIn, stockOut, onAddItem, onU
         <button onClick={() => setView('items')} className={view === 'items' ? 'sns-btn-primary' : 'sns-btn-secondary'} style={{ fontSize: '0.82rem' }}>Item Master</button>
         <button onClick={() => setView('in')} className={view === 'in' ? 'sns-btn-primary' : 'sns-btn-secondary'} style={{ fontSize: '0.82rem' }}>Stock In</button>
         <button onClick={() => setView('out')} className={view === 'out' ? 'sns-btn-primary' : 'sns-btn-secondary'} style={{ fontSize: '0.82rem' }}>Stock Out</button>
+        <button onClick={() => setView('devices')} className={view === 'devices' ? 'sns-btn-primary' : 'sns-btn-secondary'} style={{ fontSize: '0.82rem' }}><Cpu size={14} style={{ marginRight: '0.35rem', verticalAlign: '-2px' }} />ONU / Router log</button>
         <button onClick={() => setView('reorder')} className={view === 'reorder' ? 'sns-btn-primary' : 'sns-btn-secondary'} style={{ fontSize: '0.82rem' }}>
           Need Reorder{reorderCount > 0 && <span className="sns-badge sns-badge-overdue" style={{ marginLeft: '0.4rem' }}>{reorderCount}</span>}
         </button>
@@ -422,71 +420,7 @@ export default function StockTab({ stockItems, stockIn, stockOut, onAddItem, onU
 
       {view === 'in' && (
         <>
-          <div className="flex items-end justify-between" style={{ flexWrap: 'wrap', gap: '0.8rem', marginBottom: '1rem' }}>
-            <div>
-              <p style={{ fontWeight: 700, fontSize: '0.95rem' }}>Record purchases</p>
-              <p className="sns-text-soft" style={{ fontSize: '0.8rem', marginTop: 2 }}>Enter a quantity against each item you are recording. Items left at 0 are skipped.</p>
-            </div>
-            <div className="flex items-end gap-2" style={{ flexWrap: 'wrap' }}>
-              <div>
-                <label className="sns-eyebrow sns-text-faint" style={{ display: 'block', marginBottom: 4 }}>Date</label>
-                <input type="date" max={toDateInputValue(new Date())} className="sns-input" value={batchDate} onChange={(e) => { setBatchDate(e.target.value); setBatchError('') }} />
-              </div>
-              <button onClick={handleRecordBatch} disabled={enteredRows.length === 0 || batchSaving} className="sns-btn-primary">
-                {batchSaving ? 'Saving…' : enteredRows.length > 0 ? `Record ${enteredRows.length} purchase${enteredRows.length === 1 ? '' : 's'}` : 'Record purchases'}
-              </button>
-            </div>
-          </div>
-          {batchError && <p style={{ color: 'var(--overdue)', fontSize: '0.82rem', marginBottom: '0.8rem' }}>{batchError}</p>}
-          {stockItems.length === 0 ? <EmptyState message="Add items to the Item Master first." /> : (
-            <div className="sns-card" style={{ overflow: 'hidden' }}>
-              <div style={{ overflowX: 'auto' }}>
-                <table className="sns-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr><th>Item</th><th>Unit</th><th>Quantity</th><th>Unit cost (KES)</th><th style={{ textAlign: 'right' }}>Total</th></tr>
-                  </thead>
-                  <tbody>
-                    {entryRows.map((r) => {
-                      const flagged = invalidIds.includes(r.item.id)
-                      const flagStyle = flagged ? { borderColor: 'var(--overdue)' } : {}
-                      return (
-                        <tr key={r.item.id}>
-                          <td style={{ fontWeight: 600 }}>{r.item.itemName}</td>
-                          <td className="sns-text-soft">{r.item.unit}</td>
-                          <td>
-                            <input
-                              type="number" inputMode="numeric" min="0" step="1" className="sns-input"
-                              aria-label={`Quantity for ${r.item.itemName}`}
-                              style={{ width: '5.5rem', ...flagStyle }}
-                              value={r.qtyStr}
-                              onFocus={(e) => e.target.select()}
-                              onChange={(e) => setQty(r.item.id, e.target.value)}
-                              onBlur={() => { if (r.qtyStr === '') setQty(r.item.id, '0') }}
-                            />
-                          </td>
-                          <td>
-                            <input
-                              type="number" min="0" className="sns-input"
-                              aria-label={`Unit cost for ${r.item.itemName}`}
-                              style={{ width: '7rem', ...flagStyle }}
-                              value={r.costStr}
-                              onChange={(e) => setCost(r.item.id, e.target.value)}
-                            />
-                          </td>
-                          <td className="sns-mono" style={{ textAlign: 'right', fontWeight: r.qtyNum > 0 ? 700 : 400 }}>
-                            {r.qtyNum > 0 ? formatKSh(r.qtyNum * r.costNum) : '—'}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-          {enteredRows.length > 0 && (
-            <p className="sns-mono" style={{ textAlign: 'right', fontWeight: 700, marginTop: '0.7rem' }}>Total to record: {formatKSh(batchTotal)}</p>
-          )}
+          <PurchaseEntry items={stockItems} onRecord={onAddStockInBatch} />
 
           <div className="flex items-center justify-between" style={{ margin: '2rem 0 0.8rem', flexWrap: 'wrap', gap: '0.6rem' }}>
             <p style={{ fontWeight: 700, fontSize: '0.95rem' }}>Purchase history</p>
@@ -530,7 +464,7 @@ export default function StockTab({ stockItems, stockIn, stockOut, onAddItem, onU
               <div style={{ overflowX: 'auto' }}>
                 <table className="sns-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
-                    <tr><th>Date</th><th>Item</th><th>Qty</th><th>Issued to</th><th>Purpose</th><th>Reference</th><th>Issued by</th></tr>
+                    <tr><th>Date</th><th>Item</th><th>Qty</th><th>Taken for</th><th>Customer</th><th>Issued to</th><th>Purpose</th><th>Reference</th><th>Issued by</th></tr>
                   </thead>
                   <tbody>
                     {sortedStockOut.map((so) => (
@@ -538,6 +472,10 @@ export default function StockTab({ stockItems, stockIn, stockOut, onAddItem, onU
                         <td className="sns-text-soft">{formatDate(so.issueDate)}</td>
                         <td style={{ fontWeight: 600 }}>{itemMap[so.itemId]?.itemName || '—'}</td>
                         <td className="sns-mono">{so.quantity}</td>
+                        <td>{so.installType
+                          ? <span className={`sns-badge ${so.installType === 'replacement' ? 'sns-badge-progress' : 'sns-badge-done'}`}>{so.installType === 'replacement' ? 'Replacement' : 'New installation'}</span>
+                          : <span className="sns-text-faint">—</span>}</td>
+                        <td className="sns-text-soft">{so.customerId && custMap[so.customerId] ? customerLabel(custMap[so.customerId]) : '—'}</td>
                         <td className="sns-text-soft">{so.issuedTo || '—'}</td>
                         <td className="sns-text-soft">{so.purpose || '—'}</td>
                         <td className="sns-text-soft">{so.referenceNo || '—'}</td>
@@ -551,6 +489,8 @@ export default function StockTab({ stockItems, stockIn, stockOut, onAddItem, onU
           )}
         </>
       )}
+
+      {view === 'devices' && <DeviceLog stockOut={stockOut} items={stockItems} customers={customers || []} />}
 
       {view === 'reorder' && (
         reorderRows.length === 0 ? <EmptyState message="Nothing needs reordering right now." /> : (
@@ -598,6 +538,7 @@ export default function StockTab({ stockItems, stockIn, stockOut, onAddItem, onU
       {showStockOutForm && (
         <StockOutFormModal
           items={stockItems}
+          customers={customers || []}
           onClose={() => setShowStockOutForm(false)}
           onSave={async (data) => { await onAddStockOut(data); setShowStockOutForm(false) }}
         />

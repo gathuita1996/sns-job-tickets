@@ -10,9 +10,13 @@ import ExpenseFormModal from './ExpenseForm'
 import ExpensesList from './ExpensesList'
 import { JobPrintView } from './PrintViews'
 import { ConfirmDialog, EmptyState, NavCard, PeriodSelector, SearchInput, StatCard, StatusFilterSelect } from './shared'
-import { formatKSh, formatDate, isOverdue, isInPeriod, getPeriodRange, isInRange, COMMISSION_DEPARTMENTS } from '../lib/helpers'
+import { formatKSh, formatDate, isOverdue, isInPeriod, getPeriodRange, isInRange, COMMISSION_DEPARTMENTS, toDateInputValue } from '../lib/helpers'
+import FieldVisits from './FieldVisits'
+import { analyzePlaces } from '../lib/visitsIntel'
+import { MapPin } from 'lucide-react'
 
-export default function MemberDashboard({ currentUser, jobs, raisedJobs, customers, customerIdsWithJobs, complaints, expenses, memberNames, onLogout, onAddJob, onUpdateJob, onDeleteJob, onAddCustomer, onUpdateCustomer, onDeleteCustomer, onUpdateProfile, onAddComplaint, onUpdateComplaintStatus, onResolveComplaint, onAddExpense, onAttachReceipt, onDeleteExpense, onViewReceipt, commissionRate }) {
+
+export default function MemberDashboard({ currentUser, jobs, raisedJobs, customers, customerIdsWithJobs, complaints, expenses, memberNames, places, visits, onAddPlace, onRecordVisit, onDeleteVisit, onLogout, onAddJob, onUpdateJob, onDeleteJob, onAddCustomer, onUpdateCustomer, onDeleteCustomer, onUpdateProfile, onAddComplaint, onUpdateComplaintStatus, onResolveComplaint, onAddExpense, onAttachReceipt, onDeleteExpense, onViewReceipt, commissionRate }) {
   const [view, setView] = useState('home') // 'home' | 'all' | 'pending' | 'today' | 'assigned' | 'raised' | 'customers' | 'complaints' | 'expenses'
   const [periodGranularity, setPeriodGranularity] = useState('day')
   const [periodAnchor, setPeriodAnchor] = useState(() => new Date())
@@ -29,6 +33,8 @@ export default function MemberDashboard({ currentUser, jobs, raisedJobs, custome
   const [statusFilter, setStatusFilter] = useState('all')
 
   const isSales = currentUser.department === 'sales'
+  const visitStats = useMemo(() => (isSales ? analyzePlaces({ places: places || [], visits: visits || [], customers, today: toDateInputValue(new Date()) }) : []), [isSales, places, visits, customers])
+  const revisitCount = visitStats.filter((s) => s.needRevisit).length
   const isTechnical = currentUser.department === 'technical'
   const canReportComplaint = isSales || isTechnical
   // Regular members no longer get this at all -- only a Team Lead does.
@@ -127,6 +133,9 @@ export default function MemberDashboard({ currentUser, jobs, raisedJobs, custome
               {isSales && (
                 <NavCard icon={Users} label="My customers" description={`${myCustomers.length} recorded`} onClick={() => setView('customers')} />
               )}
+              {isSales && (
+                <NavCard icon={MapPin} label="Field visits" description={`${(visits || []).filter((v) => v.visitedBy === currentUser.id).length} visits recorded · where to go next`} onClick={() => setView('visits')} badge={revisitCount} />
+              )}
               {canReportComplaint && (
                 <NavCard icon={AlertTriangle} label="Report a complaint" description="Log a customer issue" onClick={() => setShowComplaintForm(true)} />
               )}
@@ -196,6 +205,14 @@ export default function MemberDashboard({ currentUser, jobs, raisedJobs, custome
                 </div>
               </div>
             )}
+          </>
+        ) : view === 'visits' ? (
+          <>
+            <div className="flex items-center gap-3" style={{ marginBottom: '1rem' }}>
+              <button onClick={() => setView('home')} className="sns-btn-secondary" style={{ padding: '0.5rem' }} title="Back to dashboard"><ArrowLeft size={16} /></button>
+              <h2 className="sns-display" style={{ fontSize: '1.1rem', fontWeight: 700 }}>Field visits</h2>
+            </div>
+            <FieldVisits places={places || []} visits={visits || []} customers={customers} nameOf={(id) => (id === currentUser.id ? currentUser.fullName : (memberNames && memberNames[id] && memberNames[id].fullName) || '')} currentUser={currentUser} isAdmin={false} onAddPlace={onAddPlace} onRecordVisit={onRecordVisit} onDeleteVisit={onDeleteVisit} onSetPlaceActive={() => {}} />
           </>
         ) : view === 'complaints' ? (
           <>

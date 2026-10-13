@@ -12,11 +12,16 @@ import ExpensesList from './ExpensesList'
 import ExpenseFormModal from './ExpenseForm'
 import MoneyReportModal from './MoneyReportModal'
 import StockTab from './StockTab'
+import FieldVisits from './FieldVisits'
+import DataTab from './DataTab'
+import { DatabaseBackup } from 'lucide-react'
+import { daysSinceBackup } from '../lib/dataCore'
 import ServiceFormModal from './ServiceForm'
 import { ConfirmDialog, EmptyState, EntryTypeChoice, FormField, PeriodSelector, SearchInput, StatCard, StatusBadge, StatusFilterSelect } from './shared'
 import { JOB_TYPES, PRIORITY_OPTIONS, CHART_COLORS, COMMISSION_DEPARTMENTS, departmentLabel, formatKSh, formatDate, formatDateTime, isOverdue, isInPeriod, getPeriodRange, isInRange, shiftAnchor, toWhatsAppNumber } from '../lib/helpers'
 
-export default function AdminDashboard({ currentUser, users, jobs, customers, expenses, stockItems, stockIn, stockOut, onLogout, onAddJob, onUpdateJob, onDeleteJob, onAssignJob, onPromote, onUpdateDepartment, onUpdateProfile, accessCode, onUpdateAccessCode, commissionRate, onUpdateCommissionRate, onClearCommission, onDeleteCustomer, onMarkTransportPaid, onAddExpense, onAddService, onApproveExpense, onRejectExpense, onAttachReceipt, onMarkExpensePaid, onDeleteExpense, onViewReceipt, onToggleTeamLead, onSetDirector, onAddStockItem, onUpdateStockItem, onDeleteStockItem, onAddStockIn, onAddStockInBatch, onAddStockOut }) {
+export default function AdminDashboard({ currentUser, users, jobs, customers, expenses, stockItems, stockIn, stockOut, places, visits, onAddPlace, onRecordVisit, onDeleteVisit, onSetPlaceActive, onDataChanged, onLogout, onAddJob, onUpdateJob, onDeleteJob, onAssignJob, onPromote, onUpdateDepartment, onUpdateProfile, accessCode, onUpdateAccessCode, commissionRate, onUpdateCommissionRate, onClearCommission, onDeleteCustomer, onMarkTransportPaid, onAddExpense, onAddService, onApproveExpense, onRejectExpense, onAttachReceipt, onMarkExpensePaid, onDeleteExpense, onViewReceipt, onToggleTeamLead, onSetDirector, onAddStockItem, onUpdateStockItem, onDeleteStockItem, onAddStockIn, onAddStockInBatch, onAddStockOut }) {
+  const backupDays = daysSinceBackup()
   const [tab, setTab] = useState('overview')
   const [periodGranularity, setPeriodGranularity] = useState('day')
   const [periodAnchor, setPeriodAnchor] = useState(() => new Date())
@@ -176,6 +181,13 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, ex
           </button>
         )}
 
+        {(backupDays === null || backupDays > 7) && tab !== 'data' && (
+          <button className="sns-alert-banner no-print" style={{ marginBottom: '1.25rem', width: '100%', textAlign: 'left', cursor: 'pointer' }} onClick={() => setTab('data')}>
+            <DatabaseBackup size={17} style={{ flexShrink: 0 }} />
+            <span>{backupDays === null ? 'This computer has no backup of your data yet' : `Your last backup was ${backupDays} days ago`} — click to back up now.</span>
+          </button>
+        )}
+
         <div className="no-print flex gap-1 sns-border-b" style={{ marginBottom: '1.5rem', flexWrap: 'wrap' }}>
           <button className={`sns-tab ${tab === 'overview' ? 'active' : ''}`} onClick={() => setTab('overview')}>Overview</button>
           <button className={`sns-tab ${tab === 'jobs' ? 'active' : ''}`} onClick={() => setTab('jobs')}>All Jobs</button>
@@ -186,7 +198,9 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, ex
             Expense/Purchases{(expenses || []).filter((e) => e.status === 'Requested').length > 0 && <span className="sns-badge sns-badge-overdue" style={{ marginLeft: '0.4rem' }}>{(expenses || []).filter((e) => e.status === 'Requested').length}</span>}
           </button>
           <button className={`sns-tab ${tab === 'customers' ? 'active' : ''}`} onClick={() => setTab('customers')}>Customers</button>
+          <button className={`sns-tab ${tab === 'visits' ? 'active' : ''}`} onClick={() => setTab('visits')}>Field Visits</button>
           <button className={`sns-tab ${tab === 'stock' ? 'active' : ''}`} onClick={() => setTab('stock')}>Stock</button>
+          <button className={`sns-tab ${tab === 'data' ? 'active' : ''}`} onClick={() => setTab('data')}>Data & Backup</button>
           <button className={`sns-tab ${tab === 'settings' ? 'active' : ''}`} onClick={() => setTab('settings')}>Settings</button>
         </div>
 
@@ -434,8 +448,15 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, ex
           </div>
         )}
 
+        {tab === 'visits' && (
+          <FieldVisits places={places || []} visits={visits || []} customers={customers} nameOf={(id) => (users.find((u) => u.id === id) || {}).fullName || ''} currentUser={currentUser} isAdmin onAddPlace={onAddPlace} onRecordVisit={onRecordVisit} onDeleteVisit={onDeleteVisit} onSetPlaceActive={onSetPlaceActive} />
+        )}
+
+        {tab === 'data' && <DataTab currentUser={currentUser} users={users} customers={customers} onDataChanged={onDataChanged} />}
+
         {tab === 'stock' && (
           <StockTab
+            customers={customers || []}
             stockItems={stockItems || []}
             stockIn={stockIn || []}
             stockOut={stockOut || []}

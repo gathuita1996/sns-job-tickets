@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from './lib/supabaseClient'
-import { mapProfile, mapJob, jobToDbFields, mapCustomer, customerToDbFields, mapComplaint, complaintToDbFields, mapExpense, expenseToDbFields, serviceToDbFields, mapStockItem, stockItemToDbFields, mapStockIn, stockInToDbFields, mapStockOut, stockOutToDbFields } from './lib/mappers'
+import { mapProfile, mapJob, jobToDbFields, mapCustomer, customerToDbFields, mapComplaint, complaintToDbFields, mapExpense, expenseToDbFields, serviceToDbFields, mapStockItem, stockItemToDbFields, mapStockIn, stockInToDbFields, mapStockOut, stockOutToDbFields , mapPlace, placeToDbFields, mapVisit, visitToDbFields } from './lib/mappers'
+import { fetchAll } from './lib/dataIO'
 import { COMMISSION_DEPARTMENTS, startOfMonth } from './lib/helpers'
 import { LoadingScreen, Toast } from './components/shared'
 import { LoginView, SignupView, ForgotPasswordView, ResetPasswordView } from './components/Auth'
@@ -18,6 +19,8 @@ export default function App() {
   const [stockItems, setStockItems] = useState([])
   const [stockIn, setStockIn] = useState([])
   const [stockOut, setStockOut] = useState([])
+  const [places, setPlaces] = useState([])
+  const [visits, setVisits] = useState([])
   const [memberNames, setMemberNames] = useState({})
   const [allUsers, setAllUsers] = useState([])
   const [accessCode, setAccessCode] = useState('')
@@ -57,6 +60,11 @@ export default function App() {
     } else {
       await refreshCommissionRate()
     }
+    if (profile.role === 'admin' || profile.department === 'sales') {
+      await refreshPlaces()
+      await refreshVisits()
+      if (profile.role !== 'admin') await refreshMemberNames()
+    }
     if (profile.role === 'admin' || profile.department === 'technical') {
       await refreshComplaints()
       if (profile.role !== 'admin') await refreshMemberNames()
@@ -77,6 +85,14 @@ export default function App() {
     const { data, error } = await supabase.from('expenses').select('*')
     if (error) return
     setExpenses((data || []).map(mapExpense))
+  }
+
+  async function refreshPlaces() {
+    try { setPlaces((await fetchAll('places')).map(mapPlace)) } catch { /* RLS: only sales and admin can read places */ }
+  }
+
+  async function refreshVisits() {
+    try { setVisits((await fetchAll('visits')).map(mapVisit)) } catch { /* RLS: only sales and admin can read visits */ }
   }
 
   async function refreshStockItems() {
@@ -516,6 +532,50 @@ export default function App() {
     await refreshStockItems()
   }
 
+  // ---- field visits (Sales & Marketing) ------------------------------------------------------
+  async function handleAddPlace(formData) {
+    const { error } = await supabase.from('places').insert({ ...placeToDbFields(formData), created_by: currentUserRef.current.id })
+    if (error) { showToast(error.code === '23505' ? 'That place is already on the list.' : 'Failed to add the place.', 'error'); return false }
+    showToast('Place added.')
+    await refreshPlaces()
+    return true
+  }
+
+  // A visit can create its place in the same step ("+ Add a new place" in the form).
+  async function handleRecordVisit(formData) {
+    let placeId = formData.placeId
+    if (!placeId && formData.newPlace) {
+      const { data, error } = await supabase.from('places').insert({ ...placeToDbFields(formData.newPlace), created_by: currentUserRef.current.id }).select('id').single()
+      if (error) { showToast(error.code === '23505' ? 'That place is already on the list. Pick it from the list instead.' : 'Failed to add the place.', 'error'); return false }
+      placeId = data.id
+    }
+    const { error } = await supabase.from('visits').insert({ ...visitToDbFields({ ...formData, placeId }), visited_by: currentUserRef.current.id })
+    if (error) { showToast('Failed to save the visit.', 'error'); await refreshPlaces(); return false }
+    showToast('Visit recorded.')
+    await refreshPlaces()
+    await refreshVisits()
+    return true
+  }
+
+  async function handleDeleteVisit(visit) {
+    const { error } = await supabase.from('visits').delete().eq('id', visit.id)
+    if (error) { showToast('Failed to delete the visit.', 'error'); return }
+    showToast('Visit deleted.')
+    await refreshVisits()
+  }
+
+  async function handleSetPlaceActive(place, active) {
+    const { error } = await supabase.from('places').update({ active }).eq('id', place.id)
+    if (error) { showToast('Failed to update the place.', 'error'); return }
+    showToast(active ? 'Place restored.' : 'Place archived.')
+    await refreshPlaces()
+  }
+
+  // After an import or restore: reload everything the admin sees.
+  async function handleDataChanged() {
+    await Promise.all([refreshJobs(), refreshCustomers(), refreshExpenses(), refreshComplaints(), refreshUsers(), refreshStockItems(), refreshStockIn(), refreshStockOut(), refreshPlaces(), refreshVisits()])
+  }
+
   async function handleAddStockIn(formData) {
     const { error } = await supabase.from('stock_in').insert({ ...stockInToDbFields(formData), recorded_by: currentUserRef.current.id })
     if (error) { showToast('Failed to record purchase.', 'error'); return }
@@ -653,7 +713,7 @@ export default function App() {
   return (<>
     {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     {currentUser.role === 'admin'
-      ? <AdminDashboard currentUser={currentUser} users={allUsers} jobs={jobs} customers={customers} expenses={expenses} stockItems={stockItems} stockIn={stockIn} stockOut={stockOut} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAssignJob={handleAssignJob} onPromote={handlePromote} onUpdateDepartment={handleUpdateDepartment} onUpdateProfile={handleUpdateProfile} accessCode={accessCode} onUpdateAccessCode={handleUpdateAccessCode} commissionRate={commissionRate} onUpdateCommissionRate={handleUpdateCommissionRate} onClearCommission={handleClearCommission} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onMarkTransportPaid={handleMarkTransportPaid} onAddExpense={handleAddExpense} onAddService={handleAddService} onAttachReceipt={handleAttachReceipt} onApproveExpense={handleApproveExpense} onRejectExpense={handleRejectExpense} onMarkExpensePaid={handleMarkExpensePaid} onDeleteExpense={handleDeleteExpense} onViewReceipt={getReceiptUrl} onToggleTeamLead={handleToggleTeamLead} onSetDirector={handleSetDirector} onAddStockItem={handleAddStockItem} onUpdateStockItem={handleUpdateStockItem} onDeleteStockItem={handleDeleteStockItem} onAddStockIn={handleAddStockIn} onAddStockInBatch={handleAddStockInBatch} onAddStockOut={handleAddStockOut} />
-      : <MemberDashboard currentUser={currentUser} jobs={jobs.filter((j) => j.memberId === currentUser.id)} raisedJobs={jobs.filter((j) => j.raisedBy === currentUser.id && j.memberId !== currentUser.id)} customers={customers} customerIdsWithJobs={customerIdsWithJobs} complaints={complaints} expenses={expenses.filter((e) => e.submittedBy === currentUser.id)} memberNames={memberNames} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAddCustomer={handleAddCustomer} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onUpdateProfile={handleUpdateProfile} onAddComplaint={handleAddComplaint} onUpdateComplaintStatus={handleUpdateComplaintStatus} onResolveComplaint={handleResolveComplaint} onAddExpense={handleAddExpense} onAttachReceipt={handleAttachReceipt} onDeleteExpense={handleDeleteExpense} onViewReceipt={getReceiptUrl} commissionRate={commissionRate} />}
+      ? <AdminDashboard currentUser={currentUser} users={allUsers} jobs={jobs} customers={customers} expenses={expenses} stockItems={stockItems} stockIn={stockIn} stockOut={stockOut} places={places} visits={visits} onAddPlace={handleAddPlace} onRecordVisit={handleRecordVisit} onDeleteVisit={handleDeleteVisit} onSetPlaceActive={handleSetPlaceActive} onDataChanged={handleDataChanged} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAssignJob={handleAssignJob} onPromote={handlePromote} onUpdateDepartment={handleUpdateDepartment} onUpdateProfile={handleUpdateProfile} accessCode={accessCode} onUpdateAccessCode={handleUpdateAccessCode} commissionRate={commissionRate} onUpdateCommissionRate={handleUpdateCommissionRate} onClearCommission={handleClearCommission} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onMarkTransportPaid={handleMarkTransportPaid} onAddExpense={handleAddExpense} onAddService={handleAddService} onAttachReceipt={handleAttachReceipt} onApproveExpense={handleApproveExpense} onRejectExpense={handleRejectExpense} onMarkExpensePaid={handleMarkExpensePaid} onDeleteExpense={handleDeleteExpense} onViewReceipt={getReceiptUrl} onToggleTeamLead={handleToggleTeamLead} onSetDirector={handleSetDirector} onAddStockItem={handleAddStockItem} onUpdateStockItem={handleUpdateStockItem} onDeleteStockItem={handleDeleteStockItem} onAddStockIn={handleAddStockIn} onAddStockInBatch={handleAddStockInBatch} onAddStockOut={handleAddStockOut} />
+      : <MemberDashboard currentUser={currentUser} jobs={jobs.filter((j) => j.memberId === currentUser.id)} raisedJobs={jobs.filter((j) => j.raisedBy === currentUser.id && j.memberId !== currentUser.id)} customers={customers} customerIdsWithJobs={customerIdsWithJobs} complaints={complaints} expenses={expenses.filter((e) => e.submittedBy === currentUser.id)} memberNames={memberNames} places={places} visits={visits} onAddPlace={handleAddPlace} onRecordVisit={handleRecordVisit} onDeleteVisit={handleDeleteVisit} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAddCustomer={handleAddCustomer} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onUpdateProfile={handleUpdateProfile} onAddComplaint={handleAddComplaint} onUpdateComplaintStatus={handleUpdateComplaintStatus} onResolveComplaint={handleResolveComplaint} onAddExpense={handleAddExpense} onAttachReceipt={handleAttachReceipt} onDeleteExpense={handleDeleteExpense} onViewReceipt={getReceiptUrl} commissionRate={commissionRate} />}
   </>)
 }

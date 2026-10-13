@@ -1,3 +1,19 @@
+-- =============================================================================
+-- SNS Job Cards -- REBUILD for a NEW, EMPTY Supabase project.
+--
+-- Paste the whole file into the SQL editor of the new project and run it once.
+-- It builds every table, rule, trigger and the receipts bucket, plus the stock
+-- catalogue. The first person to sign up becomes the admin, and staff need the
+-- access code SNS-TEAM-2026 (change it in Settings afterwards).
+--
+-- Safety: it refuses to run if the database already has tables.
+-- =============================================================================
+do $$ begin
+  if to_regclass('public.profiles') is not null or to_regclass('public.jobs') is not null then
+    raise exception 'This database already has tables. Run this file only in a NEW, empty Supabase project.';
+  end if;
+end $$;
+
 -- ============================================================================
 -- Swahili Net Solution — Job Cards
 -- Supabase schema: tables, auto-numbering, first-user-is-admin, and RLS.
@@ -150,7 +166,9 @@ $$ language sql security definer stable set search_path = public;
 create or replace function public.prevent_role_escalation()
 returns trigger as $$
 begin
-  if new.role is distinct from old.role and not public.is_admin() then
+  -- auth.uid() is null in the SQL editor, so roles can always be fixed there. Anyone using the
+  -- app or API is still checked.
+  if auth.uid() is not null and new.role is distinct from old.role and not public.is_admin() then
     raise exception 'Only an admin can change a user''s role.';
   end if;
   return new;
@@ -192,6 +210,10 @@ create policy "profiles_update_admin"
 -- is signed in — the app's UI only shows the "new job" action to members,
 -- matching the original spec that admins view/manage but don't file.
 -- ----------------------------------------------------------------------------
+-- Added for the rebuild: this column is created again further down, but the policy below
+-- reads it, so on an empty database it has to exist first.
+alter table public.jobs add column if not exists raised_by uuid references public.profiles(id);
+
 create policy "jobs_select_own_raised_or_admin"
   on public.jobs for select
   using (member_id = auth.uid() or raised_by = auth.uid() or public.is_admin());
@@ -947,8 +969,231 @@ create trigger expenses_lock_amount_for_submitter_trigger
   for each row execute function public.expenses_lock_amount_for_submitter();
 
 -- ============================================================================
+-- MIGRATION — added later: Stock/Inventory tracking, admin and Director only.
+--
+-- Mirrors the structure of the existing Swahili_Net_Solution_Stock_Tracker
+-- spreadsheet: an Item Master feeding Stock In (purchases) and Stock Out
+-- (usage) logs, with current stock levels computed from the two logs
+-- rather than stored -- same "compute from the raw data" approach already
+-- used for commission and transport totals elsewhere in this app, so
+-- current stock can never drift out of sync with its own history.
+--
+-- Restricted to admin only -- Director doesn't need a separate carve-out
+-- here the way expense approval does, since a Director is already an
+-- admin; "admin and Director" both being able to see this is already
+-- satisfied by a single admin-only restriction.
+--
+-- Seeded below with the real item catalog and stock history from the
+-- existing spreadsheet, so current stock levels start accurate rather
+-- than at zero -- not example data, this is the actual inventory.
+-- ============================================================================
+create table public.stock_items (
+  id             bigint generated always as identity primary key,
+  item_code      text not null unique,
+  item_name      text not null,
+  category       text,
+  unit           text not null,
+  reorder_level  numeric not null default 0,
+  unit_cost      numeric(10,2) not null default 0,
+  supplier       text,
+  notes          text,
+  created_at     timestamptz not null default now()
+);
+
+create table public.stock_in (
+  id            bigint generated always as identity primary key,
+  item_id       bigint not null references public.stock_items(id) on delete restrict,
+  purchase_date date not null,
+  quantity      numeric not null,
+  unit_cost     numeric(10,2) not null,
+  supplier      text,
+  invoice_no    text,
+  received_by   text,
+  recorded_by   uuid not null references public.profiles(id),
+  created_at    timestamptz not null default now()
+);
+
+create table public.stock_out (
+  id            bigint generated always as identity primary key,
+  item_id       bigint not null references public.stock_items(id) on delete restrict,
+  issue_date    date not null,
+  quantity      numeric not null,
+  issued_to     text,
+  purpose       text,
+  reference_no  text,
+  issued_by     text,
+  recorded_by   uuid not null references public.profiles(id),
+  created_at    timestamptz not null default now()
+);
+
+create index stock_in_item_idx on public.stock_in(item_id);
+create index stock_out_item_idx on public.stock_out(item_id);
+
+alter table public.stock_items enable row level security;
+create policy "stock_items_admin_only" on public.stock_items for all using (public.is_admin()) with check (public.is_admin());
+
+alter table public.stock_in enable row level security;
+create policy "stock_in_admin_only" on public.stock_in for all using (public.is_admin()) with check (public.is_admin());
+
+alter table public.stock_out enable row level security;
+create policy "stock_out_admin_only" on public.stock_out for all using (public.is_admin()) with check (public.is_admin());
+
+-- Seed data: the actual item catalog and stock history from
+-- Swahili_Net_Solution_Stock_Tracker.xlsx, imported so current stock
+-- levels reflect real history rather than starting at zero.
+insert into public.stock_items (item_code, item_name, category, unit, reorder_level, unit_cost, supplier, notes) values
+  ('ITM-001', 'Drop Cable 1KM', 'Networking', 'box', 1, 9500, 'Data Connect Technology', 'Outdoor installations | ISP rollout'),
+  ('ITM-002', 'CAT 6 Indoor', 'Networking', 'roll', 1, 3700, 'Data Connect Technology', 'Indoor cabling'),
+  ('ITM-003', 'POE 48V', 'Power & Adapters', 'pack', 5, 500, 'Data Connect Technology', 'Compatible with Mikrotik routers'),
+  ('ITM-004', 'POE 24V', 'Power & Adapters', 'pcs', 5, 500, 'Data Connect Technology', 'Compatible with TP Link routers'),
+  ('ITM-005', 'Adapter', 'Power & Adapters', 'pcs', 5, 500, 'Data Connect Technology', 'Universal use'),
+  ('ITM-006', 'Router (ONU)', 'Networking', 'pcs', 3, 1500, 'Data Connect Technology', 'Client installations'),
+  ('ITM-007', 'Cable Tester', 'Accessories', 'pcs', 1, 500, 'Data Connect Technology', 'Works with RJ45 cables'),
+  ('ITM-008', 'Strap', 'Accessories', 'pack', 1, 2300, 'Data Connect Technology', 'Cable management | Site installations'),
+  ('ITM-009', 'TP Link', 'Networking', 'pcs', 2, 1850, 'Data Connect Technology', 'General networking | Small office/home'),
+  ('ITM-010', 'Tensioner PA 1500', 'Accessories', 'pcs', 5, 300, 'Data Connect Technology', 'Fiber cable tensioning | Outdoor projects'),
+  ('ITM-011', 'Hose clamp', 'Accessories', 'pcs', 5, 300, 'Data Connect Technology', 'General fastening | Site installations'),
+  ('ITM-012', 'XPON Router', 'Networking', 'pcs', 2, 1300, 'Data Connect Technology', 'Client installations'),
+  ('ITM-013', 'Splitters 1x4', 'Splitters', 'pcs', 1, 200, 'Data Connect Technology', 'Fiber optic distribution | Small client setups'),
+  ('ITM-014', 'Splitters 1x8', 'Splitters', 'pcs', 1, 300, 'Data Connect Technology', 'Fiber optic distribution | Medium client setups'),
+  ('ITM-015', 'Splitters 1x16', 'Splitters', 'pcs', 1, 400, 'Data Connect Technology', 'Fiber optic distribution | Large client setups'),
+  ('ITM-016', 'RJ 45', 'Connectors', 'pack', 1, 500, 'Data Connect Technology', 'Works with Cat6 cables'),
+  ('ITM-017', 'Cable tie', 'Accessories', 'pack', 2, 200, 'Data Connect Technology', 'Cable management | Office & field use'),
+  ('ITM-018', 'UPBS', 'Power & Adapters', 'pcs', 1, 250, 'Data Connect Technology', 'Compatible with routers | Backup power'),
+  ('ITM-020', 'Dome Closure 48 core', 'Networking', 'pcs', 1, 3300, 'Data Connect Technology', 'Fiber optic splicing | Outdoor installations'),
+  ('ITM-021', 'Ruijies 6202G', 'Networking', 'pcs', 1, 17500, 'Data Connect Technology', 'Gigabit router'),
+  ('ITM-022', 'Ruijies 620D', 'Networking', 'pcs', 1, 14000, 'Data Connect Technology', 'Dual-band router'),
+  ('ITM-023', 'ATBS', 'Power & Adapters', 'pcs', 1, 50, 'Data Connect Technology', 'Power backup systems | ISP setups'),
+  ('ITM-024', 'Patch Cords (SC-SC)', 'Connectors', 'pcs', 1, 130, 'Data Connect Technology', 'Fiber optic systems | Client installations'),
+  ('ITM-025', 'J hook small', 'Accessories', 'pcs', 5, 250, 'Data Connect Technology', 'Cable routing | Indoor installations'),
+  ('ITM-026', 'Buckles', 'Accessories', 'pcs', 10, 15, 'Data Connect Technology', 'General fastening | Site installations');
+
+-- (The opening stock movements were here. They need an admin account to exist, so they are in
+-- job-card-restore-stock-history.sql, to run after the first admin has signed up.)
+
+-- Employee numbers (SNS001, SNS002, ...). Nullable so sign-ups work before numbers are assigned.
+alter table public.profiles add column if not exists employee_number text;
+create unique index if not exists profiles_employee_number_key on public.profiles (employee_number) where employee_number is not null;
+
+-- ============================================================================
 -- Done. Next: Authentication -> Providers -> make sure Email is enabled,
 -- and add your local + Netlify URLs under Authentication -> URL Configuration
 -- -> Redirect URLs (needed for the "forgot password" link to work).
 -- See README.md for the full walkthrough.
 -- ============================================================================
+
+-- ===== UPDATE 35 (devices, field visits, restore support) =====
+-- 1. XPON router / ONU: record "new installation" or "replacement" -------------------------------
+alter table public.stock_items add column if not exists is_device boolean not null default false;
+update public.stock_items set is_device = true
+  where item_name ilike '%onu%' or item_name ilike '%xpon%';
+
+alter table public.stock_out add column if not exists install_type text;
+alter table public.stock_out drop constraint if exists stock_out_install_type_check;
+alter table public.stock_out add constraint stock_out_install_type_check
+  check (install_type in ('new_installation', 'replacement'));
+alter table public.stock_out add column if not exists customer_id bigint
+  references public.customers(id) on delete set null;
+alter table public.stock_out add column if not exists device_serial text;
+create index if not exists stock_out_customer_idx on public.stock_out(customer_id);
+
+create or replace function public.stock_out_device_rules()
+returns trigger language plpgsql as $$
+begin
+  if new.install_type = 'replacement' and new.customer_id is null then
+    raise exception 'A replacement must record the customer the device was replaced for.';
+  end if;
+  return new;
+end $$;
+drop trigger if exists trg_stock_out_device_rules on public.stock_out;
+create trigger trg_stock_out_device_rules before insert on public.stock_out
+  for each row execute function public.stock_out_device_rules();
+
+-- 2. Field visits for the Sales & Marketing team ---------------------------------------------------
+create or replace function public.is_sales_or_admin()
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.profiles
+                 where id = auth.uid() and (role = 'admin' or department = 'sales'))
+$$;
+
+create table if not exists public.places (
+  id          bigint generated always as identity primary key,
+  name        text not null,
+  area        text,
+  category    text not null default 'other'
+              check (category in ('estate', 'hotel', 'school', 'business', 'village', 'market', 'other')),
+  notes       text,
+  active      boolean not null default true,
+  created_by  uuid not null references public.profiles(id),
+  created_at  timestamptz not null default now()
+);
+create unique index if not exists places_name_area_key
+  on public.places (lower(name), lower(coalesce(area, '')));
+
+create table if not exists public.visits (
+  id              bigint generated always as identity primary key,
+  place_id        bigint not null references public.places(id) on delete cascade,
+  visit_date      date not null,
+  purpose         text not null check (purpose in ('marketing', 'site_survey', 'both')),
+  outcome         text not null check (outcome in
+                    ('interested', 'follow_up', 'no_one_available', 'not_interested', 'survey_done', 'converted', 'other')),
+  leads           int not null default 0 check (leads >= 0),
+  follow_up_date  date,
+  notes           text,
+  visited_by      uuid not null references public.profiles(id),
+  created_at      timestamptz not null default now()
+);
+create index if not exists visits_place_idx on public.visits(place_id);
+create index if not exists visits_by_idx on public.visits(visited_by);
+create index if not exists visits_date_idx on public.visits(visit_date);
+
+alter table public.places enable row level security;
+alter table public.visits enable row level security;
+
+drop policy if exists "places_select" on public.places;
+create policy "places_select" on public.places for select using (public.is_sales_or_admin());
+drop policy if exists "places_insert" on public.places;
+create policy "places_insert" on public.places for insert
+  with check (public.is_admin() or (public.is_sales_or_admin() and created_by = auth.uid()));
+drop policy if exists "places_update" on public.places;
+create policy "places_update" on public.places for update
+  using (public.is_admin() or created_by = auth.uid())
+  with check (public.is_admin() or created_by = auth.uid());
+drop policy if exists "places_delete" on public.places;
+create policy "places_delete" on public.places for delete using (public.is_admin());
+
+drop policy if exists "visits_select" on public.visits;
+create policy "visits_select" on public.visits for select using (public.is_sales_or_admin());
+drop policy if exists "visits_insert" on public.visits;
+create policy "visits_insert" on public.visits for insert
+  with check (public.is_admin() or (public.is_sales_or_admin() and visited_by = auth.uid()));
+drop policy if exists "visits_update" on public.visits;
+create policy "visits_update" on public.visits for update
+  using (public.is_admin() or visited_by = auth.uid())
+  with check (public.is_admin() or visited_by = auth.uid());
+drop policy if exists "visits_delete" on public.visits;
+create policy "visits_delete" on public.visits for delete
+  using (public.is_admin() or visited_by = auth.uid());
+
+-- 3. Backup restore support ---------------------------------------------------------------------------
+-- A restore is done by an admin on behalf of the staff who originally recorded each row.
+drop policy if exists "customers_insert_admin" on public.customers;
+create policy "customers_insert_admin" on public.customers for insert with check (public.is_admin());
+drop policy if exists "complaints_insert_admin" on public.complaints;
+create policy "complaints_insert_admin" on public.complaints for insert with check (public.is_admin());
+drop policy if exists "expenses_insert_admin" on public.expenses;
+create policy "expenses_insert_admin" on public.expenses for insert with check (public.is_admin());
+
+-- After restored jobs are loaded (with their original JC- codes), move the counter past them
+-- so the next new job does not collide with a restored one.
+create or replace function public.bump_job_code_seq()
+returns void language plpgsql security definer set search_path = public as $$
+declare highest bigint;
+begin
+  if not public.is_admin() then raise exception 'Admins only'; end if;
+  select coalesce(max(regexp_replace(job_code, '\D', '', 'g')::bigint), 0)
+    into highest from public.jobs where job_code ~ '^JC-[0-9]+$';
+  perform setval('public.job_code_seq', greatest(highest, 1), highest >= 1);
+end $$;
+revoke all on function public.bump_job_code_seq() from public, anon;
+grant execute on function public.bump_job_code_seq() to authenticated;

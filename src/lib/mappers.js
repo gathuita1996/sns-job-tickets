@@ -184,6 +184,7 @@ export function serviceToDbFields(data) {
 
 export function mapStockItem(row) {
   return {
+    isDevice: Boolean(row.is_device),
     id: row.id,
     itemCode: row.item_code,
     itemName: row.item_name,
@@ -199,6 +200,7 @@ export function mapStockItem(row) {
 
 export function stockItemToDbFields(data) {
   return {
+    is_device: Boolean(data.isDevice),
     item_code: data.itemCode.trim(),
     item_name: data.itemName.trim(),
     category: data.category || null,
@@ -239,6 +241,9 @@ export function stockInToDbFields(data) {
 
 export function mapStockOut(row) {
   return {
+    installType: row.install_type || '',
+    customerId: row.customer_id ?? null,
+    deviceSerial: row.device_serial || '',
     id: row.id,
     itemId: row.item_id,
     issueDate: row.issue_date,
@@ -254,6 +259,9 @@ export function mapStockOut(row) {
 
 export function stockOutToDbFields(data) {
   return {
+    install_type: data.installType || null,
+    customer_id: data.customerId ? Number(data.customerId) : null,
+    device_serial: (data.deviceSerial || '').trim() || null,
     item_id: Number(data.itemId),
     issue_date: data.issueDate,
     quantity: Number(data.quantity),
@@ -261,5 +269,24 @@ export function stockOutToDbFields(data) {
     purpose: data.purpose.trim() || null,
     reference_no: data.referenceNo.trim() || null,
     issued_by: data.issuedBy.trim() || null,
+  }
+}
+
+export function mapPlace(row) {
+  return { id: row.id, name: row.name, area: row.area || '', category: row.category || 'other', notes: row.notes || '', active: row.active !== false, createdBy: row.created_by, createdAt: row.created_at }
+}
+export function placeToDbFields(data) {
+  return { name: data.name.trim(), area: (data.area || '').trim() || null, category: data.category || 'other', notes: (data.notes || '').trim() || null }
+}
+export function mapVisit(row) {
+  return {
+    id: row.id, placeId: row.place_id, visitDate: row.visit_date, purpose: row.purpose, outcome: row.outcome,
+    leads: Number(row.leads) || 0, followUpDate: row.follow_up_date || null, notes: row.notes || '', visitedBy: row.visited_by, createdAt: row.created_at,
+  }
+}
+export function visitToDbFields(data) {
+  return {
+    place_id: Number(data.placeId), visit_date: data.visitDate, purpose: data.purpose, outcome: data.outcome,
+    leads: Number(data.leads) || 0, follow_up_date: data.followUpDate || null, notes: (data.notes || '').trim() || null,
   }
 }

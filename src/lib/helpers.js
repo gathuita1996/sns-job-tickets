@@ -187,6 +187,7 @@ export function defaultReceiptForm(expense) {
 export function defaultStockItemForm() {
   return {
     itemCode: '',
+    isDevice: false,
     itemName: '',
     category: '',
     unit: 'pcs',
@@ -218,6 +219,9 @@ export function defaultStockOutForm() {
     purpose: '',
     referenceNo: '',
     issuedBy: '',
+    installType: '',
+    customerId: '',
+    deviceSerial: '',
   }
 }
 
@@ -396,4 +400,16 @@ export function toDateInputValue(date) {
   const mm = String(d.getMonth() + 1).padStart(2, '0')
   const dd = String(d.getDate()).padStart(2, '0')
   return `${yyyy}-${mm}-${dd}`
+}
+
+// ONU / XPON routers are issued either for a new installation or to replace one.
+export const INSTALL_TYPES = [
+  { key: 'new_installation', label: 'New installation' },
+  { key: 'replacement', label: 'Replacement' },
+]
+
+// "Amina Hassan — Diani": the way a customer is shown in a drop-down.
+export function customerLabel(c) {
+  const name = [c.firstName, c.lastName && c.lastName !== '-' ? c.lastName : ''].filter(Boolean).join(' ') || 'Unnamed customer'
+  return c.location && c.location !== 'Not specified' ? `${name} — ${c.location}` : name
 }

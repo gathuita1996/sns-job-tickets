@@ -240,3 +240,15 @@ src/
 supabase/
   schema.sql                Run this once in the Supabase SQL Editor
 ```
+
+## Update 35
+
+- **Stock In** is a drop-down entry: click the item box, pick the item, enter the quantity (the price fills in from the catalogue). "Add another item" adds a line. The long list is gone.
+- **ONU / XPON router log**: items ticked as *Field device* in the Item Master ask "New installation or Replacement?" when issued from Stock Out. A replacement must name the customer, chosen from the customers in the system. Stock > "ONU / Router log" lists them and flags customers replaced more than once.
+- **Field Visits** (Sales & Marketing staff, and an admin tab): record places visited for marketing and site surveys; see visited, most visited, need to visit and need to revisit, with suggested next places and a route by area.
+- **Data & Backup** (admin): back up everything to one Excel file on this computer, export to Excel, import a customer list, or restore a backup. A banner reminds the admin when the last backup is more than 7 days old.
+- "Pigtails" is removed from the item list.
+
+To apply: run `supabase/update-35-migration.sql` in the Supabase SQL editor FIRST (safe to run twice), then push the code. A fresh database is built with `supabase/schema.sql` (the same file as `job-card-rebuild.sql`), then `job-card-restore-stock-history.sql` once the first admin exists.
+
+Logic tests: `npm test`.
