@@ -193,6 +193,26 @@ export function prepareRow(spec, raw, ctx) {
   return { row }
 }
 
+// The live database can differ a little from what this program expects. If it says a column does not
+// exist, that column is left out for every row and the insert is tried again, instead of failing the
+// whole job. Columns listed in `required` are never dropped. Returns { data, error, dropped }.
+export async function insertAdaptive(client, table, rows, { select, required = [] } = {}) {
+  let current = rows
+  const dropped = []
+  for (let attempt = 0; attempt < 15; attempt++) {
+    const q = client.from(table).insert(current)
+    const { data, error } = select ? await q.select(select) : await q
+    if (!error) return { data, error: null, dropped }
+    const m = /Could not find the '([^']+)' column of '[^']+' in the schema cache/.exec(error.message || '')
+    if (!m || required.includes(m[1])) return { data: null, error, dropped }
+    const col = m[1]
+    dropped.push(col)
+    current = current.map(({ [col]: _gone, ...rest }) => rest)
+  }
+  return { data: null, error: { message: 'Too many columns in the file are missing from this database.' }, dropped }
+}
+const requiredFor = (spec) => [spec.sig, ...Object.keys(spec.profile || {}), ...Object.keys(spec.fk || {})].filter(Boolean)
+
 async function countRows(client, table) {
   const { count, error } = await client.from(table).select('id', { count: 'exact', head: true })
   if (error) throw new Error(`${table}: ${error.message}`)
@@ -217,7 +237,7 @@ export async function runRestore({ parsed, users, adminId, client, onProgress = 
   const report = { tables: {}, unmatchedStaff: unmatched, reassigned: 0 }
   for (const spec of TABLES) {
     const raws = parsed.rows[spec.table] || []
-    const rep = (report.tables[spec.table] = { sheet: spec.sheet, inserted: 0, reused: 0, skipped: 0, reasons: {} })
+    const rep = (report.tables[spec.table] = { sheet: spec.sheet, inserted: 0, reused: 0, skipped: 0, reasons: {}, skippedColumns: [] })
     if (spec.idMap) ctx.idMaps[spec.table] = new Map()
     if (!raws.length) continue
     onProgress(`Restoring ${spec.sheet}...`)
@@ -239,8 +259,9 @@ export async function runRestore({ parsed, users, adminId, client, onProgress = 
     }
     for (let i = 0; i < todo.length; i += chunk) {
       const part = todo.slice(i, i + chunk)
-      const { data, error } = await client.from(spec.table).insert(part.map((x) => x.row)).select(spec.sig ? `id,${spec.sig}` : 'id')
+      const { data, error, dropped } = await insertAdaptive(client, spec.table, part.map((x) => x.row), { select: spec.sig ? `id,${spec.sig}` : 'id', required: requiredFor(spec) })
       if (error) throw new Error(`${spec.sheet}: ${error.message}`)
+      for (const c of dropped) if (!rep.skippedColumns.includes(c)) rep.skippedColumns.push(c)
       if (!data || data.length !== part.length) throw new Error(`${spec.sheet}: the database answered with an unexpected number of rows`)
       part.forEach((x, k) => {
         if (spec.sig && String(data[k][spec.sig]) !== String(x.row[spec.sig])) throw new Error(`${spec.sheet}: records came back in a different order, so the restore was stopped to protect your data`)
@@ -258,16 +279,13 @@ export async function runRestore({ parsed, users, adminId, client, onProgress = 
 }
 
 // ---- importing a plain customer list -------------------------------------------------------------------------------
+// The customer-list import reads only the name and the phone number. Everything else in the file is
+// ignored: location, package and the rest are filled in inside the system afterwards.
 const HEADERS = {
   name: ['name', 'fullname', 'customer', 'customername', 'client', 'clientname'],
   first: ['firstname', 'first'], last: ['lastname', 'last', 'surname'],
   phone: ['phone', 'phonenumber', 'contact', 'mobile', 'mobilenumber', 'tel', 'telephone', 'msisdn', 'contactnumber'],
-  location: ['location', 'area', 'address', 'place', 'estate'],
-  pkg: ['package', 'interestedpackage', 'plan', 'speed'],
-  notes: ['notes', 'note', 'comments', 'remarks'],
-  status: ['status'], date: ['date', 'daterecorded', 'created', 'createdat', 'datejoined'],
 }
-export const CUSTOMER_STATUSES = ['New', 'Contacted', 'Converted', 'Not Interested']
 const canon = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '')
 
 export function cleanPhone(v) {
@@ -305,14 +323,7 @@ export function parseCustomerList(wb) {
     const n = nameCell ? splitName(nameCell) : { first: String(first || ''), last: String(last || '') || '-' }
     if (!n.first) { skipped.push({ line: rn, reason: 'No name' }); return }
     if (!phone) { skipped.push({ line: rn, reason: `No phone number (${nameCell || [n.first, n.last].filter((x) => x && x !== '-').join(' ')})` }); return }
-    const status = CUSTOMER_STATUSES.find((s) => canon(s) === canon(get('status')))
-    const d = get('date'); const when = d && !isNaN(new Date(d)) ? new Date(d).toISOString() : null
-    rows.push({
-      line: rn, first_name: n.first, last_name: n.last, contact: phone,
-      location: String(get('location') || '').trim() || 'Not specified',
-      interested_package: get('pkg') ? String(get('pkg')) : null, notes: get('notes') ? String(get('notes')) : null,
-      status: status || null, created_at: when,
-    })
+    rows.push({ line: rn, first_name: n.first, last_name: n.last, contact: phone })
   })
   return { rows, skipped, error: null }
 }
@@ -329,37 +340,38 @@ export function planCustomerImport(rows, existingCustomers) {
   return { toInsert, duplicates }
 }
 
-export async function runCustomerImport({ toInsert, adminId, status, client, chunk = 200, now = new Date() }) {
+// An imported customer carries only a name and a phone number. The location is compulsory in the
+// database, so it is filled with "Not specified" for the team to complete. Commission is marked as
+// already settled, so an import never earns anyone commission.
+const CUSTOMER_REQUIRED = ['first_name', 'last_name', 'contact', 'location', 'recorded_by']
+export async function runCustomerImport({ toInsert, adminId, client, chunk = 200, now = new Date() }) {
   const settled = now.toISOString()
-  const rows = toInsert.map(({ line, ...r }) => ({
-    ...r, status: r.status || status, recorded_by: adminId,
-    commission_paid_at: settled,                       // an imported customer never creates a commission
-    created_at: r.created_at || settled,
-  }))
+  const rows = toInsert.map((r) => ({ first_name: r.first_name, last_name: r.last_name, contact: r.contact, location: 'Not specified', recorded_by: adminId, commission_paid_at: settled }))
   let inserted = 0
+  const dropped = new Set()
   for (let i = 0; i < rows.length; i += chunk) {
     const part = rows.slice(i, i + chunk)
-    const { error } = await client.from('customers').insert(part)
-    if (error) throw new Error(`Customers: ${error.message}`)
+    const r = await insertAdaptive(client, 'customers', part, { required: CUSTOMER_REQUIRED })
+    if (r.error) throw new Error(`Customers: ${r.error.message}`)
+    r.dropped.forEach((c) => dropped.add(c))
     inserted += part.length
   }
-  return { inserted }
+  return { inserted, dropped: [...dropped] }
 }
 
 export function buildCustomerTemplate(ExcelJS) {
   const wb = new ExcelJS.Workbook()
   const ws = wb.addWorksheet('Customers')
-  ws.addRow(['Name', 'Phone', 'Location', 'Package', 'Notes'])
+  ws.addRow(['Name', 'Phone'])
   ws.getRow(1).font = { bold: true }
   ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9ECFA' } }
-  ;[28, 18, 30, 18, 40].forEach((w, i) => { ws.getColumn(i + 1).width = w })
+  ;[34, 20].forEach((w, i) => { ws.getColumn(i + 1).width = w })
   ws.getColumn(2).numFmt = '@'                         // keep the leading 0 of phone numbers
   const help = wb.addWorksheet('How to fill in')
   ;[['One customer per row, starting on row 2 of the Customers sheet.'],
-    ['Name and Phone are required. Location, Package and Notes are optional.'],
-    ['Phone numbers that already exist in the system are skipped, so importing twice is safe.'],
-    ['Optional extra columns: Status (New, Contacted, Converted, Not Interested) and Date.']].forEach((r) => help.addRow(r))
-  help.getColumn(1).width = 90
+    ['Only Name and Phone are read. Anything else in the file is ignored: fill in location, package and the rest inside the system afterwards.'],
+    ['Phone numbers that already exist in the system are skipped, so importing twice is safe.']].forEach((r) => help.addRow(r))
+  help.getColumn(1).width = 100
   return wb
 }
 

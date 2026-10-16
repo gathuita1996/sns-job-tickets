@@ -12,8 +12,8 @@ const data = {
     { id: S, username: 'sam', full_name: 'Sam Sales', role: 'member', department: 'sales', created_at: ts, kra_pin: 'A002X', id_number: '23456789', gender: 'male' },
     { id: T, username: 'tim', full_name: 'Tim Tech', role: 'member', department: 'technical', created_at: ts, kra_pin: null, id_number: null, gender: null }],
   customers: [
-    { id: 1, first_name: 'Amina', last_name: 'Hassan', contact: '0712345678', location: 'Diani', interested_package: '10 Mbps', notes: null, recorded_by: S, created_at: ts, status: 'Converted', commission_paid_at: null, desired_date: null },
-    { id: 2, first_name: 'Bob', last_name: '-', contact: '0722000000', location: 'Ukunda', interested_package: null, notes: 'Call after 5', recorded_by: T, created_at: ts, status: 'New', commission_paid_at: ts, desired_date: '2026-10-20' }],
+    { id: 1, first_name: 'Amina', last_name: 'Hassan', contact: '0712345678', location: 'Diani', interested_package: '10 Mbps', notes: null, recorded_by: S, created_at: ts, commission_paid_at: null, desired_date: null },
+    { id: 2, first_name: 'Bob', last_name: '-', contact: '0722000000', location: 'Ukunda', interested_package: null, notes: 'Call after 5', recorded_by: T, created_at: ts, commission_paid_at: ts, desired_date: '2026-10-20' }],
   stock_items: [
     { id: 1, item_code: 'ITM-001', item_name: 'Drop Cable 1KM', category: 'Networking', unit: 'roll', reorder_level: 2, unit_cost: 9500, supplier: null, notes: null, created_at: ts, is_device: false },
     { id: 2, item_code: 'ITM-006', item_name: 'Router (ONU)', category: 'Networking', unit: 'pcs', reorder_level: 3, unit_cost: 2200, supplier: 'DCT', notes: null, created_at: ts, is_device: true }],
@@ -31,7 +31,7 @@ const data = {
 }
 
 // A pretend database: hands out new record numbers per table, as the real one does.
-function fakeClient(existing = {}) {
+function fakeClient(existing = {}, schema = {}) {
   const calls = [], rpcs = [], rows = {}, base = { customers: 1000, stock_items: 2000, places: 3000, jobs: 4000 }, seq = {}
   return {
     calls, rpcs, rows,
@@ -40,6 +40,9 @@ function fakeClient(existing = {}) {
         calls.push(t)
         let done = null
         const run = (cols) => done || (done = (() => {
+          const allowed = schema[t]
+          const unknown = allowed && Object.keys(batch[0] || {}).find((k) => !allowed.includes(k))
+          if (unknown) return { data: null, error: { code: 'PGRST204', message: `Could not find the '${unknown}' column of '${t}' in the schema cache` } }
           seq[t] = seq[t] || (base[t] || 5000)
           const out = batch.map((r) => ({ id: ++seq[t], ...Object.fromEntries(cols.split(',').filter((c) => c !== 'id').map((c) => [c, r[c]])) }))
           ;(rows[t] ||= []).push(...batch.map((r, i) => ({ id: out[i].id, ...r })))
@@ -143,18 +146,53 @@ const pl = core.parseCustomerList(lw)
 await ok('the header row is found even when it is not the first row, with differently worded headings', () => { assert.equal(pl.error, null); assert.equal(pl.rows.length, 4) })
 await ok('phone numbers are cleaned (Excel drops leading zeros; +254 becomes 0...)', () => { assert.equal(pl.rows[0].contact, '0719995491'); assert.equal(pl.rows[2].contact, '0722111222') })
 await ok('names split into first and last (a single name gets "-", as the system already does)', () => { assert.deepEqual([pl.rows[0].first_name, pl.rows[0].last_name], ['Mary', 'Wanjiru Kamau']); assert.deepEqual([pl.rows[2].first_name, pl.rows[2].last_name], ['Hassan', '-']) })
-await ok('rows without a name or phone are skipped with a reason; blank rows are ignored; a missing location is filled in', () => {
-  assert.deepEqual(pl.skipped.map((s) => s.reason), ['No phone number (No Phone)', 'No name']); assert.equal(pl.rows[2].location, 'Not specified'); assert.equal(pl.rows[0].status, 'Converted')
+await ok('rows without a name or phone are skipped with a reason, and blank rows are ignored', () => {
+  assert.deepEqual(pl.skipped.map((s) => s.reason), ['No phone number (No Phone)', 'No name'])
+})
+await ok('only the name and phone are read: Area, Package, Remarks and Status in the file are ignored', () => {
+  assert.deepEqual(pl.rows[0], { line: 3, first_name: 'Mary', last_name: 'Wanjiru Kamau', contact: '0719995491' })
 })
 const plan = core.planCustomerImport(pl.rows, [{ contact: '0712 345 678' }])
 await ok('duplicates are dropped: against the system, and inside the file', () => { assert.deepEqual(plan.duplicates.map((r) => r.first_name), ['Mary', 'Existing']); assert.equal(plan.toInsert.length, 2) })
-const c3 = fakeClient(); const res = await core.runCustomerImport({ toInsert: plan.toInsert, adminId: 'N-ADMIN', status: 'Converted', client: c3, now: new Date('2026-10-13T08:00:00Z') })
-await ok('imported customers are recorded by the admin, never earn commission, and use the chosen status', () => {
-  assert.equal(res.inserted, 2); const [a, b] = c3.rows.customers
-  assert.equal(a.recorded_by, 'N-ADMIN'); assert.equal(a.commission_paid_at, '2026-10-13T08:00:00.000Z'); assert.equal(a.status, 'Converted'); assert.equal(b.status, 'Converted'); assert.ok(!('line' in a))
+const c3 = fakeClient(); const res = await core.runCustomerImport({ toInsert: plan.toInsert, adminId: 'N-ADMIN', client: c3, now: new Date('2026-10-13T08:00:00Z') })
+await ok('an imported customer is a name and a phone number (plus the compulsory location placeholder), recorded by the admin, never earning commission', () => {
+  assert.equal(res.inserted, 2); assert.deepEqual(res.dropped, [])
+  assert.deepEqual(Object.keys(c3.rows.customers[0]).filter((k) => k !== 'id').sort(), ['commission_paid_at', 'contact', 'first_name', 'last_name', 'location', 'recorded_by'])
+  const [a] = c3.rows.customers; assert.equal(a.location, 'Not specified'); assert.equal(a.recorded_by, 'N-ADMIN'); assert.equal(a.commission_paid_at, '2026-10-13T08:00:00.000Z')
 })
-await ok('the customer template has the headings the importer expects', async () => {
+// the real customers table, exactly as the database builds it: no "status" column
+const REAL = ['contact', 'location', 'interested_package', 'notes', 'recorded_by', 'created_at', 'first_name', 'last_name', 'commission_paid_at', 'desired_date']
+await ok('works on the real customers table, which has no "status" column (the failure that was reported)', async () => {
+  const db = fakeClient({}, { customers: REAL }); const r = await core.runCustomerImport({ toInsert: plan.toInsert, adminId: 'N-ADMIN', client: db })
+  assert.equal(r.inserted, 2); assert.deepEqual(r.dropped, []); assert.equal(db.rows.customers.length, 2)
+})
+await ok('a database without the commission column still imports, and says what it skipped', async () => {
+  const db = fakeClient({}, { customers: REAL.filter((c) => c !== 'commission_paid_at') }); const r = await core.runCustomerImport({ toInsert: plan.toInsert, adminId: 'N-ADMIN', client: db })
+  assert.equal(r.inserted, 2); assert.deepEqual(r.dropped, ['commission_paid_at']); assert.ok(db.rows.customers.every((c) => !('commission_paid_at' in c)))
+})
+await ok('a missing essential column is reported plainly, not hidden', async () => {
+  const db = fakeClient({}, { customers: REAL.filter((c) => c !== 'contact') })
+  await assert.rejects(core.runCustomerImport({ toInsert: plan.toInsert, adminId: 'N-ADMIN', client: db }), /Customers: Could not find the 'contact' column/)
+})
+await ok('a large list is imported in chunks', async () => {
+  const many = Array.from({ length: 450 }, (_, i) => ({ line: i + 2, first_name: 'P' + i, last_name: '-', contact: '07' + String(10000000 + i) }))
+  const db = fakeClient(); const r = await core.runCustomerImport({ toInsert: many, adminId: 'N-ADMIN', client: db, chunk: 200 })
+  assert.equal(r.inserted, 450); assert.deepEqual(db.calls, ['customers', 'customers', 'customers'])
+})
+await ok('restore: columns this database does not have are skipped and reported, the rest restored', async () => {
+  const older = structuredClone(parsed); older.rows.customers.forEach((r) => { r.status = 'Converted' })       // an older backup that still has the removed column
+  const db = fakeClient({}, { customers: Object.keys(parsed.rows.customers[0]).filter((k) => k !== 'id') })
+  const rp = await core.runRestore({ parsed: older, users, adminId: 'N-ADMIN', client: db })
+  assert.deepEqual(rp.tables.customers.skippedColumns, ['status']); assert.equal(rp.tables.customers.inserted, 2); assert.ok(db.rows.customers.every((r) => !('status' in r)))
+  assert.equal(db.rows.jobs[0].customer_id, 1001)                                                                // linking still works after the retry
+})
+await ok('restore: a column needed to link records is never silently dropped', async () => {
+  const db = fakeClient({}, { customers: Object.keys(parsed.rows.customers[0]).filter((k) => k !== 'id' && k !== 'contact') })
+  await assert.rejects(core.runRestore({ parsed, users, adminId: 'N-ADMIN', client: db }), /Customers: Could not find the 'contact' column/)
+})
+await ok('the customer template is just Name and Phone, and the importer reads it', async () => {
   const t = core.buildCustomerTemplate(ExcelJS); const tb = await t.xlsx.writeBuffer(); const tw = new ExcelJS.Workbook(); await tw.xlsx.load(tb)
+  const heads = []; tw.getWorksheet('Customers').getRow(1).eachCell((c) => heads.push(c.value)); assert.deepEqual(heads, ['Name', 'Phone'])
   tw.getWorksheet('Customers').addRow(['Joy Achieng', '0733444555', 'Ukunda']); const r = core.parseCustomerList(tw)
   assert.equal(r.error, null); assert.equal(r.rows[0].first_name, 'Joy')
 })

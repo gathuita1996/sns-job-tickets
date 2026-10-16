@@ -41,8 +41,8 @@ export default function DataTab({ currentUser, users, customers, onDataChanged }
   async function runCustomers() {
     setConfirm(null); setWorking('import')
     try {
-      const { inserted } = await importCustomers({ toInsert: custPlan.toInsert, adminId: currentUser.id, status: 'Converted' })
-      setNotice({ type: 'ok', text: `${inserted} customers imported.` }); setCustPlan(null); await onDataChanged()
+      const { inserted, dropped = [] } = await importCustomers({ toInsert: custPlan.toInsert, adminId: currentUser.id })
+      setNotice({ type: 'ok', text: `${inserted} customers imported with their names and phone numbers. Add their location and package in the system when you are ready.${dropped.length ? ` (This database has no ${dropped.join(', ')} column, so that part was skipped.)` : ''}` }); setCustPlan(null); await onDataChanged()
     } catch (err) { fail(err) } finally { setWorking(null) }
   }
 
@@ -58,7 +58,8 @@ export default function DataTab({ currentUser, users, customers, onDataChanged }
       const report = await restoreFromParsed({ parsed: restoreInfo.parsed, users, adminId: currentUser.id, onProgress: setProgress })
       const done = Object.values(report.tables).filter((t) => t.inserted || t.reused || t.skipped)
       const skipped = done.reduce((s, t) => s + t.skipped, 0)
-      setNotice({ type: 'ok', text: `Restore finished: ${done.map((t) => `${t.sheet} ${t.inserted}${t.reused ? ` (+${t.reused} already there)` : ''}`).join(', ') || 'nothing to restore'}.${skipped ? ` ${skipped} records were skipped because what they belonged to was missing.` : ''}${report.reassigned ? ` ${report.reassigned} records were given to you because the staff member has not signed up yet.` : ''}` })
+      const cols = [...new Set(Object.values(report.tables).flatMap((t) => (t.skippedColumns || []).map((c) => `${t.sheet}: ${c}`)))]
+      setNotice({ type: 'ok', text: `Restore finished: ${done.map((t) => `${t.sheet} ${t.inserted}${t.reused ? ` (+${t.reused} already there)` : ''}`).join(', ') || 'nothing to restore'}.${skipped ? ` ${skipped} records were skipped because what they belonged to was missing.` : ''}${report.reassigned ? ` ${report.reassigned} records were given to you because the staff member has not signed up yet.` : ''}${cols.length ? ` These columns are not in this database and were skipped: ${cols.join(', ')}.` : ''}` })
       setRestoreInfo(null); await onDataChanged()
     } catch (err) { fail(err) } finally { setWorking(null); setProgress('') }
   }
@@ -102,7 +103,7 @@ export default function DataTab({ currentUser, users, customers, onDataChanged }
 
         {mode === 'customers' && (
           <div>
-            <p className="sns-text-soft" style={{ fontSize: '0.84rem', marginBottom: '0.8rem' }}>Add many customers at once from an Excel file with Name, Phone and Location columns. Customers whose phone number is already in the system are skipped, so importing twice is safe. Imported customers never earn commission.</p>
+            <p className="sns-text-soft" style={{ fontSize: '0.84rem', marginBottom: '0.8rem' }}>Add many customers at once from an Excel file with two columns: Name and Phone. Anything else in the file is ignored; fill in the location, package and the rest in the system afterwards. Customers whose phone number is already in the system are skipped, so importing twice is safe. Imported customers never earn commission.</p>
             <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
               <button onClick={() => downloadCustomerTemplate().catch(fail)} className="sns-btn-secondary" style={{ fontSize: '0.82rem' }}><Download size={15} /> Download the template</button>
               <button onClick={() => custInput.current && custInput.current.click()} disabled={busy} className="sns-btn-primary" style={{ fontSize: '0.82rem' }}><Upload size={15} /> {working === 'read' ? 'Reading…' : 'Choose an Excel file'}</button>

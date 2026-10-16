@@ -262,3 +262,8 @@ Logic tests: `npm test`.
 To apply: run `supabase/update-36-migration.sql` in the Supabase SQL editor first (after update 35), then deploy the code. In the app, make sure the Director is set (Team tab > Make Director), then press Assign employee numbers.
 
 Removed from the package: the old `employee-number-and-service-fix-migration.sql`. It made employee numbers compulsory, which no longer suits the new sign-up flow.
+
+## Update 37
+
+- **Customer-list import** now reads only **Name** and **Phone**; every other column in the file is ignored, and location, package and the rest are filled in inside the system afterwards. (The earlier version also tried to fill a `status` column on customers, which the database no longer has, and failed with "Could not find the 'status' column".) Imported customers are recorded by the admin who imports them and never earn commission. The template is just Name and Phone.
+- **Import and restore cope with columns the database does not have:** the missing column is skipped and reported on screen, instead of the whole job failing. Columns needed to link records (or required for a customer) are never skipped silently.
