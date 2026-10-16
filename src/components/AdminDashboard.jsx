@@ -14,13 +14,15 @@ import MoneyReportModal from './MoneyReportModal'
 import StockTab from './StockTab'
 import FieldVisits from './FieldVisits'
 import DataTab from './DataTab'
+import CustomerFormModal from './CustomerForm'
+import EmployeeNumberBar from './EmployeeNumberBar'
 import { DatabaseBackup } from 'lucide-react'
 import { daysSinceBackup } from '../lib/dataCore'
 import ServiceFormModal from './ServiceForm'
 import { ConfirmDialog, EmptyState, EntryTypeChoice, FormField, PeriodSelector, SearchInput, StatCard, StatusBadge, StatusFilterSelect } from './shared'
 import { JOB_TYPES, PRIORITY_OPTIONS, CHART_COLORS, COMMISSION_DEPARTMENTS, departmentLabel, formatKSh, formatDate, formatDateTime, isOverdue, isInPeriod, getPeriodRange, isInRange, shiftAnchor, toWhatsAppNumber } from '../lib/helpers'
 
-export default function AdminDashboard({ currentUser, users, jobs, customers, expenses, stockItems, stockIn, stockOut, places, visits, onAddPlace, onRecordVisit, onDeleteVisit, onSetPlaceActive, onDataChanged, onLogout, onAddJob, onUpdateJob, onDeleteJob, onAssignJob, onPromote, onUpdateDepartment, onUpdateProfile, accessCode, onUpdateAccessCode, commissionRate, onUpdateCommissionRate, onClearCommission, onDeleteCustomer, onMarkTransportPaid, onAddExpense, onAddService, onApproveExpense, onRejectExpense, onAttachReceipt, onMarkExpensePaid, onDeleteExpense, onViewReceipt, onToggleTeamLead, onSetDirector, onAddStockItem, onUpdateStockItem, onDeleteStockItem, onAddStockIn, onAddStockInBatch, onAddStockOut }) {
+export default function AdminDashboard({ currentUser, users, jobs, customers, expenses, stockItems, stockIn, stockOut, places, visits, onAddPlace, onRecordVisit, onDeleteVisit, onSetPlaceActive, onDataChanged, onLogout, onAddJob, onUpdateJob, onDeleteJob, onAssignJob, onPromote, onUpdateDepartment, onUpdateProfile, accessCode, onUpdateAccessCode, commissionRate, onUpdateCommissionRate, onClearCommission, onUpdateCustomer, onAssignEmployeeNumbers, onDeleteCustomer, onMarkTransportPaid, onAddExpense, onAddService, onApproveExpense, onRejectExpense, onAttachReceipt, onMarkExpensePaid, onDeleteExpense, onViewReceipt, onToggleTeamLead, onSetDirector, onAddStockItem, onUpdateStockItem, onDeleteStockItem, onAddStockIn, onAddStockInBatch, onAddStockOut }) {
   const backupDays = daysSinceBackup()
   const [tab, setTab] = useState('overview')
   const [periodGranularity, setPeriodGranularity] = useState('day')
@@ -45,6 +47,7 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, ex
   const [justAssigned, setJustAssigned] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [viewingCustomer, setViewingCustomer] = useState(null)
+  const [editingCustomer, setEditingCustomer] = useState(null)
   const [printingCustomer, setPrintingCustomer] = useState(null)
   const [confirmDeleteCustomer, setConfirmDeleteCustomer] = useState(null)
   const [editingMember, setEditingMember] = useState(null)
@@ -167,7 +170,15 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, ex
 
   return (
     <div className="sns-shell">
-      <Header currentUser={currentUser} onLogout={onLogout} onUpdateProfile={onUpdateProfile} subtitle="Ticketing System" />
+      <Header
+        currentUser={currentUser} onLogout={onLogout} onUpdateProfile={onUpdateProfile} subtitle="Ticketing System"
+        settings={(
+          <div className="space-y-4">
+            <AccessCodeSettings accessCode={accessCode} onUpdate={onUpdateAccessCode} />
+            <CommissionRateSettings commissionRate={commissionRate} onUpdate={onUpdateCommissionRate} />
+          </div>
+        )}
+      />
       <main className="max-w-6xl mx-auto px-4 sm:px-6" style={{ paddingTop: '1.5rem', paddingBottom: '3rem' }}>
 
         {stats.overdue > 0 && (
@@ -201,7 +212,6 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, ex
           <button className={`sns-tab ${tab === 'visits' ? 'active' : ''}`} onClick={() => setTab('visits')}>Field Visits</button>
           <button className={`sns-tab ${tab === 'stock' ? 'active' : ''}`} onClick={() => setTab('stock')}>Stock</button>
           <button className={`sns-tab ${tab === 'data' ? 'active' : ''}`} onClick={() => setTab('data')}>Data & Backup</button>
-          <button className={`sns-tab ${tab === 'settings' ? 'active' : ''}`} onClick={() => setTab('settings')}>Settings</button>
         </div>
 
         {tab === 'overview' && (
@@ -301,7 +311,12 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, ex
           </div>
         )}
 
-        {tab === 'team' && <TeamList users={users} jobs={jobs} onPromote={onPromote} onUpdateDepartment={onUpdateDepartment} onEditMember={setEditingMember} onToggleTeamLead={onToggleTeamLead} onSetDirector={onSetDirector} />}
+        {tab === 'team' && (
+          <div>
+            <EmployeeNumberBar users={users} onAssign={onAssignEmployeeNumbers} />
+            <TeamList users={users} jobs={jobs} onPromote={onPromote} onUpdateDepartment={onUpdateDepartment} onEditMember={setEditingMember} onToggleTeamLead={onToggleTeamLead} onSetDirector={onSetDirector} />
+          </div>
+        )}
 
         {tab === 'commissions' && (
           <div>
@@ -415,24 +430,23 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, ex
                 <div style={{ overflowX: 'auto' }}>
                   <table className="sns-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
-                      <tr><th>Name</th><th>Contact</th><th>Location</th><th>Package requested</th><th>Recorded by</th><th>Date &amp; time</th><th>Status</th><th style={{ textAlign: 'right' }}>Actions</th></tr>
+                      <tr><th>No.</th><th>Name</th><th>Contact</th><th>Location</th><th>Package installed</th><th>Recorded by</th><th>Date &amp; time</th><th style={{ textAlign: 'right' }}>Actions</th></tr>
                     </thead>
                     <tbody>
-                      {filteredCustomers.map((c) => {
-                        const linkedJob = jobs.find((j) => j.customerId === c.id)
-                        const displayStatus = linkedJob ? linkedJob.status : 'Pending'
+                      {filteredCustomers.map((c, idx) => {
                         return (
                           <tr key={c.id}>
+                            <td className="sns-mono sns-text-faint">{idx + 1}</td>
                             <td style={{ fontWeight: 600 }}>{c.fullName}</td>
                             <td className="sns-text-soft">{c.contact}</td>
                             <td className="sns-text-soft">{c.location}</td>
                             <td className="sns-text-soft">{c.interestedPackage || '—'}</td>
                             <td className="sns-text-soft">{userMap[c.recordedBy]?.fullName || '—'}</td>
                             <td className="sns-text-soft">{formatDateTime(c.createdAt)}</td>
-                            <td><StatusBadge status={displayStatus} /></td>
                             <td>
                               <div className="flex items-center justify-end gap-1">
                                 <button onClick={() => setViewingCustomer(c)} title="View" className="sns-icon-btn"><Eye size={15} /></button>
+                                <button onClick={() => setEditingCustomer(c)} title="Edit" className="sns-icon-btn"><Pencil size={15} /></button>
                                 <button onClick={() => setPrintingCustomer(c)} title="Print" className="sns-icon-btn"><Printer size={15} /></button>
                                 <button onClick={() => setConfirmDeleteCustomer(c)} title="Delete" className="sns-icon-btn danger"><Trash2 size={15} /></button>
                               </div>
@@ -469,12 +483,6 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, ex
           />
         )}
 
-        {tab === 'settings' && (
-          <div>
-            <AccessCodeSettings accessCode={accessCode} onUpdate={onUpdateAccessCode} />
-            <CommissionRateSettings commissionRate={commissionRate} onUpdate={onUpdateCommissionRate} />
-          </div>
-        )}
       </main>
 
       {editingJob && (
@@ -577,9 +585,18 @@ export default function AdminDashboard({ currentUser, users, jobs, customers, ex
           onConfirm={async () => { await onDeleteCustomer(confirmDeleteCustomer.id); setConfirmDeleteCustomer(null) }}
         />
       )}
+      {editingCustomer && (
+        <CustomerFormModal
+          initialCustomer={editingCustomer}
+          onClose={() => setEditingCustomer(null)}
+          onSave={async (data) => { await onUpdateCustomer(editingCustomer.id, data); setEditingCustomer(null) }}
+        />
+      )}
+
       {editingMember && (
         <ProfileFormModal
           profile={editingMember}
+          canEditNumber
           isSelf={false}
           onClose={() => setEditingMember(null)}
           onSave={async (updates) => { await onUpdateProfile(editingMember.id, updates); setEditingMember(null) }}
@@ -735,7 +752,7 @@ function CustomerViewModal({ customer, recordedByName, displayStatus, onClose, o
             <span className="sns-text-faint">Location</span><span style={{ fontWeight: 600 }}>{customer.location}</span>
           </div>
           <div className="flex items-center justify-between" style={{ fontSize: '0.85rem' }}>
-            <span className="sns-text-faint">Package requested</span><span style={{ fontWeight: 600 }}>{customer.interestedPackage || '—'}</span>
+            <span className="sns-text-faint">Package installed</span><span style={{ fontWeight: 600 }}>{customer.interestedPackage || '—'}</span>
           </div>
           <div className="flex items-center justify-between" style={{ fontSize: '0.85rem' }}>
             <span className="sns-text-faint">Wants service on</span><span style={{ fontWeight: 600 }}>{customer.desiredDate ? formatDate(customer.desiredDate) : '—'}</span>

@@ -23,7 +23,7 @@ function useTheme() {
   return [theme, setTheme]
 }
 
-export default function Header({ currentUser, onLogout, onUpdateProfile, subtitle }) {
+export default function Header({ currentUser, onLogout, onUpdateProfile, subtitle, settings }) {
   const [editingProfile, setEditingProfile] = useState(false)
   const [theme, setTheme] = useTheme()
 
@@ -38,11 +38,11 @@ export default function Header({ currentUser, onLogout, onUpdateProfile, subtitl
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <button onClick={() => setEditingProfile(true)} title="Edit my profile" className="hidden sm:block text-right" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+          <button onClick={() => setEditingProfile(true)} title={settings ? 'My profile & settings' : 'Edit my profile'} className="hidden sm:block text-right" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
             <p style={{ fontSize: '0.85rem', fontWeight: 600 }}>{currentUser.fullName}</p>
             <p className="sns-eyebrow sns-text-faint">{currentUser.role === 'admin' ? (currentUser.title || 'Admin') : 'Member'}</p>
           </button>
-          <button onClick={() => setEditingProfile(true)} title="Edit my profile" className="sns-icon-btn sm:hidden">
+          <button onClick={() => setEditingProfile(true)} title={settings ? 'My profile & settings' : 'Edit my profile'} className="sns-icon-btn sm:hidden">
             <UserCog size={16} />
           </button>
           <button onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))} title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'} className="sns-btn-secondary" style={{ padding: '0.5rem' }}>
@@ -57,6 +57,8 @@ export default function Header({ currentUser, onLogout, onUpdateProfile, subtitl
         <ProfileFormModal
           profile={currentUser}
           isSelf
+          canEditNumber={currentUser.role === 'admin'}
+          settings={settings}
           onClose={() => setEditingProfile(false)}
           onSave={async (updates) => { await onUpdateProfile(currentUser.id, updates); setEditingProfile(false) }}
         />

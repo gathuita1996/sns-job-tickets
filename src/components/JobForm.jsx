@@ -243,7 +243,7 @@ export default function JobFormModal({ initialJob, assignableMembers, allMembers
             <div className="sns-card" style={{ padding: '0.9rem 1.1rem', background: 'var(--signal-pale)', border: 'none' }}>
               <p className="sns-eyebrow" style={{ color: 'var(--signal-deep)', marginBottom: '0.4rem' }}>Recorded customer details</p>
               <p style={{ fontSize: '0.85rem', marginBottom: linkedCustomer.notes ? '0.3rem' : 0 }}>
-                <strong>Interested in:</strong> {linkedCustomer.interestedPackage || 'Not specified'}
+                <strong>Package installed:</strong> {linkedCustomer.interestedPackage || 'Not specified'}
               </p>
               {linkedCustomer.notes && (
                 <p style={{ fontSize: '0.85rem' }}><strong>Notes:</strong> {linkedCustomer.notes}</p>

@@ -147,7 +147,7 @@ export function CustomerPrintView({ customer, recordedByUser, displayStatus, onB
           <PrintField label="Name" value={customer.fullName} />
           <PrintField label="Contact" value={customer.contact} />
           <PrintField label="Location" value={customer.location} />
-          <PrintField label="Interested Package" value={customer.interestedPackage || '—'} />
+          <PrintField label="Package Installed" value={customer.interestedPackage || '—'} />
           <PrintField label="Desired Service Date" value={customer.desiredDate ? formatDate(customer.desiredDate) : 'Not specified'} />
           <PrintField label="Recorded By" value={recordedByUser?.fullName || '—'} />
           <PrintField label="Notes" value={customer.notes || '—'} full />

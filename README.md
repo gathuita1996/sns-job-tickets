@@ -252,3 +252,13 @@ supabase/
 To apply: run `supabase/update-35-migration.sql` in the Supabase SQL editor FIRST (safe to run twice), then push the code. A fresh database is built with `supabase/schema.sql` (the same file as `job-card-rebuild.sql`), then `job-card-restore-stock-history.sql` once the first admin exists.
 
 Logic tests: `npm test`.
+
+## Update 36
+
+- **Customers (admin):** rows are numbered, there is an **Edit** icon next to View, Print and Delete (it opens the same form the sales team uses), and the Status column is gone. The package is called **Package installed** everywhere (it used to say "Package requested" / "Interested package").
+- **Settings** (team access code, commission rate) now open from your own profile: click your name at the top right, then the **Settings** tab. There is no Settings tab on the dashboard any more.
+- **Employee numbers:** Team tab > **Assign employee numbers** gives every team member without one a number: SNS001 to the Director, SNS002 to the admin who presses the button, everyone else a random number from SNS003. Numbers already given never change, so it is safe to press again when someone new joins. An admin can also type a number into someone's profile (format SNS001, unique). Only an admin can change a number.
+
+To apply: run `supabase/update-36-migration.sql` in the Supabase SQL editor first (after update 35), then deploy the code. In the app, make sure the Director is set (Team tab > Make Director), then press Assign employee numbers.
+
+Removed from the package: the old `employee-number-and-service-fix-migration.sql`. It made employee numbers compulsory, which no longer suits the new sign-up flow.

@@ -72,7 +72,7 @@ export default function CustomerFormModal({ initialCustomer, onClose, onSave }) 
               <input className="sns-input" value={form.locationOther} onChange={(e) => update('locationOther', e.target.value)} placeholder="Where is this customer based?" />
             </FormField>
           )}
-          <FormField label="Interested package">
+          <FormField label="Package installed">
             <select className="sns-input" value={form.interestedPackage} onChange={(e) => update('interestedPackage', e.target.value)}>
               {PACKAGES.map((p) => <option key={p} value={p}>{p}</option>)}
             </select>
@@ -83,7 +83,7 @@ export default function CustomerFormModal({ initialCustomer, onClose, onSave }) 
               ? 'Changing this only updates the note on file — it will not move any job already scheduled.'
               : 'If they gave you a date (e.g. "next Monday"), pick it here — a Pending job gets scheduled for that date automatically, so this follow-up is tracked, not just noted.'}
           >
-            <input type="date" min={toDateInputValue(new Date())} className="sns-input" value={form.desiredDate} onChange={(e) => update('desiredDate', e.target.value)} />
+            <input type="date" min={initialCustomer ? undefined : toDateInputValue(new Date())} className="sns-input" value={form.desiredDate} onChange={(e) => update('desiredDate', e.target.value)} />
           </FormField>
           <FormField label="Notes" hint="Optional — how you met them, best time to reach them, anything useful for follow-up.">
             <textarea className="sns-input" rows={3} value={form.notes} onChange={(e) => update('notes', e.target.value)} placeholder="Optional notes…" />

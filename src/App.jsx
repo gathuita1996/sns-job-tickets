@@ -630,9 +630,24 @@ export default function App() {
     await refreshJobs()
   }
 
+  // Gives every team member without one an employee number (SNS001 Director, SNS002 the admin pressing it,
+  // the rest random). Numbers already given never change.
+  async function handleAssignEmployeeNumbers() {
+    const { data, error } = await supabase.rpc('assign_employee_numbers')
+    if (error) { showToast('Failed to assign employee numbers.', 'error'); return }
+    showToast(data > 0 ? `Employee numbers assigned to ${data} ${data === 1 ? 'person' : 'people'}.` : 'Everyone already has an employee number.')
+    await refreshUsers()
+  }
+
   async function handleUpdateProfile(profileId, updates) {
     const { error } = await supabase.from('profiles').update(updates).eq('id', profileId)
-    if (error) { showToast('Failed to update profile.', 'error'); return }
+    if (error) {
+      const text = String(error.message || '')
+      showToast(error.code === '23505' && text.includes('employee_number') ? 'That employee number is already used by someone else.'
+        : error.code === '23505' && text.includes('username') ? 'That username is already taken.'
+        : 'Failed to update profile.', 'error')
+      return
+    }
     showToast('Profile updated.')
     if (profileId === currentUserRef.current.id) {
       const { data } = await supabase.from('profiles').select('*').eq('id', profileId).single()
@@ -713,7 +728,7 @@ export default function App() {
   return (<>
     {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     {currentUser.role === 'admin'
-      ? <AdminDashboard currentUser={currentUser} users={allUsers} jobs={jobs} customers={customers} expenses={expenses} stockItems={stockItems} stockIn={stockIn} stockOut={stockOut} places={places} visits={visits} onAddPlace={handleAddPlace} onRecordVisit={handleRecordVisit} onDeleteVisit={handleDeleteVisit} onSetPlaceActive={handleSetPlaceActive} onDataChanged={handleDataChanged} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAssignJob={handleAssignJob} onPromote={handlePromote} onUpdateDepartment={handleUpdateDepartment} onUpdateProfile={handleUpdateProfile} accessCode={accessCode} onUpdateAccessCode={handleUpdateAccessCode} commissionRate={commissionRate} onUpdateCommissionRate={handleUpdateCommissionRate} onClearCommission={handleClearCommission} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onMarkTransportPaid={handleMarkTransportPaid} onAddExpense={handleAddExpense} onAddService={handleAddService} onAttachReceipt={handleAttachReceipt} onApproveExpense={handleApproveExpense} onRejectExpense={handleRejectExpense} onMarkExpensePaid={handleMarkExpensePaid} onDeleteExpense={handleDeleteExpense} onViewReceipt={getReceiptUrl} onToggleTeamLead={handleToggleTeamLead} onSetDirector={handleSetDirector} onAddStockItem={handleAddStockItem} onUpdateStockItem={handleUpdateStockItem} onDeleteStockItem={handleDeleteStockItem} onAddStockIn={handleAddStockIn} onAddStockInBatch={handleAddStockInBatch} onAddStockOut={handleAddStockOut} />
+      ? <AdminDashboard currentUser={currentUser} users={allUsers} jobs={jobs} customers={customers} expenses={expenses} stockItems={stockItems} stockIn={stockIn} stockOut={stockOut} places={places} visits={visits} onAddPlace={handleAddPlace} onRecordVisit={handleRecordVisit} onDeleteVisit={handleDeleteVisit} onSetPlaceActive={handleSetPlaceActive} onUpdateCustomer={handleUpdateCustomer} onAssignEmployeeNumbers={handleAssignEmployeeNumbers} onDataChanged={handleDataChanged} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAssignJob={handleAssignJob} onPromote={handlePromote} onUpdateDepartment={handleUpdateDepartment} onUpdateProfile={handleUpdateProfile} accessCode={accessCode} onUpdateAccessCode={handleUpdateAccessCode} commissionRate={commissionRate} onUpdateCommissionRate={handleUpdateCommissionRate} onClearCommission={handleClearCommission} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onMarkTransportPaid={handleMarkTransportPaid} onAddExpense={handleAddExpense} onAddService={handleAddService} onAttachReceipt={handleAttachReceipt} onApproveExpense={handleApproveExpense} onRejectExpense={handleRejectExpense} onMarkExpensePaid={handleMarkExpensePaid} onDeleteExpense={handleDeleteExpense} onViewReceipt={getReceiptUrl} onToggleTeamLead={handleToggleTeamLead} onSetDirector={handleSetDirector} onAddStockItem={handleAddStockItem} onUpdateStockItem={handleUpdateStockItem} onDeleteStockItem={handleDeleteStockItem} onAddStockIn={handleAddStockIn} onAddStockInBatch={handleAddStockInBatch} onAddStockOut={handleAddStockOut} />
       : <MemberDashboard currentUser={currentUser} jobs={jobs.filter((j) => j.memberId === currentUser.id)} raisedJobs={jobs.filter((j) => j.raisedBy === currentUser.id && j.memberId !== currentUser.id)} customers={customers} customerIdsWithJobs={customerIdsWithJobs} complaints={complaints} expenses={expenses.filter((e) => e.submittedBy === currentUser.id)} memberNames={memberNames} places={places} visits={visits} onAddPlace={handleAddPlace} onRecordVisit={handleRecordVisit} onDeleteVisit={handleDeleteVisit} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAddCustomer={handleAddCustomer} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onUpdateProfile={handleUpdateProfile} onAddComplaint={handleAddComplaint} onUpdateComplaintStatus={handleUpdateComplaintStatus} onResolveComplaint={handleResolveComplaint} onAddExpense={handleAddExpense} onAttachReceipt={handleAttachReceipt} onDeleteExpense={handleDeleteExpense} onViewReceipt={getReceiptUrl} commissionRate={commissionRate} />}
   </>)
 }

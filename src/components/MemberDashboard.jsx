@@ -175,11 +175,12 @@ export default function MemberDashboard({ currentUser, jobs, raisedJobs, custome
                 <div style={{ overflowX: 'auto' }}>
                   <table className="sns-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
-                      <tr><th>Name</th><th>Contact</th><th>Location</th><th>Interested package</th><th>Recorded</th><th>Commission</th><th style={{ textAlign: 'right' }}>Actions</th></tr>
+                      <tr><th>No.</th><th>Name</th><th>Contact</th><th>Location</th><th>Package installed</th><th>Recorded</th><th>Commission</th><th style={{ textAlign: 'right' }}>Actions</th></tr>
                     </thead>
                     <tbody>
-                      {(customersFilter === 'thisMonth' ? newThisMonthCustomers : sortedMyCustomers).map((c) => (
+                      {(customersFilter === 'thisMonth' ? newThisMonthCustomers : sortedMyCustomers).map((c, idx) => (
                         <tr key={c.id}>
+                          <td className="sns-mono sns-text-faint">{idx + 1}</td>
                           <td style={{ fontWeight: 600 }}>{c.fullName}</td>
                           <td className="sns-text-soft">{c.contact}</td>
                           <td className="sns-text-soft">{c.location}</td>

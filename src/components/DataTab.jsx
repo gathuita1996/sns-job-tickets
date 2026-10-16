@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { AlertTriangle, CheckCircle2, DatabaseBackup, Download, FileSpreadsheet, Upload } from 'lucide-react'
 import { ConfirmDialog } from './shared'
-import { CUSTOMER_STATUSES, daysSinceBackup, getLastBackup } from '../lib/dataCore'
+import { daysSinceBackup, getLastBackup } from '../lib/dataCore'
 import { downloadCustomerTemplate, exportAll, importCustomers, inspectBackupFile, inspectCustomerFile, restoreFromParsed } from '../lib/dataIO'
 import { formatDate } from '../lib/helpers'
 
@@ -15,7 +15,6 @@ export default function DataTab({ currentUser, users, customers, onDataChanged }
   const [mode, setMode] = useState('customers')
   const custInput = useRef(null), restoreInput = useRef(null)
   const [custPlan, setCustPlan] = useState(null)
-  const [custStatus, setCustStatus] = useState('Converted')
   const [restoreInfo, setRestoreInfo] = useState(null)
   const [allowNonEmpty, setAllowNonEmpty] = useState(false)
   const [confirm, setConfirm] = useState(null)
@@ -42,7 +41,7 @@ export default function DataTab({ currentUser, users, customers, onDataChanged }
   async function runCustomers() {
     setConfirm(null); setWorking('import')
     try {
-      const { inserted } = await importCustomers({ toInsert: custPlan.toInsert, adminId: currentUser.id, status: custStatus })
+      const { inserted } = await importCustomers({ toInsert: custPlan.toInsert, adminId: currentUser.id, status: 'Converted' })
       setNotice({ type: 'ok', text: `${inserted} customers imported.` }); setCustPlan(null); await onDataChanged()
     } catch (err) { fail(err) } finally { setWorking(null) }
   }
@@ -115,11 +114,6 @@ export default function DataTab({ currentUser, users, customers, onDataChanged }
                 {custPlan.skipped.length > 0 && <ul className="sns-text-soft" style={{ margin: '0.4rem 0 0 1.1rem', listStyle: 'disc', fontSize: '0.8rem' }}>{custPlan.skipped.slice(0, 8).map((s) => <li key={s.line}>Row {s.line}: {s.reason}</li>)}{custPlan.skipped.length > 8 && <li>…and {custPlan.skipped.length - 8} more</li>}</ul>}
                 {custPlan.toInsert.length > 0 && (
                   <div className="flex items-center gap-3" style={{ marginTop: '0.9rem', flexWrap: 'wrap' }}>
-                    <label style={{ fontSize: '0.82rem' }}>Mark them as&nbsp;
-                      <select className="sns-input" value={custStatus} onChange={(e) => setCustStatus(e.target.value)} style={{ display: 'inline-block', width: 'auto' }}>
-                        {CUSTOMER_STATUSES.map((s) => <option key={s} value={s}>{s === 'Converted' ? 'Converted (existing customers)' : s}</option>)}
-                      </select>
-                    </label>
                     <button onClick={() => setConfirm('customers')} disabled={busy} className="sns-btn-primary">{working === 'import' ? 'Importing…' : `Import ${custPlan.toInsert.length} customers`}</button>
                   </div>
                 )}
@@ -156,7 +150,7 @@ export default function DataTab({ currentUser, users, customers, onDataChanged }
         )}
       </div>
 
-      {confirm === 'customers' && <ConfirmDialog title="Import customers" message={`Add ${custPlan.toInsert.length} customers to the system, marked as ${custStatus}?`} onCancel={() => setConfirm(null)} onConfirm={runCustomers} />}
+      {confirm === 'customers' && <ConfirmDialog title="Import customers" message={`Add ${custPlan.toInsert.length} customers to the system?`} onCancel={() => setConfirm(null)} onConfirm={runCustomers} />}
       {confirm === 'restore' && <ConfirmDialog title="Restore backup" message="Load this backup into the system? This cannot be undone, and it should only be done once." onCancel={() => setConfirm(null)} onConfirm={runRestore} />}
     </div>
   )
