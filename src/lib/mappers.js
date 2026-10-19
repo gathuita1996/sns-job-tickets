@@ -78,6 +78,10 @@ export function mapJob(row) {
     customerId: row.customer_id || null,
     coTechnicians: row.co_technicians || [],
     transportPaidAt: row.transport_paid_at || null,
+    gpsLat: row.gps_lat == null ? null : Number(row.gps_lat),
+    gpsLng: row.gps_lng == null ? null : Number(row.gps_lng),
+    gpsAccuracy: row.gps_accuracy == null ? null : Number(row.gps_accuracy),
+    gpsRecordedAt: row.gps_recorded_at || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
@@ -100,6 +104,14 @@ export function jobToDbFields(data) {
     overdue_reason: data.overdueReason || null,
     customer_id: data.customerId || null,
     co_technicians: data.coTechnicians && data.coTechnicians.length ? data.coTechnicians : null,
+    // GPS is only touched when the caller says something about it: null clears it, "not mentioned" leaves
+    // whatever is saved alone, so no other kind of update can ever wipe a recorded location.
+    ...(data.gps !== undefined ? {
+      gps_lat: data.gps ? data.gps.lat : null,
+      gps_lng: data.gps ? data.gps.lng : null,
+      gps_accuracy: data.gps && data.gps.accuracy != null ? data.gps.accuracy : null,
+      gps_recorded_at: data.gps ? data.gps.recordedAt : null,
+    } : {}),
   }
 }
 

@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Plus, Trash2, X } from 'lucide-react'
 import { FormField } from './shared'
-import { JOB_TYPES, LOCATIONS, TRANSPORT_LOCATIONS, STATUS_OPTIONS, PRIORITY_OPTIONS, defaultJobForm, isOverdue, resolveOtherField, toDateInputValue, formatDate, formatKSh } from '../lib/helpers'
+import GpsCapture from './GpsCapture'
+import { JOB_TYPES, SITE_SURVEY, LOCATIONS, TRANSPORT_LOCATIONS, STATUS_OPTIONS, PRIORITY_OPTIONS, defaultJobForm, isOverdue, resolveOtherField, toDateInputValue, formatDate, formatKSh } from '../lib/helpers'
 
 // assignableMembers is only passed when an admin opens this form (to assign
 // or reassign a job to a Technical or Sales & Marketing member) -- its
@@ -46,9 +47,17 @@ export default function JobFormModal({ initialJob, assignableMembers, allMembers
     priority: initialJob.priority || 'Normal', notes: initialJob.notes || '', overdueReason: initialJob.overdueReason || '',
     assignedTo: initialJob.memberId || '', raisedBy: initialJob.raisedBy || '', customerId: initialJob.customerId || null,
     coTechnicians: initialJob.coTechnicians || [],
-  } : { ...defaultJobForm(), status: adminMode ? 'Pending' : '', assignedTo: '', raisedBy: '', customerId: null, coTechnicians: [] })
+    gps: initialJob.gpsLat != null ? { lat: initialJob.gpsLat, lng: initialJob.gpsLng, accuracy: initialJob.gpsAccuracy, recordedAt: initialJob.gpsRecordedAt } : null,
+  } : { ...defaultJobForm(), status: adminMode ? 'Pending' : '', assignedTo: '', raisedBy: '', customerId: null, coTechnicians: [], gps: null })
   const [errors, setErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
+
+  // A site survey records where it was done, with the phone's GPS. A member records it when filing the job
+  // (required). An admin handing a survey to someone is not at the site, so nothing is asked of them. When an
+  // existing survey is edited (even one an admin assigned) the location can be recorded or updated, but isn't
+  // forced, so older surveys stay editable from the office.
+  const showGps = form.jobType === SITE_SURVEY && !adminMode && !reassignOnly
+  const gpsRequired = showGps && !initialJob
 
   function update(key, value) {
     setForm((f) => ({ ...f, [key]: value }))
@@ -142,6 +151,7 @@ export default function JobFormModal({ initialJob, assignableMembers, allMembers
       if (!form.overdueReason.trim()) e.overdueReason = 'Please explain why this job is overdue'
       if (form.status === 'Pending') e.status = 'An overdue job must move to In Progress or Completed to be saved'
     }
+    if (gpsRequired && !form.gps) e.gps = 'Record the GPS location before filing a site survey'
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -156,6 +166,7 @@ export default function JobFormModal({ initialJob, assignableMembers, allMembers
       transportFrom: form.transportFrom === 'Other' ? form.transportFromOther.trim() : form.transportFrom,
       transportTo: form.transportStops.map((stop) => (stop.selected === 'Other' ? stop.other.trim() : stop.selected)),
       transportAmount: form.transportAmount === '' ? 0 : Number(form.transportAmount),
+      gps: form.jobType === SITE_SURVEY ? form.gps : null,        // a job that is not a site survey carries no location
     })
     setSubmitting(false)
   }
@@ -374,6 +385,8 @@ export default function JobFormModal({ initialJob, assignableMembers, allMembers
               <textarea className="sns-input" rows={2} value={form.overdueReason} onChange={(e) => update('overdueReason', e.target.value)} placeholder="Explain the delay…" />
             </FormField>
           )}
+
+          {showGps && <GpsCapture value={form.gps} onChange={(g) => update('gps', g)} error={errors.gps} required={gpsRequired} />}
 
           <div className="flex gap-3" style={{ paddingTop: '0.4rem', marginBottom: '2rem' }}>
             <button type="button" onClick={onClose} className="sns-btn-secondary" style={{ flex: 1 }}>Cancel</button>

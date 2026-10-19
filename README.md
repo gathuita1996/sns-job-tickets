@@ -273,3 +273,9 @@ Removed from the package: the old `employee-number-and-service-fix-migration.sql
 - **Log a service works again.** The database requires every expense to have a category; a purchase picks one from a list but a service has none, so every service was refused ("Failed to submit service request"). Services now get the category **Service**, both in the app and as a database default. The database part can be applied on its own, with no deploy: run `supabase/update-38-migration.sql`.
 - **Locations added:** Mvindeni, Diani Market, Kalipso, Nyumba Tatu, Mkwakwani (Darad was already listed). They appear in the customer, job and complaint forms and in transport from/to.
 - **Packages added:** Swahili 25 Unlimited (KSh 3,350) and Swahili 30 Unlimited (KSh 2,850), in speed order before "Not sure yet". The price is shown next to the name in the package list; only the package name is saved on the customer.
+
+## Update 39
+
+- **Site surveys record a GPS location.** When a member picks **Site Survey** as the job type, a "GPS location at the site" section appears as the **last input** of the form. It is **required** when filing: the member taps *Record GPS location* while standing at the site and the phone supplies the position (it cannot be typed in). The coordinates, accuracy and time are shown with an *Open in Maps* link, and the survey cannot be filed until a location is recorded. A rough fix (over 100 m) is flagged so it can be retaken outdoors.
+- Admins handing a survey to someone are not asked for a location (they are not at the site). Editing an existing survey shows the saved location and lets it be recorded again, but does not force it, so older surveys stay editable from the office. The location appears in the job's detail/print view with a link to the map.
+- The database enforces it too: a member cannot file a site survey without a location even by bypassing the app. Run `supabase/update-39-migration.sql` before deploying (safe to re-run).

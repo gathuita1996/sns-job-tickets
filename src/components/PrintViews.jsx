@@ -1,6 +1,7 @@
 import { ArrowLeft, Printer } from 'lucide-react'
 import { StatusBadge } from './shared'
 import { formatDate, formatDateTime, formatKSh } from '../lib/helpers'
+import { formatCoords, mapsUrl } from '../lib/gps'
 import logoIcon from '../assets/logo-icon.png'
 
 function PrintField({ label, value, full }) {
@@ -48,6 +49,9 @@ export function JobPrintView({ job, filedByUser, assignedByUser, coTechnicianNam
           <PrintField label="Date of Visit" value={formatDate(job.visitDate)} />
           <PrintField label="Transport Route" value={[job.transportFrom || '—', ...(job.transportTo && job.transportTo.length ? job.transportTo : ['—'])].join(' → ')} />
           <PrintField label="Job Details" value={job.notes || '—'} full />
+          {job.gpsLat != null && (
+            <PrintField full label="GPS Location" value={<><span className="sns-mono">{formatCoords(job.gpsLat, job.gpsLng)}</span>{job.gpsAccuracy != null ? ` (±${Math.round(job.gpsAccuracy)} m)` : ''} · <a href={mapsUrl(job.gpsLat, job.gpsLng)} target="_blank" rel="noreferrer" style={{ color: 'var(--blue)' }}>Open in Maps</a></>} />
+          )}
           <PrintField label="Transport Amount" value={formatKSh(job.transportAmount)} />
           {job.overdueReason && <PrintField label="Overdue — Reason for Delay" value={job.overdueReason} full />}
         </div>

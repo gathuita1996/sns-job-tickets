@@ -1,3 +1,5 @@
+export const SITE_SURVEY = 'Site Survey'
+
 export const JOB_TYPES = [
   'New Installation',
   'Network Troubleshooting',
@@ -5,7 +7,7 @@ export const JOB_TYPES = [
   'Routine Maintenance',
   'Fibre / Cable Repair',
   'Equipment Upgrade',
-  'Site Survey',
+  SITE_SURVEY,
   'Other',
 ]
 
