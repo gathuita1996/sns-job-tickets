@@ -1260,3 +1260,8 @@ begin
 end $$;
 revoke all on function public.assign_employee_numbers() from public, anon;
 grant execute on function public.assign_employee_numbers() to authenticated;
+
+-- ===== UPDATE 38 (log a service) =====
+-- Services have no purchase category, but the expenses table insists on one, so every "Log a service"
+-- was refused. A service now gets the category "Service" automatically.
+alter table public.expenses alter column category set default 'Service';

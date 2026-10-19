@@ -18,6 +18,7 @@ export const LOCATIONS = [
   'Markas', 'Kona Beach', 'Tsunami', 'Msikti Nuru', 'Diamond', 'Pepsi',
   'Kona Musa', 'Mandingo', 'Ibiza', 'Kona Chief', 'Millennium',
   'Last Moran', 'Kona Tamu', 'Ratinga',
+  'Mvindeni', 'Diani Market', 'Kalipso', 'Nyumba Tatu', 'Mkwakwani',
 ]
 
 export const CHART_COLORS = ['#1A4C93', '#F0781E', '#1DA851', '#4C5F72', '#123870', '#8494A3', '#C0392B', '#E1E7F0']
@@ -50,7 +51,15 @@ export function departmentLabel(key) {
 
 // Real product names from the marketing site -- kept as a plain list here
 // rather than importing across the two separate projects.
-export const PACKAGES = ['Swahili 10 Unlimited', 'Swahili 15 Unlimited', 'Swahili 20 Unlimited', 'Not sure yet']
+export const PACKAGES = ['Swahili 10 Unlimited', 'Swahili 15 Unlimited', 'Swahili 20 Unlimited', 'Swahili 25 Unlimited', 'Swahili 30 Unlimited', 'Not sure yet']
+
+// Monthly price in KSh, for the packages that have one on record. It is only shown next to the name in
+// the package list; what is saved on a customer is still just the package name.
+export const PACKAGE_PRICES = { 'Swahili 25 Unlimited': 3350, 'Swahili 30 Unlimited': 2850 }
+export function packageLabel(name) {
+  const price = PACKAGE_PRICES[name]
+  return price ? `${name} — ${formatKSh(price)}` : name
+}
 
 // Covers the realistic range of what an ISP actually hears from customers --
 // spans both technical issues (service down, speed, equipment) and

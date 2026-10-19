@@ -443,7 +443,7 @@ export default function App() {
       ...serviceToDbFields(formData),
       submitted_by: currentUserRef.current.id,
     })
-    if (error) { showToast('Failed to submit service request.', 'error'); return }
+    if (error) { console.error('Service request failed:', error); showToast('Failed to submit service request.', 'error'); return }
     showToast('Service request submitted for approval.')
     await refreshExpenses()
   }

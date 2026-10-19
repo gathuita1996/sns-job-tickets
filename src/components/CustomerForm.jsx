@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { X } from 'lucide-react'
 import { FormField } from './shared'
-import { LOCATIONS, PACKAGES, defaultCustomerForm, resolveOtherField, toDateInputValue } from '../lib/helpers'
+import { LOCATIONS, PACKAGES, defaultCustomerForm, packageLabel, resolveOtherField, toDateInputValue } from '../lib/helpers'
 
 export default function CustomerFormModal({ initialCustomer, onClose, onSave }) {
   const locationResolved = initialCustomer ? resolveOtherField(initialCustomer.location, LOCATIONS) : null
@@ -74,7 +74,7 @@ export default function CustomerFormModal({ initialCustomer, onClose, onSave }) 
           )}
           <FormField label="Package installed">
             <select className="sns-input" value={form.interestedPackage} onChange={(e) => update('interestedPackage', e.target.value)}>
-              {PACKAGES.map((p) => <option key={p} value={p}>{p}</option>)}
+              {PACKAGES.map((p) => <option key={p} value={p}>{packageLabel(p)}</option>)}
             </select>
           </FormField>
           <FormField

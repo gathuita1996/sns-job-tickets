@@ -176,6 +176,7 @@ export function serviceToDbFields(data) {
     description: data.description,
     amount: Number(data.amount),
     entry_type: 'service',
+    category: 'Service',     // the expenses table requires one; a service has no purchase category of its own
     provider_name: data.providerName,
     provider_contact: data.providerContact,
     purchase_date: data.serviceDate,

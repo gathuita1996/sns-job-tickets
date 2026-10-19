@@ -267,3 +267,9 @@ Removed from the package: the old `employee-number-and-service-fix-migration.sql
 
 - **Customer-list import** now reads only **Name** and **Phone**; every other column in the file is ignored, and location, package and the rest are filled in inside the system afterwards. (The earlier version also tried to fill a `status` column on customers, which the database no longer has, and failed with "Could not find the 'status' column".) Imported customers are recorded by the admin who imports them and never earn commission. The template is just Name and Phone.
 - **Import and restore cope with columns the database does not have:** the missing column is skipped and reported on screen, instead of the whole job failing. Columns needed to link records (or required for a customer) are never skipped silently.
+
+## Update 38
+
+- **Log a service works again.** The database requires every expense to have a category; a purchase picks one from a list but a service has none, so every service was refused ("Failed to submit service request"). Services now get the category **Service**, both in the app and as a database default. The database part can be applied on its own, with no deploy: run `supabase/update-38-migration.sql`.
+- **Locations added:** Mvindeni, Diani Market, Kalipso, Nyumba Tatu, Mkwakwani (Darad was already listed). They appear in the customer, job and complaint forms and in transport from/to.
+- **Packages added:** Swahili 25 Unlimited (KSh 3,350) and Swahili 30 Unlimited (KSh 2,850), in speed order before "Not sure yet". The price is shown next to the name in the package list; only the package name is saved on the customer.
