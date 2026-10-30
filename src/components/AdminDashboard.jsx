@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, AlertTriangle, Award, Check, CheckCircle2, Clipboard, Copy, Eye, EyeOff, Mail, MessageCircle, Pencil, Plus, Printer, Receipt, Trash2, UserPlus, Users, Wallet, X } from 'lucide-react'
+import { AlertCircle, AlertTriangle, Award, Check, CheckCircle2, Clipboard, Copy, Eye, EyeOff, Mail, MessageCircle, Pencil, Plus, Printer, Receipt, Trash2, UserPlus, Users, Wallet, X, Plane, ArrowLeft, MapPin } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import Header from './Header'
 import JobFormModal from './JobForm'
@@ -20,7 +20,7 @@ import { DatabaseBackup } from 'lucide-react'
 import { daysSince } from '../lib/dataCore'
 import { awayNowIds } from '../lib/leave'
 import LeaveAdmin from './LeaveAdmin'
-import RetrievedRouters from './RetrievedRouters'
+import ExpenseSummary from './ExpenseSummary'
 import StaffDetail from './StaffDetail'
 import CustomersTab from './CustomersTab'
 import ServiceFormModal from './ServiceForm'
@@ -30,7 +30,9 @@ import { JOB_TYPES, PRIORITY_OPTIONS, CHART_COLORS, COMMISSION_DEPARTMENTS, depa
 export default function AdminDashboard({ extras, currentUser, users, jobs, customers, expenses, stockItems, stockIn, stockOut, places, visits, onAddPlace, onRecordVisit, onDeleteVisit, onSetPlaceActive, onDataChanged, onLogout, onAddJob, onUpdateJob, onDeleteJob, onAssignJob, onPromote, onUpdateDepartment, onUpdateProfile, accessCode, onUpdateAccessCode, commissionRate, onUpdateCommissionRate, onClearCommission, onUpdateCustomer, onAssignEmployeeNumbers, onDeleteCustomer, onMarkTransportPaid, onAddExpense, onAddService, onApproveExpense, onRejectExpense, onAttachReceipt, onMarkExpensePaid, onDeleteExpense, onViewReceipt, onToggleTeamLead, onSetDirector, onAddStockItem, onUpdateStockItem, onDeleteStockItem, onAddStockIn, onAddStockInBatch, onAddStockOut }) {
   const backupDays = daysSince(extras && extras.lastBackup && extras.lastBackup.at)
   const [viewingStaffId, setViewingStaffId] = useState(null)
-  const [profileRequest] = useState(null)
+  const [profileRequest, setProfileRequest] = useState(null)
+  const [staffView, setStaffView] = useState('list')     // 'list' | 'leave'   (Leave lives on the Staff page)
+  const [jobsView, setJobsView] = useState('jobs')       // 'jobs' | 'visits'  (Field visits live on the All Jobs page)
   const [customersFocus, setCustomersFocus] = useState(null)
   const leaveRequests = (extras && extras.leave && extras.leave.requests) || []
   const pendingLeave = leaveRequests.filter((r) => r.status === 'pending').length
@@ -172,10 +174,13 @@ export default function AdminDashboard({ extras, currentUser, users, jobs, custo
     }
   }, [jobs, periodJobs, members, overdueJobs])
 
+  const dataNode = (
+    <DataTab currentUser={currentUser} users={users} customers={customers} onDataChanged={onDataChanged} lastBackup={extras && extras.lastBackup} onBackupRecorded={extras && extras.onBackupRecorded} />
+  )
   const userMapForHeader = userMap
   const headerNode = (
     <Header
-        currentUser={currentUser} onLogout={onLogout} onUpdateProfile={onUpdateProfile} subtitle="Ticketing System" profileExtras={extras && extras.header} profileRequest={profileRequest}
+        currentUser={currentUser} onLogout={onLogout} onUpdateProfile={onUpdateProfile} subtitle="Ticketing System" profileExtras={{ ...(extras && extras.header), data: dataNode }} profileRequest={profileRequest}
         settings={(
           <div className="space-y-4">
             <AccessCodeSettings accessCode={accessCode} onUpdate={onUpdateAccessCode} />
@@ -210,6 +215,7 @@ export default function AdminDashboard({ extras, currentUser, users, jobs, custo
             routers={extras && extras.routers && extras.routers.rows} leaveRequests={leaveRequests} leaveAdjustments={(extras && extras.leave && extras.leave.adjustments) || []}
             leaveRow={((extras && extras.leave && extras.leave.overview) || []).find((o) => o.member_id === viewingStaff.id)} policy={(extras && extras.leave && extras.leave.policy) || {}}
             userMap={userMap} commissionRate={commissionRate} onBack={() => setViewingStaffId(null)} onEdit={setEditingMember}
+            onPromote={onPromote} onToggleTeamLead={onToggleTeamLead} onSetDirector={onSetDirector} onUpdateDepartment={onUpdateDepartment}
             onOpenCustomers={(id) => { setCustomersFocus(id); setViewingStaffId(null); setTab('customers') }} />
         </main>
         {editMemberModal}
@@ -233,8 +239,8 @@ export default function AdminDashboard({ extras, currentUser, users, jobs, custo
           </button>
         )}
 
-        {(backupDays === null || backupDays > 7) && tab !== 'data' && (
-          <button className="sns-alert-banner no-print" style={{ marginBottom: '1.25rem', width: '100%', textAlign: 'left', cursor: 'pointer' }} onClick={() => setTab('data')}>
+        {(backupDays === null || backupDays > 7) && (
+          <button className="sns-alert-banner no-print" style={{ marginBottom: '1.25rem', width: '100%', textAlign: 'left', cursor: 'pointer' }} onClick={() => setProfileRequest({ tab: 'data', n: Date.now() })}>
             <DatabaseBackup size={17} style={{ flexShrink: 0 }} />
             <span>{backupDays === null ? 'No backup of your data has been made yet' : `The last backup was ${backupDays} days ago${userMap[extras.lastBackup.by] ? ` (by ${userMap[extras.lastBackup.by].fullName})` : ''}`} — click to back up now.</span>
           </button>
@@ -242,19 +248,15 @@ export default function AdminDashboard({ extras, currentUser, users, jobs, custo
 
         <div className="no-print flex gap-1 sns-border-b" style={{ marginBottom: '1.5rem', flexWrap: 'wrap' }}>
           <button className={`sns-tab ${tab === 'overview' ? 'active' : ''}`} onClick={() => setTab('overview')}>Overview</button>
-          <button className={`sns-tab ${tab === 'jobs' ? 'active' : ''}`} onClick={() => setTab('jobs')}>All Jobs</button>
-          <button className={`sns-tab ${tab === 'team' ? 'active' : ''}`} onClick={() => setTab('team')}>Team</button>
-          <button className={`sns-tab ${tab === 'leave' ? 'active' : ''}`} onClick={() => setTab('leave')}>Leave{pendingLeave > 0 && <span className="sns-badge sns-badge-overdue" style={{ marginLeft: '0.4rem' }}>{pendingLeave}</span>}</button>
+          <button className={`sns-tab ${tab === 'jobs' ? 'active' : ''}`} onClick={() => { setTab('jobs'); setJobsView('jobs') }}>All Jobs</button>
+          <button className={`sns-tab ${tab === 'team' ? 'active' : ''}`} onClick={() => { setTab('team'); setStaffView('list') }}>Staff{pendingLeave > 0 && <span className="sns-badge sns-badge-overdue" style={{ marginLeft: '0.4rem' }}>{pendingLeave}</span>}</button>
           <button className={`sns-tab ${tab === 'commissions' ? 'active' : ''}`} onClick={() => setTab('commissions')}>Commissions</button>
           <button className={`sns-tab ${tab === 'transport' ? 'active' : ''}`} onClick={() => setTab('transport')}>Transport</button>
           <button className={`sns-tab ${tab === 'expenses' ? 'active' : ''}`} onClick={() => setTab('expenses')}>
             Expense/Purchases{(expenses || []).filter((e) => e.status === 'Requested').length > 0 && <span className="sns-badge sns-badge-overdue" style={{ marginLeft: '0.4rem' }}>{(expenses || []).filter((e) => e.status === 'Requested').length}</span>}
           </button>
           <button className={`sns-tab ${tab === 'customers' ? 'active' : ''}`} onClick={() => setTab('customers')}>Customers</button>
-          <button className={`sns-tab ${tab === 'visits' ? 'active' : ''}`} onClick={() => setTab('visits')}>Field Visits</button>
           <button className={`sns-tab ${tab === 'stock' ? 'active' : ''}`} onClick={() => setTab('stock')}>Stock</button>
-          <button className={`sns-tab ${tab === 'routers' ? 'active' : ''}`} onClick={() => setTab('routers')}>Retrieved Routers</button>
-          <button className={`sns-tab ${tab === 'data' ? 'active' : ''}`} onClick={() => setTab('data')}>Data & Backup</button>
         </div>
 
         {tab === 'overview' && (
@@ -289,7 +291,17 @@ export default function AdminDashboard({ extras, currentUser, users, jobs, custo
           </div>
         )}
 
-        {tab === 'jobs' && (
+        {tab === 'jobs' && jobsView === 'visits' && (
+          <div>
+            <div className="no-print flex items-center gap-3" style={{ marginBottom: '1rem' }}>
+              <button onClick={() => setJobsView('jobs')} className="sns-btn-secondary" style={{ padding: '0.5rem' }} title="Back to all jobs" aria-label="Back to all jobs"><ArrowLeft size={16} /></button>
+              <h2 className="sns-display" style={{ fontSize: '1.1rem', fontWeight: 700 }}>Field visits</h2>
+            </div>
+          <FieldVisits places={places || []} visits={visits || []} customers={customers} nameOf={(id) => (users.find((u) => u.id === id) || {}).fullName || ''} currentUser={currentUser} isAdmin onAddPlace={onAddPlace} onRecordVisit={onRecordVisit} onDeleteVisit={onDeleteVisit} onSetPlaceActive={onSetPlaceActive} />
+          </div>
+        )}
+
+        {tab === 'jobs' && jobsView === 'jobs' && (
           <div>
             <div className="sns-card no-print" style={{ marginBottom: '1rem', overflow: 'hidden' }}>
               {jobsPeriodRows.rows.map((row, i) => (
@@ -308,7 +320,7 @@ export default function AdminDashboard({ extras, currentUser, users, jobs, custo
                 </button>
               ))}
             </div>
-            <div className="no-print flex flex-col sm:flex-row flex-wrap gap-2" style={{ marginBottom: '1rem' }}>
+            <div className="no-print jobs-toolbar">
               <SearchInput value={search} onChange={setSearch} placeholder="Search jobs…" />
               <select value={memberFilter} onChange={(e) => setMemberFilter(e.target.value)} className="sns-input" style={{ width: 'auto' }}>
                 <option value="all">All members</option>
@@ -323,6 +335,7 @@ export default function AdminDashboard({ extras, currentUser, users, jobs, custo
                 {PRIORITY_OPTIONS.map((p) => <option key={p} value={p}>{p}</option>)}
               </select>
               <StatusFilterSelect value={statusFilter} onChange={setStatusFilter} />
+              <button onClick={() => setJobsView('visits')} className="sns-btn-secondary" title="Open the field visits"><MapPin size={15} /> Field visits</button>
               <button onClick={() => setShowFileForm(true)} className="sns-btn-secondary">
                 <Plus size={15} /> File a job
               </button>
@@ -356,8 +369,21 @@ export default function AdminDashboard({ extras, currentUser, users, jobs, custo
 
         {tab === 'team' && (
           <div>
-            <EmployeeNumberBar users={users} onAssign={onAssignEmployeeNumbers} />
-            <TeamList users={users} jobs={jobs} onPromote={onPromote} onUpdateDepartment={onUpdateDepartment} onEditMember={setEditingMember} onToggleTeamLead={onToggleTeamLead} onSetDirector={onSetDirector} onViewMember={(m) => setViewingStaffId(m.id)} awayIds={awayIds} />
+            <EmployeeNumberBar users={users} onAssign={onAssignEmployeeNumbers} after={(
+              <button type="button" onClick={() => setStaffView((v) => (v === 'leave' ? 'list' : 'leave'))} aria-pressed={staffView === 'leave'} className={staffView === 'leave' ? 'sns-btn-primary' : 'sns-btn-secondary'} style={{ fontSize: '0.82rem' }}>
+                <Plane size={15} /> Leave{pendingLeave > 0 && <span className="sns-badge sns-badge-overdue" style={{ marginLeft: '0.3rem' }}>{pendingLeave}</span>}
+              </button>
+            )} />
+            {staffView === 'leave' && extras && extras.leave ? (
+              <div>
+                <button type="button" onClick={() => setStaffView('list')} className="sns-btn-secondary" style={{ marginBottom: '1rem' }}><ArrowLeft size={15} /> All staff</button>
+                <LeaveAdmin users={users} requests={leaveRequests} adjustments={extras.leave.adjustments} overview={extras.leave.overview} holidays={extras.leave.holidays} policy={extras.leave.policy} currentUser={currentUser}
+                  onDecide={extras.leave.onDecide} onCancelRequest={extras.leave.onCancelRequest} onRecord={extras.leave.onRecord} onPreview={extras.leave.onPreview} onAdjust={extras.leave.onAdjust}
+                  onSavePolicy={extras.leave.onSavePolicy} onAddHoliday={extras.leave.onAddHoliday} onRemoveHoliday={extras.leave.onRemoveHoliday} onAddKenyanHolidays={extras.leave.onAddKenyanHolidays} />
+              </div>
+            ) : (
+              <TeamList users={users} jobs={jobs} onViewMember={(m) => setViewingStaffId(m.id)} awayIds={awayIds} />
+            )}
           </div>
         )}
 
@@ -434,7 +460,7 @@ export default function AdminDashboard({ extras, currentUser, users, jobs, custo
         )}
 
         {tab === 'transport' && (
-          <TransportTab users={users} jobs={jobs} userMap={userMap} onMarkPaid={onMarkTransportPaid} />
+          <TransportTab users={users} jobs={jobs} userMap={userMap} onMarkPaid={onMarkTransportPaid} currentUser={currentUser} />
         )}
 
         {tab === 'expenses' && (
@@ -447,6 +473,7 @@ export default function AdminDashboard({ extras, currentUser, users, jobs, custo
                 <button onClick={() => setShowEntryChoice(true)} className="sns-btn-primary"><Receipt size={16} /> Expense / Purchase</button>
               </div>
             </div>
+            <ExpenseSummary expenses={expenses || []} userMap={userMap} />
             <ExpensesList
               expenses={expenses || []}
               userMap={userMap}
@@ -465,22 +492,7 @@ export default function AdminDashboard({ extras, currentUser, users, jobs, custo
           <CustomersTab key={customersFocus || 'all'} customers={customers} users={users} userMap={userMap} initialMemberId={customersFocus} onView={setViewingCustomer} onEdit={setEditingCustomer} onPrint={setPrintingCustomer} onDelete={setConfirmDeleteCustomer} onAssign={extras && extras.onAssignCustomers} onOpenStaff={(id) => setViewingStaffId(id)} />
         )}
 
-        {tab === 'leave' && extras && extras.leave && (
-          <LeaveAdmin users={users} requests={leaveRequests} adjustments={extras.leave.adjustments} overview={extras.leave.overview} holidays={extras.leave.holidays} policy={extras.leave.policy} currentUser={currentUser}
-            onDecide={extras.leave.onDecide} onCancelRequest={extras.leave.onCancelRequest} onRecord={extras.leave.onRecord} onPreview={extras.leave.onPreview} onAdjust={extras.leave.onAdjust}
-            onSavePolicy={extras.leave.onSavePolicy} onAddHoliday={extras.leave.onAddHoliday} onRemoveHoliday={extras.leave.onRemoveHoliday} onAddKenyanHolidays={extras.leave.onAddKenyanHolidays} />
-        )}
 
-        {tab === 'routers' && extras && extras.routers && (
-          <RetrievedRouters rows={extras.routers.rows} customers={customers} members={users.filter((u) => u.role === 'admin' || u.department === 'technical')} userMap={userMap} isAdmin currentUser={currentUser}
-            onAdd={extras.routers.onAdd} onUpdate={extras.routers.onUpdate} onSetStatus={extras.routers.onSetStatus} onDelete={extras.routers.onDelete} />
-        )}
-
-        {tab === 'visits' && (
-          <FieldVisits places={places || []} visits={visits || []} customers={customers} nameOf={(id) => (users.find((u) => u.id === id) || {}).fullName || ''} currentUser={currentUser} isAdmin onAddPlace={onAddPlace} onRecordVisit={onRecordVisit} onDeleteVisit={onDeleteVisit} onSetPlaceActive={onSetPlaceActive} />
-        )}
-
-        {tab === 'data' && <DataTab currentUser={currentUser} users={users} customers={customers} onDataChanged={onDataChanged} lastBackup={extras && extras.lastBackup} onBackupRecorded={extras && extras.onBackupRecorded} />}
 
         {tab === 'stock' && (
           <StockTab
@@ -494,6 +506,7 @@ export default function AdminDashboard({ extras, currentUser, users, jobs, custo
             onAddStockIn={onAddStockIn}
             onAddStockInBatch={onAddStockInBatch}
             onAddStockOut={onAddStockOut}
+            routers={extras && extras.routers ? { ...extras.routers, members: users.filter((u) => u.role === 'admin' || u.department === 'technical'), userMap, currentUser } : undefined}
           />
         )}
 

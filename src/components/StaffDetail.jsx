@@ -1,9 +1,9 @@
-import { useMemo } from 'react'
-import { ArrowLeft, Award, Clipboard, CreditCard, Mail, Pencil, Phone, Plane, Star, Users, Wallet } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { ArrowLeft, Award, Clipboard, CreditCard, Mail, Pencil, Phone, Plane, Shield, Star, Users, Wallet } from 'lucide-react'
 import Avatar from './Avatar'
-import { EmptyState, StatCard, StatusBadge } from './shared'
+import { ConfirmDialog, EmptyState, StatCard, StatusBadge } from './shared'
 import { LEAVE_STATUS_BADGE, LEAVE_STATUS_LABEL, dayCount, formatLeaveRange, leaveYearLabel } from '../lib/leave'
-import { departmentLabel, formatDate, formatKSh, isInPeriod, isOverdue } from '../lib/helpers'
+import { DEPARTMENTS, departmentLabel, formatDate, formatKSh, isInPeriod, isOverdue } from '../lib/helpers'
 
 const Row = ({ label, children }) => (
   <div className="flex items-start justify-between gap-4" style={{ fontSize: '0.86rem', padding: '0.45rem 0' }}>
@@ -21,7 +21,9 @@ const Section = ({ title, action, children }) => (
 )
 
 // One page with everything about one staff member, for the admins.
-export default function StaffDetail({ member, bank, jobs, customers, expenses, visits, routers, leaveRequests, leaveAdjustments, leaveRow, policy, userMap, commissionRate, onBack, onEdit, onOpenCustomers }) {
+export default function StaffDetail({ member, bank, jobs, customers, expenses, visits, routers, leaveRequests, leaveAdjustments, leaveRow, policy, userMap, commissionRate, onBack, onEdit, onOpenCustomers, onPromote, onToggleTeamLead, onSetDirector, onUpdateDepartment }) {
+  const [confirm, setConfirm] = useState(null)        // null | 'promote' | 'director'
+  const currentDirector = Object.values(userMap || {}).find((u) => u.isDirector)
   const myJobs = useMemo(() => jobs.filter((j) => j.memberId === member.id || (j.coTechnicians || []).includes(member.id)).sort((a, b) => new Date(b.visitDate) - new Date(a.visitDate)), [jobs, member.id])
   const myCustomers = useMemo(() => customers.filter((c) => c.recordedBy === member.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)), [customers, member.id])
   const thisMonth = myCustomers.filter((c) => isInPeriod(c.createdAt, 'month'))
@@ -37,7 +39,7 @@ export default function StaffDetail({ member, bank, jobs, customers, expenses, v
   return (
     <div>
       <div className="flex items-center justify-between" style={{ marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-        <button type="button" onClick={onBack} className="sns-btn-secondary"><ArrowLeft size={16} /> Back to team</button>
+        <button type="button" onClick={onBack} className="sns-btn-secondary"><ArrowLeft size={16} /> Back to staff</button>
         <button type="button" onClick={() => onEdit(member)} className="sns-btn-secondary"><Pencil size={15} /> Edit details</button>
       </div>
 
@@ -60,6 +62,32 @@ export default function StaffDetail({ member, bank, jobs, customers, expenses, v
           <p className="sns-text-faint" style={{ fontSize: '0.78rem', marginTop: '0.3rem' }}>Username {member.username} · joined {formatDate(member.createdAt)}</p>
         </div>
       </div>
+
+      <Section title="Role & access">
+        <div className="flex items-center gap-3" style={{ flexWrap: 'wrap' }}>
+          {onUpdateDepartment && (
+            <label className="flex items-center gap-2" style={{ fontSize: '0.84rem' }}>
+              <span className="sns-text-faint">Department</span>
+              <select className="sns-input" style={{ width: 'auto', fontSize: '0.82rem' }} value={member.department} onChange={(e) => onUpdateDepartment(member, e.target.value)} aria-label="Department">
+                {DEPARTMENTS.map((d) => <option key={d.key} value={d.key}>{d.label}</option>)}
+              </select>
+            </label>
+          )}
+          {member.role !== 'admin' && onToggleTeamLead && (
+            <button type="button" className="sns-btn-secondary" style={{ fontSize: '0.8rem' }} onClick={() => onToggleTeamLead(member)} title="A Team Lead can submit purchases and expenses"><Star size={14} /> {member.isTeamLead ? 'Remove Team Lead' : 'Make Team Lead'}</button>
+          )}
+          {member.role !== 'admin' && onPromote && (
+            <button type="button" className="sns-btn-secondary" style={{ fontSize: '0.8rem' }} onClick={() => setConfirm('promote')}><Shield size={14} /> Promote to admin</button>
+          )}
+          {member.role === 'admin' && !member.isDirector && onSetDirector && (
+            <button type="button" className="sns-btn-secondary" style={{ fontSize: '0.8rem' }} onClick={() => setConfirm('director')}><Award size={14} /> Make Director</button>
+          )}
+          {member.isDirector && <span className="sns-text-soft" style={{ fontSize: '0.82rem' }}>This person is the Director. Making someone else Director replaces them.</span>}
+        </div>
+        <p className="sns-text-faint" style={{ fontSize: '0.74rem', marginTop: '0.6rem' }}>Team Leads can submit purchases. Admins can see and manage everything. Only the Director approves purchases and leave.</p>
+      </Section>
+      {confirm === 'promote' && <ConfirmDialog title="Promote to admin" message={`Make ${member.fullName} an admin? Admins can see every job, customer, expense and staff record.`} onCancel={() => setConfirm(null)} onConfirm={async () => { await onPromote(member); setConfirm(null) }} />}
+      {confirm === 'director' && <ConfirmDialog title="Make Director" message={`Make ${member.fullName} the Director? There is only one Director${currentDirector ? `, so ${currentDirector.fullName} stops being Director` : ''}. Only the Director approves purchases and leave.`} onCancel={() => setConfirm(null)} onConfirm={async () => { await onSetDirector(member); setConfirm(null) }} />}
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3" style={{ marginBottom: '1rem' }}>
         <StatCard label="Jobs worked" value={myJobs.length} icon={Clipboard} />

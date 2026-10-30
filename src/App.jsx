@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from './lib/supabaseClient'
-import { mapProfile, mapJob, jobToDbFields, mapCustomer, customerToDbFields, mapExpense, expenseToDbFields, serviceToDbFields, mapStockItem, stockItemToDbFields, mapStockIn, stockInToDbFields, mapStockOut, stockOutToDbFields , mapPlace, placeToDbFields, mapVisit, visitToDbFields, mapBank, bankToDbFields, mapRetrievedRouter, retrievedRouterToDbFields, mapLeaveRequest, mapLeaveAdjustment, mapHoliday } from './lib/mappers'
+import { mapProfile, mapJob, jobToDbFields, mapCustomer, customerToDbFields, mapExpense, expenseToDbFields, serviceToDbFields, mapStockItem, stockItemToDbFields, mapStockIn, stockInToDbFields, mapStockOut, stockOutToDbFields , mapPlace, placeToDbFields, mapVisit, visitToDbFields, mapBank, bankToDbFields, mapRetrievedRouter, retrievedRouterToDbFields, mapLeaveRequest, mapLeaveAdjustment, mapHoliday, mapDeviceItem } from './lib/mappers'
 import { fetchAll } from './lib/dataIO'
 import { processAvatar } from './lib/image'
 import { currentLeaveYear } from './lib/leave'
@@ -26,6 +26,7 @@ export default function App() {
   const [leaveSummary, setLeaveSummary] = useState(null)
   const [leavePolicy, setLeavePolicy] = useState({ annual_days: 21, max_per_month: 3, year_start_month: 8, count_saturdays: true })
   const [holidays, setHolidays] = useState([])
+  const [deviceItems, setDeviceItems] = useState([])
   const [expenses, setExpenses] = useState([])
   const [stockItems, setStockItems] = useState([])
   const [stockIn, setStockIn] = useState([])
@@ -77,7 +78,8 @@ export default function App() {
       if (profile.role !== 'admin') await refreshMemberNames()
     }
     if (profile.role === 'admin' || profile.department === 'technical') {
-      await refreshRetrievedRouters()
+      await refreshRetrievedRouters(false)
+      await refreshDeviceItems()
       if (profile.role !== 'admin') await refreshMemberNames()
     }
     await refreshLeave(profile)
@@ -566,9 +568,16 @@ export default function App() {
   }
 
   // ---- update 40: retrieved routers, bank details, leave, pictures, backups, customer ownership ------------------
-  async function refreshRetrievedRouters() {
+  // A retrieved router also changes the stock list (the database adds or removes the stock rows), so an admin's stock refreshes with it.
+  async function refreshRetrievedRouters(withStock = true) {
     const { data, error } = await supabase.from('retrieved_routers').select('*')
     if (!error) setRetrievedRouters((data || []).map(mapRetrievedRouter))
+    if (withStock && currentUserRef.current && currentUserRef.current.role === 'admin') { await refreshStockIn(); await refreshStockOut() }
+  }
+
+  async function refreshDeviceItems() {
+    const { data, error } = await supabase.rpc('device_items')
+    if (!error) setDeviceItems((data || []).map(mapDeviceItem))
   }
 
   async function refreshBank() {
@@ -728,7 +737,7 @@ export default function App() {
     const me = currentUserRef.current
     const { error } = await supabase.from('retrieved_routers').insert({ ...retrievedRouterToDbFields(form), retrieved_by: form.retrievedBy || me.id, recorded_by: me.id })
     if (error) { showToast('Failed to save the record.', 'error'); return false }
-    showToast('Retrieved router recorded.')
+    showToast(form.stockItemId ? 'Retrieved router recorded and added to the stock list.' : 'Retrieved router recorded.')
     await refreshRetrievedRouters()
     return true
   }
@@ -932,7 +941,7 @@ export default function App() {
       onPreview: handlePreviewLeave, onDecide: handleDecideLeave, onCancelRequest: handleCancelLeave, onRecord: handleRecordLeave, onAdjust: handleAdjustLeave,
       onSavePolicy: handleSaveLeavePolicy, onAddHoliday: handleAddHoliday, onRemoveHoliday: handleRemoveHoliday, onAddKenyanHolidays: handleAddKenyanHolidays,
     },
-    routers: { rows: retrievedRouters, onAdd: handleAddRouter, onUpdate: handleUpdateRouter, onSetStatus: handleSetRouterStatus, onDelete: handleDeleteRouter },
+    routers: { rows: retrievedRouters, deviceItems, onAdd: handleAddRouter, onUpdate: handleUpdateRouter, onSetStatus: handleSetRouterStatus, onDelete: handleDeleteRouter },
   }
 
   return (<>

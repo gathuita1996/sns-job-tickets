@@ -25,10 +25,11 @@ const data = {
   complaints: [{ id: 1, complainant_name: 'Zuri', location: 'Diani', contact: '0700', complaint_type: 'Slow internet', details: 'Drops at night', is_recurring: true, status: 'New', raised_by: S, resolved_by: null, created_at: ts }],
   stock_in: [
     { id: 1, item_id: 1, purchase_date: '2026-09-01', quantity: 5, unit_cost: 9500, supplier: null, invoice_no: null, received_by: 'Tim', recorded_by: A, created_at: ts },
-    { id: 2, item_id: 99, purchase_date: '2026-09-01', quantity: 1, unit_cost: 10, supplier: null, invoice_no: null, received_by: null, recorded_by: A, created_at: ts }],
+    { id: 2, item_id: 99, purchase_date: '2026-09-01', quantity: 1, unit_cost: 10, supplier: null, invoice_no: null, received_by: null, recorded_by: A, created_at: ts },
+    { id: 3, item_id: 2, purchase_date: '2026-10-10', quantity: 1, unit_cost: 0, supplier: 'Retrieved from Amina Hassan', invoice_no: 'RETRIEVED', received_by: 'Tim Tech', recorded_by: T, created_at: ts }],
   stock_out: [{ id: 1, item_id: 2, issue_date: '2026-09-05', quantity: 1, issued_to: 'Tim', purpose: 'Install', reference_no: null, issued_by: null, recorded_by: A, created_at: ts, install_type: 'replacement', customer_id: 1, device_serial: 'ZTE123' }],
   visits: [{ id: 1, place_id: 1, visit_date: '2026-10-01', purpose: 'marketing', outcome: 'follow_up', leads: 2, follow_up_date: '2026-10-08', notes: null, visited_by: S, created_at: ts }],
-  retrieved_routers: [{ id: 1, retrieved_date: '2026-10-10', customer_id: 1, customer_name: 'Amina Hassan', customer_contact: '0712345678', location: 'Diani', router_model: 'ONU', serial_number: 'ZTE777', reason: 'failed_to_pay', reason_notes: '3 months behind', amount_owed: 4500, condition: 'working', accessories: 'Power adapter', status: 'in_store', status_note: null, status_updated_at: null, status_updated_by: null, retrieved_by: T, recorded_by: T, created_at: ts }],
+  retrieved_routers: [{ id: 1, retrieved_date: '2026-10-10', customer_id: 1, customer_name: 'Amina Hassan', customer_contact: '0712345678', location: 'Diani', router_model: 'ONU', stock_item_id: 2, stock_in_id: 3, writeoff_stock_out_id: null, serial_number: 'ZTE777', reason: 'failed_to_pay', reason_notes: '3 months behind', amount_owed: 4500, condition: 'working', accessories: 'Power adapter', status: 'in_store', status_note: null, status_updated_at: null, status_updated_by: null, retrieved_by: T, recorded_by: T, created_at: ts }],
   non_working_days: [{ id: 1, day: '2026-10-20', name: 'Mashujaa Day', created_by: A, created_at: ts }],
   leave_requests: [{ id: 1, member_id: S, start_date: '2026-11-03', end_date: '2026-11-05', days: 3, leave_year: 2026, reason: 'Family', status: 'approved', requested_at: ts, decided_by: A, decided_at: ts, decision_note: null, cancelled_by: null, cancelled_at: null, created_by: S },
     { id: 2, member_id: T, start_date: '2026-11-10', end_date: '2026-11-18', days: 8, leave_year: 2026, reason: null, status: 'approved', requested_at: ts, decided_by: A, decided_at: ts, decision_note: null, cancelled_by: null, cancelled_at: null, created_by: T }],
@@ -116,7 +117,7 @@ await ok('jobs are re-linked to the NEW customer record numbers, and keep their 
 await ok('the co-technician list is mapped person by person, unknown people dropped', () => { assert.deepEqual(R.jobs[0].co_technicians, []); assert.equal(R.jobs[1].co_technicians, null) })
 await ok('receipt links are cleared (the photos are not in the file)', () => { assert.equal(R.expenses[0].receipt_path, null); assert.equal(R.expenses[0].receipt_uploaded_at, null); assert.equal(R.expenses[0].reviewed_by, 'N-ADMIN') })
 await ok('stock entries point at the new item numbers; an entry whose item is missing is skipped and reported', () => {
-  assert.equal(R.stock_in.length, 1); assert.equal(R.stock_in[0].item_id, 2001)
+  assert.equal(R.stock_in.length, 2); assert.equal(R.stock_in[0].item_id, 2001); assert.equal(R.stock_in[1].item_id, 2002)    // the second is the router that was retrieved
   assert.equal(report.tables.stock_in.skipped, 1); assert.ok(Object.keys(report.tables.stock_in.reasons)[0].includes('stock items'))
 })
 await ok('device log keeps its customer and item links; visits keep their place', () => {
@@ -215,6 +216,7 @@ await ok('the Director restores leave with staff matched to the new accounts', a
   assert.equal(r.tables.leave_requests.inserted, 2); assert.equal(r.tables.leave_adjustments.inserted, 1); assert.equal(r.tables.non_working_days.inserted, 1)
   assert.deepEqual(c.rows.leave_requests.map((x) => x.member_id).sort(), ['N-S', 'N-T']); assert.equal(c.rows.leave_adjustments[0].member_id, 'N-S')
   assert.equal(c.rows.retrieved_routers[0].recorded_by, 'N-T'); assert.equal(c.rows.retrieved_routers[0].customer_id, c.rows.customers[0].id)
+  assert.equal(c.rows.retrieved_routers[0].stock_item_id, c.rows.stock_items[1].id); assert.equal(c.rows.retrieved_routers[0].stock_in_id, c.rows.stock_in[1].id)   // linked to its restored stock rows, so no second Stock In is made
 })
 await ok('a leave record the rules refuse is skipped and reported, and the rest of the restore carries on', async () => {
   const c = fakeClient(); const inner = c.from

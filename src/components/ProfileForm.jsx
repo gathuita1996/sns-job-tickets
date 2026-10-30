@@ -105,7 +105,7 @@ function ProfileFields({ profile, bank, canEditNumber, isSelf, onClose, onSave, 
         <input className="sns-input" value={form.title} onChange={(e) => update('title', e.target.value)} placeholder="Director" />
       </FormField>
       {canEditNumber ? (
-        <FormField label="Employee number" error={errors.employeeNumber} hint="Unique for each person, in the form SNS001. Use the Team tab to give numbers to everyone at once.">
+        <FormField label="Employee number" error={errors.employeeNumber} hint="Unique for each person, in the form SNS001. Use the Staff tab to give numbers to everyone at once.">
           <input className="sns-input sns-mono" value={form.employeeNumber} onChange={(e) => update('employeeNumber', e.target.value)} placeholder="e.g. SNS005" />
         </FormField>
       ) : (
@@ -158,15 +158,16 @@ function ProfileFields({ profile, bank, canEditNumber, isSelf, onClose, onSave, 
 }
 
 // "My profile": picture, details, bank details, and (for yourself) Leave. An admin also gets Settings.
-export default function ProfileFormModal({ profile, isSelf, canEditNumber, settings, leave, leaveBadge, initialTab, bank, onClose, onSave, onUploadAvatar, onRemoveAvatar }) {
+export default function ProfileFormModal({ profile, isSelf, canEditNumber, settings, leave, leaveBadge, data, initialTab, bank, onClose, onSave, onUploadAvatar, onRemoveAvatar }) {
   const tabs = [{ key: 'profile', label: isSelf ? 'My profile' : 'Profile' }]
   if (leave) tabs.push({ key: 'leave', label: 'Leave', badge: leaveBadge })
+  if (data) tabs.push({ key: 'data', label: 'Data & Backup' })
   if (settings) tabs.push({ key: 'settings', label: 'Settings' })
   const [tab, setTab] = useState(tabs.some((t) => t.key === initialTab) ? initialTab : 'profile')
   const title = settings ? 'Profile & settings' : isSelf ? 'My profile' : `Edit ${profile.fullName}`
   return (
     <div className="no-print flex items-center justify-center p-4" style={{ position: 'fixed', inset: 0, background: 'rgba(27,36,48,0.55)', zIndex: 50 }}>
-      <div className="sns-card sns-fade-in" role="dialog" aria-label={title} style={{ width: '100%', maxWidth: tabs.length > 1 ? '40rem' : '30rem', maxHeight: '90vh', overflowY: 'auto' }}>
+      <div className="sns-card sns-fade-in" role="dialog" aria-label={title} style={{ width: '100%', maxWidth: tab === 'data' ? '62rem' : tabs.length > 1 ? '40rem' : '30rem', maxHeight: '90vh', overflowY: 'auto' }}>
         <div className="flex items-center justify-between sns-border-b sns-bg-card" style={{ padding: '1.1rem 1.4rem', position: 'sticky', top: 0, zIndex: 1, borderRadius: '14px 14px 0 0' }}>
           <h3 className="sns-display" style={{ fontWeight: 700 }}>{title}</h3>
           <button onClick={onClose} className="sns-icon-btn" title="Close" aria-label="Close"><X size={18} /></button>
@@ -182,6 +183,7 @@ export default function ProfileFormModal({ profile, isSelf, canEditNumber, setti
         )}
         {tab === 'settings' && settings ? <div style={{ padding: '1.4rem' }}>{settings}</div>
           : tab === 'leave' && leave ? <div style={{ padding: '1.4rem' }}>{leave}</div>
+          : tab === 'data' && data ? <div style={{ padding: '1.4rem' }}>{data}</div>
           : <ProfileFields profile={profile} bank={bank} canEditNumber={canEditNumber} isSelf={isSelf} onClose={onClose} onSave={onSave} onUploadAvatar={onUploadAvatar} onRemoveAvatar={onRemoveAvatar} />}
       </div>
     </div>

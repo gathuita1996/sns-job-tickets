@@ -56,7 +56,7 @@ export default function Header({ currentUser, onLogout, onUpdateProfile, subtitl
       </div>
       {openTab && (
         <ProfileFormModal
-          profile={currentUser} isSelf canEditNumber={false} settings={settings} leave={profileExtras.leave} leaveBadge={profileExtras.leaveBadge}
+          profile={currentUser} isSelf canEditNumber={false} settings={settings} leave={profileExtras.leave} leaveBadge={profileExtras.leaveBadge} data={profileExtras.data}
           initialTab={openTab} bank={profileExtras.bank}
           onUploadAvatar={profileExtras.onUploadAvatar} onRemoveAvatar={profileExtras.onRemoveAvatar}
           onClose={() => setOpenTab(null)}

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import RetrievedRouters from './RetrievedRouters'
 import { ArrowDownCircle, ArrowUpCircle, Cpu, Pencil, Plus, Trash2, X } from 'lucide-react'
 import PurchaseEntry from './PurchaseEntry'
 import DeviceLog from './DeviceLog'
@@ -300,7 +301,7 @@ function StockOutFormModal({ items, customers, onClose, onSave }) {
 // Admin (and, since a Director is always an admin, Director) only -- this
 // whole tab is only ever rendered inside AdminDashboard, so no extra
 // gating is needed here beyond that.
-export default function StockTab({ stockItems, stockIn, stockOut, customers, onAddItem, onUpdateItem, onDeleteItem, onAddStockIn, onAddStockInBatch, onAddStockOut }) {
+export default function StockTab({ routers, stockItems, stockIn, stockOut, customers, onAddItem, onUpdateItem, onDeleteItem, onAddStockIn, onAddStockInBatch, onAddStockOut }) {
   const [view, setView] = useState('summary') // 'summary' | 'items' | 'in' | 'out'
   const [search, setSearch] = useState('')
   const [showItemForm, setShowItemForm] = useState(false)
@@ -320,9 +321,10 @@ export default function StockTab({ stockItems, stockIn, stockOut, customers, onA
       const totalPurchased = stockIn.filter((si) => si.itemId === item.id).reduce((s, si) => s + si.quantity, 0)
       const totalIssued = stockOut.filter((so) => so.itemId === item.id).reduce((s, so) => s + so.quantity, 0)
       const currentStock = totalPurchased - totalIssued
-      return { item, totalPurchased, totalIssued, currentStock, status: currentStock <= item.reorderLevel ? 'REORDER' : 'OK' }
+      const returned = ((routers && routers.rows) || []).filter((x) => x.stockItemId === item.id && (x.status === 'in_store' || x.status === 'under_repair')).length
+      return { item, totalPurchased, totalIssued, currentStock, returned, status: currentStock <= item.reorderLevel ? 'REORDER' : 'OK' }
     }).sort((a, b) => (a.status === b.status ? 0 : a.status === 'REORDER' ? -1 : 1))
-  }, [stockItems, stockIn, stockOut])
+  }, [stockItems, stockIn, stockOut, routers])
 
   const reorderCount = summaryRows.filter((r) => r.status === 'REORDER').length
   const reorderRows = summaryRows.filter((r) => r.status === 'REORDER')
@@ -348,6 +350,11 @@ export default function StockTab({ stockItems, stockIn, stockOut, customers, onA
         <button onClick={() => setView('reorder')} className={view === 'reorder' ? 'sns-btn-primary' : 'sns-btn-secondary'} style={{ fontSize: '0.82rem' }}>
           Need Reorder{reorderCount > 0 && <span className="sns-badge sns-badge-overdue" style={{ marginLeft: '0.4rem' }}>{reorderCount}</span>}
         </button>
+        {routers && (
+          <button onClick={() => setView('retrieved')} className={view === 'retrieved' ? 'sns-btn-primary' : 'sns-btn-secondary'} style={{ fontSize: '0.82rem' }}>
+            Retrieved Routers{routers.rows.filter((x) => x.status === 'in_store').length > 0 && <span className="sns-badge sns-badge-role" style={{ marginLeft: '0.4rem' }}>{routers.rows.filter((x) => x.status === 'in_store').length}</span>}
+          </button>
+        )}
       </div>
 
       {view === 'summary' && (
@@ -365,7 +372,7 @@ export default function StockTab({ stockItems, stockIn, stockOut, customers, onA
                       <td className="sns-text-soft">{r.item.unit}</td>
                       <td className="sns-mono">{r.totalPurchased}</td>
                       <td className="sns-mono">{r.totalIssued}</td>
-                      <td className="sns-mono" style={{ fontWeight: 700 }}>{r.currentStock}</td>
+                      <td className="sns-mono" style={{ fontWeight: 700 }}>{r.currentStock}{r.returned > 0 && <span className="sns-text-faint" style={{ fontSize: '0.68rem', marginLeft: '0.35rem', fontWeight: 400 }} title="Routers taken back from customers that are in the store now">(↩ {r.returned})</span>}</td>
                       <td className="sns-text-soft">{r.item.reorderLevel}</td>
                       <td>
                         <span className="sns-badge" style={r.status === 'REORDER' ? { background: 'var(--overdue-pale)', color: 'var(--overdue)' } : { background: 'var(--confirmed-pale)', color: 'var(--confirmed)' }}>{r.status}</span>
@@ -442,7 +449,7 @@ export default function StockTab({ stockItems, stockIn, stockOut, customers, onA
                         <td className="sns-mono">{formatKSh(si.unitCost)}</td>
                         <td className="sns-mono" style={{ fontWeight: 700 }}>{formatKSh(si.quantity * si.unitCost)}</td>
                         <td className="sns-text-soft">{si.supplier || '—'}</td>
-                        <td className="sns-text-soft">{si.invoiceNo || '—'}</td>
+                        <td className="sns-text-soft">{si.invoiceNo === 'RETRIEVED' ? <span className="sns-badge sns-badge-role">Retrieved</span> : (si.invoiceNo || '—')}</td>
                         <td className="sns-text-soft">{si.receivedBy || '—'}</td>
                       </tr>
                     ))}
@@ -492,6 +499,11 @@ export default function StockTab({ stockItems, stockIn, stockOut, customers, onA
 
       {view === 'devices' && <DeviceLog stockOut={stockOut} items={stockItems} customers={customers || []} />}
 
+      {view === 'retrieved' && routers && (
+        <RetrievedRouters rows={routers.rows} customers={customers || []} members={routers.members} userMap={routers.userMap} isAdmin currentUser={routers.currentUser} deviceItems={routers.deviceItems}
+          onAdd={routers.onAdd} onUpdate={routers.onUpdate} onSetStatus={routers.onSetStatus} onDelete={routers.onDelete} />
+      )}
+
       {view === 'reorder' && (
         reorderRows.length === 0 ? <EmptyState message="Nothing needs reordering right now." /> : (
           <div className="sns-card" style={{ overflow: 'hidden' }}>
@@ -505,7 +517,7 @@ export default function StockTab({ stockItems, stockIn, stockOut, customers, onA
                     <tr key={r.item.id}>
                       <td style={{ fontWeight: 600 }}>{r.item.itemName}</td>
                       <td className="sns-text-soft">{r.item.unit}</td>
-                      <td className="sns-mono" style={{ fontWeight: 700, color: 'var(--overdue)' }}>{r.currentStock}</td>
+                      <td className="sns-mono" style={{ fontWeight: 700, color: 'var(--overdue)' }}>{r.currentStock}{r.returned > 0 && <span className="sns-text-faint" style={{ fontSize: '0.68rem', marginLeft: '0.35rem', fontWeight: 400 }} title="Routers taken back from customers that are in the store now">(↩ {r.returned})</span>}</td>
                       <td className="sns-text-soft">{r.item.reorderLevel}</td>
                       <td className="sns-text-soft">{r.item.supplier || '—'}</td>
                     </tr>

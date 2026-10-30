@@ -293,6 +293,7 @@ export function mapRetrievedRouter(row) {
     accessories: row.accessories || '', status: row.status, statusNote: row.status_note || '',
     statusUpdatedAt: row.status_updated_at, statusUpdatedBy: row.status_updated_by,
     retrievedBy: row.retrieved_by, recordedBy: row.recorded_by, createdAt: row.created_at,
+    stockItemId: row.stock_item_id == null ? null : row.stock_item_id, stockInId: row.stock_in_id == null ? null : row.stock_in_id,
   }
 }
 export function retrievedRouterToDbFields(f) {
@@ -302,6 +303,7 @@ export function retrievedRouterToDbFields(f) {
     serial_number: trimmed(f.serialNumber), reason: f.reason, reason_notes: trimmed(f.reasonNotes),
     amount_owed: f.reason === 'failed_to_pay' && f.amountOwed !== '' && f.amountOwed != null ? Number(f.amountOwed) : null,
     condition: f.condition, accessories: trimmed(f.accessories), retrieved_by: f.retrievedBy || null,
+    stock_item_id: f.stockItemId || null,    // the router item it is added to in the stock list
   }
 }
 
@@ -316,3 +318,5 @@ export function mapLeaveAdjustment(row) {
   return { id: row.id, memberId: row.member_id, leaveYear: row.leave_year, days: row.days, note: row.note || '', createdBy: row.created_by, createdAt: row.created_at }
 }
 export function mapHoliday(row) { return { id: row.id, day: row.day, name: row.name } }
+
+export function mapDeviceItem(row) { return { id: row.id, name: row.item_name } }

@@ -24,10 +24,10 @@ export const TABLES = [
   { table: 'jobs', sheet: 'Jobs', profile: { member_id: true, raised_by: false, assigned_by: false }, fk: { customer_id: 'customers' }, arrays: ['co_technicians'] },
   { table: 'expenses', sheet: 'Expenses', profile: { submitted_by: true, reviewed_by: false }, clear: ['receipt_path', 'receipt_uploaded_at'] },
   { table: 'complaints', sheet: 'Complaints', profile: { raised_by: true, resolved_by: false } },
-  { table: 'stock_in', sheet: 'Stock In', profile: { recorded_by: true }, fk: { item_id: 'stock_items' }, fkRequired: ['item_id'] },
-  { table: 'stock_out', sheet: 'Stock Out', profile: { recorded_by: true }, fk: { item_id: 'stock_items', customer_id: 'customers' }, fkRequired: ['item_id'] },
+  { table: 'stock_in', sheet: 'Stock In', idMap: true, sig: 'quantity', profile: { recorded_by: true }, fk: { item_id: 'stock_items' }, fkRequired: ['item_id'] },
+  { table: 'stock_out', sheet: 'Stock Out', idMap: true, sig: 'quantity', profile: { recorded_by: true }, fk: { item_id: 'stock_items', customer_id: 'customers' }, fkRequired: ['item_id'] },
   { table: 'visits', sheet: 'Visits', profile: { visited_by: true }, fk: { place_id: 'places' }, fkRequired: ['place_id'] },
-  { table: 'retrieved_routers', sheet: 'Retrieved Routers', profile: { recorded_by: true, retrieved_by: false, status_updated_by: false }, fk: { customer_id: 'customers' } },
+  { table: 'retrieved_routers', sheet: 'Retrieved Routers', profile: { recorded_by: true, retrieved_by: false, status_updated_by: false }, fk: { customer_id: 'customers', stock_item_id: 'stock_items', stock_in_id: 'stock_in', writeoff_stock_out_id: 'stock_out' } },
   // Leave can only be restored by the Director, and a row the leave rules refuse is skipped and reported instead of stopping everything.
   { table: 'non_working_days', sheet: 'Public Holidays', directorOnly: true, profile: { created_by: false }, match: { select: 'id,day', key: (r) => String(r.day) } },
   { table: 'leave_requests', sheet: 'Leave Requests', directorOnly: true, perRow: true, profile: { member_id: true, decided_by: false, cancelled_by: false, created_by: false } },

@@ -1,136 +1,94 @@
 import { useMemo, useState } from 'react'
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Wallet } from 'lucide-react'
+import { Calendar, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Wallet } from 'lucide-react'
+import Avatar from './Avatar'
 import { EmptyState, StatCard } from './shared'
-import MoneyReportModal from './MoneyReportModal'
-import { formatKSh, formatDate, toDateInputValue } from '../lib/helpers'
+import TransportReport from './TransportReport'
+import { departmentLabel, formatDate, formatKSh, formatPeriodLabel, getPeriodRange, toDateInputValue } from '../lib/helpers'
+import { transportReport, tripRoute } from '../lib/reportsCore'
 
-function dayRange(anchor) {
-  const start = new Date(anchor)
-  start.setHours(0, 0, 0, 0)
-  const end = new Date(start)
-  end.setDate(end.getDate() + 1)
-  return { start, end }
-}
-
-export default function TransportTab({ users, jobs, userMap, onMarkPaid }) {
+// Transport: the day's trips and who is still owed, with the Daily and Monthly reports one click away. A report opens as a page.
+export default function TransportTab({ users, jobs, onMarkPaid, currentUser }) {
   const [anchor, setAnchor] = useState(() => new Date())
   const [expandedId, setExpandedId] = useState(null)
-  const [showReport, setShowReport] = useState(false)
-  const { start, end } = useMemo(() => dayRange(anchor), [anchor])
+  const [report, setReport] = useState(null)         // null | 'day' | 'month'
+  const day = useMemo(() => getPeriodRange('day', anchor), [anchor])
+  const month = useMemo(() => getPeriodRange('month', anchor), [anchor])
   const isToday = toDateInputValue(anchor) === toDateInputValue(new Date())
+  const dayReport = useMemo(() => transportReport(jobs, users, day.start, day.end), [jobs, users, day])
+  const monthReport = useMemo(() => transportReport(jobs, users, month.start, month.end), [jobs, users, month])
+  const rows = [...dayReport.rows].sort((a, b) => b.unpaid - a.unpaid || b.total - a.total)
 
-  // For the report -- every job's transport cost counts as spent on the
-  // day it was created, regardless of paid/unpaid status, same "activity
-  // over time" reasoning as the commission report.
-  const transportEntries = useMemo(
-    () => jobs.map((j) => ({ memberId: j.memberId, amount: Number(j.transportAmount) || 0, date: j.createdAt })),
-    [jobs]
-  )
+  if (report) return <TransportReport mode={report} anchor={anchor} jobs={jobs} users={users} generatedBy={currentUser && currentUser.fullName} onBack={() => setReport(null)} />
 
-  const dayJobs = useMemo(
-    () => jobs.filter((j) => { const t = new Date(j.createdAt); return t >= start && t < end }),
-    [jobs, start, end]
-  )
-
-  const rows = useMemo(() => {
-    return users
-      .map((m) => {
-        const memberJobs = dayJobs.filter((j) => j.memberId === m.id)
-        const unpaidJobs = memberJobs.filter((j) => !j.transportPaidAt)
-        const paidTotal = memberJobs.filter((j) => j.transportPaidAt).reduce((s, j) => s + (Number(j.transportAmount) || 0), 0)
-        const unpaidTotal = unpaidJobs.reduce((s, j) => s + (Number(j.transportAmount) || 0), 0)
-        return { member: m, memberJobs, unpaidJobs, paidTotal, unpaidTotal, total: paidTotal + unpaidTotal }
-      })
-      .filter((r) => r.memberJobs.length > 0)
-      .sort((a, b) => b.unpaidTotal - a.unpaidTotal)
-  }, [users, dayJobs])
-
-  const totalUnpaid = rows.reduce((s, r) => s + r.unpaidTotal, 0)
-
+  const step = (n) => setAnchor((a) => { const d = new Date(a); d.setDate(d.getDate() + n); return d })
   return (
     <div>
-      <div className="flex items-center justify-between" style={{ marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
-        <div className="grid grid-cols-2 gap-3" style={{ maxWidth: '22rem' }}>
-          <StatCard label="Members with transport" value={rows.length} icon={Wallet} />
-          <StatCard label="Unpaid today" value={formatKSh(totalUnpaid)} icon={Wallet} tone={totalUnpaid > 0 ? 'warning' : 'default'} />
+      <div className="flex items-end justify-between" style={{ marginBottom: '1.1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+        <div>
+          <h2 className="sns-display" style={{ fontSize: '1.15rem', fontWeight: 700 }}>Transport</h2>
+          <p className="sns-text-soft" style={{ fontSize: '0.82rem' }}>What staff spent getting to jobs, and who is still owed.</p>
         </div>
-        <button onClick={() => setShowReport(true)} className="sns-btn-secondary">View Report</button>
-        <div className="flex items-center gap-2">
-          <button onClick={() => setAnchor((a) => { const d = new Date(a); d.setDate(d.getDate() - 1); return d }) } className="sns-icon-btn" title="Previous day">
-            <ChevronLeft size={18} />
-          </button>
-          <div style={{ textAlign: 'center', minWidth: '9rem' }}>
-            <p style={{ fontWeight: 700, fontSize: '0.9rem' }}>{isToday ? 'Today' : formatDate(anchor)}</p>
-            {!isToday && <p className="sns-text-faint" style={{ fontSize: '0.72rem' }}>{formatDate(anchor)}</p>}
-          </div>
-          <button onClick={() => setAnchor((a) => { const d = new Date(a); d.setDate(d.getDate() + 1); return d })} className="sns-icon-btn" title="Next day">
-            <ChevronRight size={18} />
-          </button>
-          {!isToday && <button onClick={() => setAnchor(new Date())} className="sns-btn-link" style={{ fontSize: '0.78rem', marginLeft: '0.3rem' }}>Jump to today</button>}
+        <div className="flex gap-2">
+          <button type="button" onClick={() => setReport('day')} className="sns-btn-secondary"><CalendarDays size={15} /> Daily report</button>
+          <button type="button" onClick={() => setReport('month')} className="sns-btn-primary"><Calendar size={15} /> Monthly report</button>
         </div>
       </div>
 
-      {rows.length === 0 ? (
-        <EmptyState message="No transport recorded for this day." />
-      ) : (
-        <div className="sns-card">
-          {rows.map((r, i) => {
-            const expanded = expandedId === r.member.id
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3" style={{ marginBottom: '1.1rem' }}>
+        <StatCard label={isToday ? 'Spent today' : 'Spent this day'} value={formatKSh(dayReport.total)} icon={Wallet} />
+        <StatCard label={isToday ? 'Unpaid today' : 'Unpaid this day'} value={formatKSh(dayReport.unpaid)} icon={Wallet} tone={dayReport.unpaid > 0 ? 'warning' : 'default'} />
+        <StatCard label={`Spent in ${formatPeriodLabel('month', anchor)}`} value={formatKSh(monthReport.total)} icon={Wallet} tone="success" />
+      </div>
+
+      <div className="sns-card flex items-center justify-between" style={{ padding: '0.7rem 1rem', marginBottom: '1rem' }}>
+        <button type="button" onClick={() => step(-1)} className="sns-icon-btn" title="Previous day" aria-label="Previous day"><ChevronLeft size={18} /></button>
+        <div style={{ textAlign: 'center' }}>
+          <p style={{ fontWeight: 700 }}>{isToday ? 'Today' : formatDate(anchor)}</p>
+          {isToday ? <p className="sns-text-faint" style={{ fontSize: '0.72rem' }}>{formatDate(anchor)}</p> : <button type="button" onClick={() => setAnchor(new Date())} className="sns-btn-link" style={{ fontSize: '0.74rem' }}>Jump to today</button>}
+        </div>
+        <button type="button" onClick={() => step(1)} className="sns-icon-btn" title="Next day" aria-label="Next day"><ChevronRight size={18} /></button>
+      </div>
+
+      {rows.length === 0 ? <EmptyState message="No transport recorded for this day." /> : (
+        <div className="space-y-3">
+          {rows.map((r) => {
+            const expanded = expandedId === r.memberId
             return (
-              <div key={r.member.id} className={i > 0 ? 'sns-border-t' : ''}>
-                <div
-                  onClick={() => setExpandedId(expanded ? null : r.member.id)}
-                  style={{ padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', cursor: 'pointer' }}
-                >
-                  <div className="flex items-center gap-2">
-                    {expanded ? <ChevronUp size={15} style={{ color: 'var(--ink-faint)', flexShrink: 0 }} /> : <ChevronDown size={15} style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />}
+              <div key={r.memberId} className="sns-card" style={{ overflow: 'hidden' }}>
+                <div onClick={() => setExpandedId(expanded ? null : r.memberId)} className="sns-row-click" style={{ padding: '0.9rem 1.1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
+                  <button type="button" aria-expanded={expanded} aria-label={`${expanded ? 'Hide' : 'Show'} ${r.name}'s trips`} onClick={(e) => { e.stopPropagation(); setExpandedId(expanded ? null : r.memberId) }}
+                    className="flex items-center gap-3" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'left', color: 'inherit', font: 'inherit' }}>
+                    <Avatar name={r.name} url={r.avatarUrl} size={38} />
                     <div>
-                      <p style={{ fontWeight: 600, fontSize: '0.9rem' }}>{r.member.fullName}</p>
-                      <p className="sns-text-faint" style={{ fontSize: '0.76rem' }}>{r.memberJobs.length} job{r.memberJobs.length === 1 ? '' : 's'} · Total {formatKSh(r.total)}</p>
+                      <p style={{ fontWeight: 600, fontSize: '0.9rem' }}>{r.name}</p>
+                      <p className="sns-text-faint" style={{ fontSize: '0.76rem' }}>{departmentLabel(r.department)} · {r.count} trip{r.count === 1 ? '' : 's'} · {formatKSh(r.total)}</p>
                     </div>
-                  </div>
+                  </button>
                   <div className="flex items-center gap-3">
-                    {r.unpaidTotal > 0 ? (
+                    {r.unpaid > 0 ? (
                       <>
-                        <div style={{ textAlign: 'right' }}>
-                          <p className="sns-mono" style={{ fontWeight: 700, color: 'var(--stamp-deep)' }}>{formatKSh(r.unpaidTotal)}</p>
-                          <p className="sns-eyebrow sns-text-faint">unpaid</p>
-                        </div>
-                        <button onClick={(e) => { e.stopPropagation(); onMarkPaid(r.member, start, end) }} className="sns-btn-primary" style={{ fontSize: '0.78rem', padding: '0.5rem 0.9rem' }}>
-                          Mark as Paid
-                        </button>
+                        <div style={{ textAlign: 'right' }}><p className="sns-mono" style={{ fontWeight: 700, color: 'var(--stamp-deep)' }}>{formatKSh(r.unpaid)}</p><p className="sns-eyebrow sns-text-faint">unpaid</p></div>
+                        <button type="button" onClick={(e) => { e.stopPropagation(); onMarkPaid({ id: r.memberId, fullName: r.name }, day.start, day.end) }} className="sns-btn-primary" style={{ fontSize: '0.78rem', padding: '0.5rem 0.9rem' }}>Mark as Paid</button>
                       </>
-                    ) : (
-                      <span className="sns-badge sns-badge-done">Paid</span>
-                    )}
+                    ) : <span className="sns-badge sns-badge-done">Paid</span>}
+                    {expanded ? <ChevronUp size={16} className="sns-text-faint" /> : <ChevronDown size={16} className="sns-text-faint" />}
                   </div>
                 </div>
                 {expanded && (
-                  <div style={{ background: 'var(--paper)', padding: '0.9rem 1.1rem 1.1rem 2.9rem' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                      {r.memberJobs.map((j) => (
-                        <div key={j.id} className="flex items-center justify-between" style={{ fontSize: '0.82rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-                          <span className="sns-chip-id">{j.jobId}</span>
-                          <span className="sns-text-soft">{j.transportFrom || '—'} → {(j.transportTo && j.transportTo.length ? j.transportTo : ['—']).join(' → ')}</span>
-                          <span className="sns-mono" style={{ fontWeight: 600 }}>{formatKSh(j.transportAmount)}</span>
-                          {j.transportPaidAt && <span className="sns-badge sns-badge-done" style={{ fontSize: '0.62rem' }}>Paid</span>}
-                        </div>
-                      ))}
-                    </div>
+                  <div style={{ background: 'var(--paper)', padding: '0.8rem 1.1rem 1rem 4.2rem' }}>
+                    {r.trips.map((j) => (
+                      <div key={j.id} className="flex items-center justify-between" style={{ fontSize: '0.82rem', flexWrap: 'wrap', gap: '0.5rem', padding: '0.25rem 0' }}>
+                        <span className="sns-chip-id">{j.jobId}</span><span className="sns-text-soft">{tripRoute(j)}</span>
+                        <span className="sns-mono" style={{ fontWeight: 600 }}>{formatKSh(j.transportAmount)}</span>
+                        {j.transportPaidAt && <span className="sns-badge sns-badge-done" style={{ fontSize: '0.62rem' }}>Paid</span>}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
             )
           })}
         </div>
-      )}
-      {showReport && (
-        <MoneyReportModal
-          title="Transport Report"
-          entries={transportEntries}
-          userMap={userMap}
-          onClose={() => setShowReport(false)}
-        />
       )}
     </div>
   )

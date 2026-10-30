@@ -86,7 +86,7 @@ export default function DataTab({ currentUser, users, customers, onDataChanged, 
       <div className="sns-card" style={box}>
         <div className="flex items-center gap-2" style={{ marginBottom: '0.3rem' }}><DatabaseBackup size={18} /><h3 className="sns-display" style={{ fontWeight: 700 }}>Back up to this computer</h3></div>
         <p style={{ color: age.color, fontWeight: 600, fontSize: '0.88rem', margin: '0.3rem 0' }}>{age.text}</p>
-        <p className="sns-text-soft" style={{ fontSize: '0.82rem', marginBottom: '0.9rem' }}>Saves everything in one Excel file: jobs, customers, expenses, complaints, stock, visits and the team list. In Chrome or Edge you choose the folder; other browsers save to Downloads. Receipt photos are not included. Back up at least once a week, and keep a copy off this computer.</p>
+        <p className="sns-text-soft" style={{ fontSize: '0.82rem', marginBottom: '0.9rem' }}>Saves everything in one Excel file: jobs, customers, expenses, complaints, stock, visits and the staff list. In Chrome or Edge you choose the folder; other browsers save to Downloads. Receipt photos are not included. Back up at least once a week, and keep a copy off this computer.</p>
         <div className="flex items-center gap-3" style={{ flexWrap: 'wrap' }}>
           <button onClick={() => save('backup')} disabled={busy} className="sns-btn-primary"><DatabaseBackup size={16} /> {working === 'backup' ? 'Preparing…' : 'Back up now'}</button>
           <button onClick={() => save('export')} disabled={busy} className="sns-btn-secondary"><FileSpreadsheet size={16} /> {working === 'export' ? 'Preparing…' : 'Export to Excel'}</button>

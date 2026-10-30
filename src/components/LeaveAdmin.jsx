@@ -107,10 +107,10 @@ export default function LeaveAdmin({ users, requests, adjustments, overview, hol
         <StatCard label="Waiting for approval" value={pending.length} icon={Hourglass} tone="warning" onClick={() => setSub('requests')} />
         <StatCard label="Away today" value={away.size} icon={Plane} onClick={() => setSub('away')} />
         <StatCard label="Starting in 45 days" value={coming.filter((r) => r.startDate > today).length} icon={CalendarDays} onClick={() => setSub('away')} />
-        <StatCard label="Team" value={users.length} icon={Users} onClick={() => setSub('balances')} />
+        <StatCard label="Staff" value={users.length} icon={Users} onClick={() => setSub('balances')} />
       </div>
       {!isDirector && <p className="sns-text-faint" style={{ fontSize: '0.8rem', marginBottom: '0.8rem' }}>Only the Director can approve or reject leave. You can see everything here.</p>}
-      {!users.some((u) => u.isDirector) && <p className="sns-alert-banner" style={{ marginBottom: '0.8rem' }}>No Director is set, so nobody can approve leave yet. Open the Team tab and press Make Director.</p>}
+      {!users.some((u) => u.isDirector) && <p className="sns-alert-banner" style={{ marginBottom: '0.8rem' }}>No Director is set, so nobody can approve leave yet. Open the Staff tab, click the person and press Make Director.</p>}
 
       <div className="flex gap-1 sns-border-b" style={{ marginBottom: '1rem', flexWrap: 'wrap' }} role="tablist">
         {tab('requests', 'Requests', pending.length)}{tab('balances', 'Balances')}{tab('away', 'Who is away')}{tab('settings', 'Policy & holidays')}

@@ -297,3 +297,17 @@ Removed from the package: the old `employee-number-and-service-fix-migration.sql
 - **Closed a gap found on the way:** members could change their own Director, Team Lead and department fields by calling the database directly. Only admins can now.
 - Backup and restore include the new data. Restoring leave records and public holidays needs the Director; a leave record the rules refuse is skipped and reported.
 
+## Update 41
+
+**To apply:** (1) run `supabase/update-41-migration.sql` in the Supabase SQL editor (after update 40; safe to run again), (2) deploy the code. A fresh install needs only `job-card-rebuild.sql`, which now contains updates 40 and 41.
+
+- **Staff** (the old Team tab): click **anywhere in a person's row** to open their page. **Promote, Make Director, Department and Make Team Lead** moved onto that page, under **Role & access**. Promote and Make Director ask for confirmation first (the Director one names who stops being Director). The list gets a search box once there are more than six people.
+- **Leave** moved onto the Staff page, as a button right after **Assign employee numbers**, with the count of requests waiting.
+- **Field Visits** moved into **All Jobs**, as a button just before **File a job**. The search box, filters and buttons in that row were made compact so they sit on **one row** on a desktop screen (screens narrower than about 1130 px wrap onto two rows).
+- **Data & Backup** moved into the profile window (click your name): **My profile, Leave, Data & Backup, Settings**. The backup reminder opens it.
+- **Retrieved Routers** moved to the **Stock** page, right after **Need Reorder**, and now **adds to stock**. Pick the router from the stock list when recording it (Technical members see the router items too). Recording one adds a Stock In of 1, labelled "Retrieved from <customer>" at KSh 0; correcting the record corrects the stock; **Written off** takes it out with a Stock Out (and changing your mind brings it back); deleting the record removes its stock rows. The stock list shows how many returned routers are in the store, for example "5 (↩ 1)". Re-issuing a router to a new customer is still an ordinary Stock Out, so it shows in the ONU / Router log. The router items need **Field device** ticked in the Item Master. The database does this, so technicians still cannot read or change stock themselves.
+- **Expenses/Purchases summary:** This week and This month cards (paid, approved and to be paid, waiting for approval), and a Weekly/Monthly explorer with arrows showing the totals by category and **who spent what**. An expense counts on its purchase date (or its request date until it is bought); rejected requests are left out.
+- **Transport:** new design, with **Daily report** and **Monthly report** buttons. A report opens as a **full page** (not a pop-up): the total, trips, paid and not yet paid, **Who spent what**, day by day (monthly), and every trip, with **Print** and **Download Excel**. Marking someone as paid stays on the Transport tab. The Commission report is unchanged.
+- **Team became Staff** in the tab, hints and messages.
+- Backup and restore carry the stock links, so restoring does not add a second Stock In.
+

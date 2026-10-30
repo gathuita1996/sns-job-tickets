@@ -220,7 +220,7 @@ export default function MemberDashboard({ extras, currentUser, jobs, raisedJobs,
               <button onClick={() => setView('home')} className="sns-btn-secondary" style={{ padding: '0.5rem' }} title="Back to dashboard"><ArrowLeft size={16} /></button>
               <h2 className="sns-display" style={{ fontSize: '1.1rem', fontWeight: 700 }}>Retrieved routers</h2>
             </div>
-            <RetrievedRouters rows={routerApi.rows} customers={customers} members={[currentUser]} userMap={{ [currentUser.id]: currentUser }} isAdmin={false} currentUser={currentUser} onAdd={routerApi.onAdd} onUpdate={routerApi.onUpdate} onSetStatus={routerApi.onSetStatus} onDelete={routerApi.onDelete} />
+            <RetrievedRouters rows={routerApi.rows} deviceItems={routerApi.deviceItems || []} customers={customers} members={[currentUser]} userMap={{ [currentUser.id]: currentUser }} isAdmin={false} currentUser={currentUser} onAdd={routerApi.onAdd} onUpdate={routerApi.onUpdate} onSetStatus={routerApi.onSetStatus} onDelete={routerApi.onDelete} />
           </>
         ) : view === 'expenses' ? (
           <>

@@ -122,3 +122,19 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
   .no-print { display: none !important; }
   .print-page { background: white !important; padding: 0 !important; }
 }
+
+/* ---- update 41 ---------------------------------------------------------------------------------------------------- */
+.sns-row-click { cursor: pointer; transition: background 0.15s ease; }
+.sns-row-click:hover { background: var(--signal-pale); }
+.sns-row-click:focus-visible { outline: 2px solid var(--signal); outline-offset: -2px; background: var(--signal-pale); }
+.print-only { display: none; }
+@media print { .print-only { display: block !important; } }
+
+/* All Jobs toolbar: search, filters and actions share ONE row on a desktop screen; narrower screens wrap. */
+.jobs-toolbar { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.jobs-toolbar > div { min-width: 7rem !important; flex: 1 1 8rem; }
+.jobs-toolbar .sns-input { padding: 0.5rem 0.5rem; font-size: 0.78rem; text-overflow: ellipsis; }
+.jobs-toolbar select.sns-input { width: auto; max-width: 7.6rem; flex: 0 1 auto; }
+.jobs-toolbar .sns-btn-primary, .jobs-toolbar .sns-btn-secondary { padding: 0.5rem 0.65rem; font-size: 0.78rem; gap: 0.3rem; white-space: nowrap; flex: 0 0 auto; }
+.jobs-toolbar > div .sns-input { padding-left: 2.1rem; }
+@media (min-width: 1130px) { .jobs-toolbar { flex-wrap: nowrap; } }

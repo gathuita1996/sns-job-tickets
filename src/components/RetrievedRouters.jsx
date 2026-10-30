@@ -4,14 +4,18 @@ import { ConfirmDialog, EmptyState, FormField, SearchInput, StatCard } from './s
 import { ROUTER_CONDITIONS, ROUTER_MODELS, ROUTER_STATUSES, RETRIEVED_REASONS, customerLabel, formatDate, formatKSh, reasonLabel, routerStatusLabel, toDateInputValue } from '../lib/helpers'
 
 const STATUS_BADGE = { in_store: 'sns-badge-done', under_repair: 'sns-badge-pending', reissued: 'sns-badge-progress', written_off: 'sns-badge-overdue' }
+const STATUS_HINT = { in_store: 'In the store and counted in the stock list.', under_repair: 'Still in the store, so still counted in the stock list.', reissued: 'Given to another customer. Also record that in Stock Out so the stock goes down.', written_off: 'Thrown away. This also takes it off the stock list.' }
 const conditionLabel = (k) => (ROUTER_CONDITIONS.find((c) => c.key === k) || {}).label || k
 
-function RouterForm({ initial, customers, members, isAdmin, currentUser, rows, onSave, onClose }) {
+function RouterForm({ initial, customers, members, isAdmin, currentUser, rows, deviceItems = [], onSave, onClose }) {
+  const hasItems = deviceItems.length > 0
   const startModel = initial && !ROUTER_MODELS.includes(initial.routerModel) ? 'Other' : (initial?.routerModel || 'ONU')
-  const [f, setF] = useState(initial ? { ...initial, routerModel: startModel, modelOther: startModel === 'Other' ? initial.routerModel : '' } : {
-    retrievedDate: toDateInputValue(new Date()), customerId: '', customerName: '', customerContact: '', location: '', routerModel: 'ONU', modelOther: '', serialNumber: '',
-    reason: '', reasonNotes: '', amountOwed: '', condition: 'working', accessories: '', retrievedBy: currentUser.id,
-  })
+  const [f, setF] = useState(initial
+    ? { ...initial, stockItemId: initial.stockItemId || null, routerModel: hasItems ? (initial.stockItemId ? initial.routerModel : 'Other') : startModel, modelOther: (hasItems ? !initial.stockItemId : startModel === 'Other') ? initial.routerModel : '' }
+    : {
+      retrievedDate: toDateInputValue(new Date()), customerId: '', customerName: '', customerContact: '', location: '', stockItemId: hasItems ? deviceItems[0].id : null, routerModel: hasItems ? deviceItems[0].name : 'ONU', modelOther: '', serialNumber: '',
+      reason: '', reasonNotes: '', amountOwed: '', condition: 'working', accessories: '', retrievedBy: currentUser.id,
+    })
   const [errors, setErrors] = useState({})
   const [busy, setBusy] = useState(false)
   const set = (k, v) => { setF((x) => ({ ...x, [k]: v })); setErrors((e) => ({ ...e, [k]: undefined })) }
@@ -57,8 +61,18 @@ function RouterForm({ initial, customers, members, isAdmin, currentUser, rows, o
             <FormField label="Location (optional)"><input className="sns-input" value={f.location} onChange={(e) => set('location', e.target.value)} /></FormField>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <FormField label="Router" error={errors.routerModel}>
-              <select className="sns-input" value={f.routerModel} onChange={(e) => set('routerModel', e.target.value)}>{ROUTER_MODELS.map((m) => <option key={m}>{m}</option>)}</select>
+            <FormField label="Router" error={f.routerModel === 'Other' ? undefined : errors.routerModel} hint={hasItems ? 'Added to the stock list when you save.' : 'Tip: tick "Field device" on your ONU / XPON items in the Item Master so retrieved routers count in stock.'}>
+              {hasItems ? (
+                <select className="sns-input" aria-label="Router" value={f.stockItemId ? String(f.stockItemId) : 'other'} onChange={(e) => {
+                  const v = e.target.value; const item = deviceItems.find((d) => String(d.id) === v)
+                  setF((x) => ({ ...x, stockItemId: item ? item.id : null, routerModel: item ? item.name : 'Other' })); setErrors((er) => ({ ...er, routerModel: undefined }))
+                }}>
+                  {deviceItems.map((d) => <option key={d.id} value={String(d.id)}>{d.name}</option>)}
+                  <option value="other">Another router (not in the stock list)</option>
+                </select>
+              ) : (
+                <select className="sns-input" aria-label="Router" value={f.routerModel} onChange={(e) => set('routerModel', e.target.value)}>{ROUTER_MODELS.map((m) => <option key={m}>{m}</option>)}</select>
+              )}
             </FormField>
             <FormField label="Serial / MAC"><input className="sns-input sns-mono" value={f.serialNumber} onChange={(e) => set('serialNumber', e.target.value)} /></FormField>
           </div>
@@ -97,6 +111,7 @@ function StatusModal({ row, onSave, onClose }) {
           <p className="sns-text-soft" style={{ fontSize: '0.85rem' }}>{row.routerModel} {row.serialNumber ? `(${row.serialNumber})` : ''} from {row.customerName}</p>
           <FormField label="Now"><select className="sns-input" value={status} onChange={(e) => setStatus(e.target.value)}>{ROUTER_STATUSES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}</select></FormField>
           <FormField label="Note" hint="For example who it was given to, or what was wrong with it."><input className="sns-input" value={note} onChange={(e) => setNote(e.target.value)} /></FormField>
+          <p className="sns-text-soft" style={{ fontSize: '0.8rem' }}>{STATUS_HINT[status]}</p>
           <button type="button" className="sns-btn-primary" style={{ width: '100%' }} onClick={() => onSave(row, status, note.trim())}>Save</button>
         </div>
       </div>
@@ -104,7 +119,7 @@ function StatusModal({ row, onSave, onClose }) {
   )
 }
 
-export default function RetrievedRouters({ rows, customers, members, userMap, isAdmin, currentUser, onAdd, onUpdate, onSetStatus, onDelete }) {
+export default function RetrievedRouters({ rows, customers, members, userMap, isAdmin, currentUser, deviceItems = [], onAdd, onUpdate, onSetStatus, onDelete }) {
   const [reason, setReason] = useState('all')
   const [status, setStatus] = useState('all')
   const [search, setSearch] = useState('')
@@ -148,7 +163,7 @@ export default function RetrievedRouters({ rows, customers, members, userMap, is
               <tr key={r.id}>
                 <td className="sns-text-soft">{formatDate(r.retrievedDate)}</td>
                 <td><span style={{ fontWeight: 600 }}>{r.customerName}</span><br /><span className="sns-text-faint" style={{ fontSize: '0.74rem' }}>{[r.customerContact, r.location].filter(Boolean).join(' · ')}</span></td>
-                <td>{r.routerModel}<br /><span className="sns-mono sns-text-faint" style={{ fontSize: '0.74rem' }}>{r.serialNumber || 'no serial'}</span></td>
+                <td>{r.routerModel}<br /><span className="sns-mono sns-text-faint" style={{ fontSize: '0.74rem' }}>{r.serialNumber || 'no serial'}</span>{r.stockInId && <span className="sns-text-faint" style={{ fontSize: '0.68rem', display: 'block' }}>counted in stock</span>}</td>
                 <td><span className={`sns-badge ${r.reason === 'failed_to_pay' ? 'sns-badge-overdue' : 'sns-badge-role'}`}>{reasonLabel(r.reason)}</span>{r.amountOwed !== '' && <span className="sns-mono" style={{ fontSize: '0.74rem', marginLeft: '0.4rem' }}>{formatKSh(r.amountOwed)}</span>}{r.reasonNotes && <p className="sns-text-faint" style={{ fontSize: '0.74rem', maxWidth: '16rem' }}>{r.reasonNotes}</p>}</td>
                 <td className="sns-text-soft">{conditionLabel(r.condition)}</td>
                 <td><span className={`sns-badge ${STATUS_BADGE[r.status]}`}>{routerStatusLabel(r.status)}</span>{r.statusNote && <p className="sns-text-faint" style={{ fontSize: '0.74rem' }}>{r.statusNote}</p>}</td>
@@ -161,9 +176,9 @@ export default function RetrievedRouters({ rows, customers, members, userMap, is
               </tr>))}</tbody>
           </table></div></div>
       )}
-      {form && <RouterForm initial={form === 'new' ? null : form} customers={customers} members={members} isAdmin={isAdmin} currentUser={currentUser} rows={rows} onClose={() => setForm(null)} onSave={async (data) => { const done = form === 'new' ? await onAdd(data) : await onUpdate(form.id, data); if (done !== false) setForm(null) }} />}
+      {form && <RouterForm initial={form === 'new' ? null : form} deviceItems={deviceItems} customers={customers} members={members} isAdmin={isAdmin} currentUser={currentUser} rows={rows} onClose={() => setForm(null)} onSave={async (data) => { const done = form === 'new' ? await onAdd(data) : await onUpdate(form.id, data); if (done !== false) setForm(null) }} />}
       {statusRow && <StatusModal row={statusRow} onClose={() => setStatusRow(null)} onSave={async (row, s, n) => { await onSetStatus(row, s, n); setStatusRow(null) }} />}
-      {confirmDelete && <ConfirmDialog title="Delete record" message={`Delete the record of ${confirmDelete.routerModel} retrieved from ${confirmDelete.customerName}? This cannot be undone.`} danger onCancel={() => setConfirmDelete(null)} onConfirm={async () => { await onDelete(confirmDelete); setConfirmDelete(null) }} />}
+      {confirmDelete && <ConfirmDialog title="Delete record" message={`Delete the record of ${confirmDelete.routerModel} retrieved from ${confirmDelete.customerName}? This also takes it off the stock list, and cannot be undone.`} danger onCancel={() => setConfirmDelete(null)} onConfirm={async () => { await onDelete(confirmDelete); setConfirmDelete(null) }} />}
     </div>
   )
 }

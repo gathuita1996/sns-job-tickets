@@ -344,7 +344,7 @@ export default function FieldVisits({ places, visits, customers, nameOf, current
 
       {isAdmin && team.length > 0 && (
         <>
-          <p style={{ fontWeight: 700, fontSize: '0.95rem', margin: '0.4rem 0 0.7rem' }}>Team activity this month</p>
+          <p style={{ fontWeight: 700, fontSize: '0.95rem', margin: '0.4rem 0 0.7rem' }}>Staff activity this month</p>
           <div className="sns-card" style={{ overflow: 'hidden' }}>
             <table className="sns-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead><tr><th>Person</th><th>Visits</th><th>Different places</th><th>Leads</th><th>Became customers</th></tr></thead>
