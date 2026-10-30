@@ -21,6 +21,7 @@ export function mapProfile(row) {
     idNumber: row.id_number || '',
     kraPin: row.kra_pin || '',
     shaNumber: row.sha_number || '',
+    avatarUrl: row.avatar_url || '',
     createdAt: row.created_at,
   }
 }
@@ -38,6 +39,7 @@ export function mapCustomer(row) {
     status: row.status || 'New',
     desiredDate: row.desired_date || '',
     commissionPaidAt: row.commission_paid_at,
+    commissionExempt: Boolean(row.commission_exempt),
     recordedBy: row.recorded_by,
     createdAt: row.created_at,
   }
@@ -112,37 +114,6 @@ export function jobToDbFields(data) {
       gps_accuracy: data.gps && data.gps.accuracy != null ? data.gps.accuracy : null,
       gps_recorded_at: data.gps ? data.gps.recordedAt : null,
     } : {}),
-  }
-}
-
-export function mapComplaint(row) {
-  return {
-    id: row.id,
-    complainantName: row.complainant_name,
-    location: row.location,
-    contact: row.contact,
-    complaintType: row.complaint_type,
-    complaintTypeOther: row.complaint_type_other || '',
-    details: row.details,
-    isRecurring: row.is_recurring,
-    status: row.status,
-    resolutionNotes: row.resolution_notes || '',
-    raisedBy: row.raised_by,
-    resolvedBy: row.resolved_by || null,
-    resolvedAt: row.resolved_at || null,
-    createdAt: row.created_at,
-  }
-}
-
-export function complaintToDbFields(data) {
-  return {
-    complainant_name: data.complainantName,
-    location: data.location,
-    contact: data.contact,
-    complaint_type: data.complaintType,
-    complaint_type_other: data.complaintType === 'Other' ? (data.complaintTypeOther || null) : null,
-    details: data.details,
-    is_recurring: Boolean(data.isRecurring),
   }
 }
 
@@ -303,3 +274,45 @@ export function visitToDbFields(data) {
     leads: Number(data.leads) || 0, follow_up_date: data.followUpDate || null, notes: (data.notes || '').trim() || null,
   }
 }
+
+const trimmed = (s) => (String(s || '').trim() || null)
+
+export function mapBank(row) {
+  return { memberId: row.member_id, bankName: row.bank_name || '', branch: row.branch || '', accountNumber: row.account_number || '', accountName: row.account_name || '' }
+}
+export function bankToDbFields(memberId, f) {
+  return { member_id: memberId, bank_name: trimmed(f.bankName), branch: trimmed(f.branch), account_number: trimmed(f.accountNumber), account_name: trimmed(f.accountName) }
+}
+
+export function mapRetrievedRouter(row) {
+  return {
+    id: row.id, retrievedDate: row.retrieved_date, customerId: row.customer_id, customerName: row.customer_name,
+    customerContact: row.customer_contact || '', location: row.location || '', routerModel: row.router_model,
+    serialNumber: row.serial_number || '', reason: row.reason, reasonNotes: row.reason_notes || '',
+    amountOwed: row.amount_owed == null ? '' : Number(row.amount_owed), condition: row.condition,
+    accessories: row.accessories || '', status: row.status, statusNote: row.status_note || '',
+    statusUpdatedAt: row.status_updated_at, statusUpdatedBy: row.status_updated_by,
+    retrievedBy: row.retrieved_by, recordedBy: row.recorded_by, createdAt: row.created_at,
+  }
+}
+export function retrievedRouterToDbFields(f) {
+  return {
+    retrieved_date: f.retrievedDate, customer_id: f.customerId || null, customer_name: String(f.customerName || '').trim(),
+    customer_contact: trimmed(f.customerContact), location: trimmed(f.location), router_model: String(f.routerModel || '').trim(),
+    serial_number: trimmed(f.serialNumber), reason: f.reason, reason_notes: trimmed(f.reasonNotes),
+    amount_owed: f.reason === 'failed_to_pay' && f.amountOwed !== '' && f.amountOwed != null ? Number(f.amountOwed) : null,
+    condition: f.condition, accessories: trimmed(f.accessories), retrieved_by: f.retrievedBy || null,
+  }
+}
+
+export function mapLeaveRequest(row) {
+  return {
+    id: row.id, memberId: row.member_id, startDate: row.start_date, endDate: row.end_date, days: row.days, leaveYear: row.leave_year,
+    reason: row.reason || '', status: row.status, requestedAt: row.requested_at, decidedBy: row.decided_by, decidedAt: row.decided_at,
+    decisionNote: row.decision_note || '', cancelledBy: row.cancelled_by, cancelledAt: row.cancelled_at,
+  }
+}
+export function mapLeaveAdjustment(row) {
+  return { id: row.id, memberId: row.member_id, leaveYear: row.leave_year, days: row.days, note: row.note || '', createdBy: row.created_by, createdAt: row.created_at }
+}
+export function mapHoliday(row) { return { id: row.id, day: row.day, name: row.name } }

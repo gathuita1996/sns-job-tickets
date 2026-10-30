@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from './lib/supabaseClient'
-import { mapProfile, mapJob, jobToDbFields, mapCustomer, customerToDbFields, mapComplaint, complaintToDbFields, mapExpense, expenseToDbFields, serviceToDbFields, mapStockItem, stockItemToDbFields, mapStockIn, stockInToDbFields, mapStockOut, stockOutToDbFields , mapPlace, placeToDbFields, mapVisit, visitToDbFields } from './lib/mappers'
+import { mapProfile, mapJob, jobToDbFields, mapCustomer, customerToDbFields, mapExpense, expenseToDbFields, serviceToDbFields, mapStockItem, stockItemToDbFields, mapStockIn, stockInToDbFields, mapStockOut, stockOutToDbFields , mapPlace, placeToDbFields, mapVisit, visitToDbFields, mapBank, bankToDbFields, mapRetrievedRouter, retrievedRouterToDbFields, mapLeaveRequest, mapLeaveAdjustment, mapHoliday } from './lib/mappers'
 import { fetchAll } from './lib/dataIO'
+import { processAvatar } from './lib/image'
+import { currentLeaveYear } from './lib/leave'
+import LeavePanel from './components/LeavePanel'
 import { COMMISSION_DEPARTMENTS, startOfMonth } from './lib/helpers'
 import { LoadingScreen, Toast } from './components/shared'
 import { LoginView, SignupView, ForgotPasswordView, ResetPasswordView } from './components/Auth'
@@ -14,7 +17,15 @@ export default function App() {
   const [jobs, setJobs] = useState([])
   const [customers, setCustomers] = useState([])
   const [customerIdsWithJobs, setCustomerIdsWithJobs] = useState(new Set())
-  const [complaints, setComplaints] = useState([])
+  const [retrievedRouters, setRetrievedRouters] = useState([])
+  const [lastBackup, setLastBackup] = useState({ at: null, by: null })
+  const [bankDetails, setBankDetails] = useState({})
+  const [leaveRequests, setLeaveRequests] = useState([])
+  const [leaveAdjustments, setLeaveAdjustments] = useState([])
+  const [leaveOverview, setLeaveOverview] = useState([])
+  const [leaveSummary, setLeaveSummary] = useState(null)
+  const [leavePolicy, setLeavePolicy] = useState({ annual_days: 21, max_per_month: 3, year_start_month: 8, count_saturdays: true })
+  const [holidays, setHolidays] = useState([])
   const [expenses, setExpenses] = useState([])
   const [stockItems, setStockItems] = useState([])
   const [stockIn, setStockIn] = useState([])
@@ -66,19 +77,15 @@ export default function App() {
       if (profile.role !== 'admin') await refreshMemberNames()
     }
     if (profile.role === 'admin' || profile.department === 'technical') {
-      await refreshComplaints()
+      await refreshRetrievedRouters()
       if (profile.role !== 'admin') await refreshMemberNames()
     }
+    await refreshLeave(profile)
+    await refreshBank(profile)
     setBooting(false)
   }
 
-  async function refreshComplaints() {
-    const { data, error } = await supabase.from('complaints').select('*')
-    if (error) return
-    setComplaints((data || []).map(mapComplaint))
-  }
-
-  // Unlike complaints, this needs no role/department check -- RLS already
+  // This needs no role/department check -- RLS already
   // scopes it correctly for everyone (admin sees all, a member sees only
   // their own submissions), same as customers already works.
   async function refreshExpenses() {
@@ -153,9 +160,10 @@ export default function App() {
   }
 
   async function refreshAppSettings() {
-    const { data, error } = await supabase.from('app_settings').select('signup_access_code, commission_per_customer').eq('id', true).single()
+    const { data, error } = await supabase.from('app_settings').select('signup_access_code, commission_per_customer, last_backup_at, last_backup_by').eq('id', true).single()
     if (error) return
     setAccessCode(data?.signup_access_code || '')
+    setLastBackup({ at: data?.last_backup_at || null, by: data?.last_backup_by || null })
     setCommissionRate(Number(data?.commission_per_customer) || 500)
   }
 
@@ -226,6 +234,19 @@ export default function App() {
       })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.id])
+
+  // Other admins' backups show up here without a reload, and the leave numbers refresh when the window regains focus.
+  useEffect(() => {
+    if (!currentUser) return undefined
+    const onFocus = () => { if (currentUserRef.current) { refreshLeave(); if (currentUserRef.current.role === 'admin') refreshAppSettings() } }
+    window.addEventListener('focus', onFocus)
+    let channel = null
+    if (currentUser.role === 'admin') {
+      channel = supabase.channel('settings-realtime').on('postgres_changes', { event: '*', schema: 'public', table: 'app_settings' }, () => refreshAppSettings()).subscribe()
+    }
+    return () => { window.removeEventListener('focus', onFocus); if (channel) supabase.removeChannel(channel) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser?.id])
 
@@ -370,7 +391,9 @@ export default function App() {
   }
 
   async function handleUpdateCustomer(id, formData) {
-    const { error } = await supabase.from('customers').update(customerToDbFields(formData)).eq('id', id)
+    const fields = customerToDbFields(formData)
+    if (currentUserRef.current.role === 'admin' && formData.recordedBy) fields.recorded_by = formData.recordedBy
+    const { error } = await supabase.from('customers').update(fields).eq('id', id)
     if (error) { showToast('Failed to update customer.', 'error'); return }
     showToast('Customer updated.')
     await refreshCustomers()
@@ -381,35 +404,6 @@ export default function App() {
     if (error) { showToast('Failed to delete customer.', 'error'); return }
     showToast('Customer deleted.')
     await refreshCustomers()
-  }
-
-  async function handleAddComplaint(formData) {
-    const { error } = await supabase.from('complaints').insert({ ...complaintToDbFields(formData), raised_by: currentUserRef.current.id })
-    if (error) { showToast('Failed to save complaint.', 'error'); return }
-    showToast('Complaint reported.')
-    // Only admins and Technical members can actually see the queue -- for
-    // everyone else (Sales raising one) there's nothing to refresh.
-    if (currentUserRef.current.role === 'admin' || currentUserRef.current.department === 'technical') {
-      await refreshComplaints()
-    }
-  }
-
-  async function handleUpdateComplaintStatus(complaint, status) {
-    const { error } = await supabase.from('complaints').update({ status }).eq('id', complaint.id)
-    if (error) { showToast('Failed to update complaint.', 'error'); return }
-    await refreshComplaints()
-  }
-
-  async function handleResolveComplaint(complaint, resolutionNotes) {
-    const { error } = await supabase.from('complaints').update({
-      status: 'Resolved',
-      resolution_notes: resolutionNotes.trim() || null,
-      resolved_by: currentUserRef.current.id,
-      resolved_at: new Date().toISOString(),
-    }).eq('id', complaint.id)
-    if (error) { showToast('Failed to resolve complaint.', 'error'); return }
-    showToast('Complaint resolved.')
-    await refreshComplaints()
   }
 
   // Marks every one of a member's jobs within the given day range as paid
@@ -571,9 +565,199 @@ export default function App() {
     await refreshPlaces()
   }
 
+  // ---- update 40: retrieved routers, bank details, leave, pictures, backups, customer ownership ------------------
+  async function refreshRetrievedRouters() {
+    const { data, error } = await supabase.from('retrieved_routers').select('*')
+    if (!error) setRetrievedRouters((data || []).map(mapRetrievedRouter))
+  }
+
+  async function refreshBank() {
+    const { data, error } = await supabase.from('staff_bank_details').select('*')
+    if (error) return
+    const map = {}
+    ;(data || []).forEach((row) => { map[row.member_id] = mapBank(row) })
+    setBankDetails(map)
+  }
+
+  async function refreshLeave(profile = currentUserRef.current) {
+    if (!profile) return
+    const [reqs, adjs, hol, pol, sum] = await Promise.all([
+      supabase.from('leave_requests').select('*'),
+      supabase.from('leave_adjustments').select('*'),
+      supabase.from('non_working_days').select('*').order('day'),
+      supabase.rpc('leave_policy'),
+      supabase.rpc('leave_summary'),
+    ])
+    if (!reqs.error) setLeaveRequests((reqs.data || []).map(mapLeaveRequest))
+    if (!adjs.error) setLeaveAdjustments((adjs.data || []).map(mapLeaveAdjustment))
+    if (!hol.error) setHolidays((hol.data || []).map(mapHoliday))
+    if (!pol.error && pol.data) setLeavePolicy(pol.data)
+    if (!sum.error && sum.data) setLeaveSummary(sum.data)
+    if (profile.role === 'admin') {
+      const { data } = await supabase.rpc('leave_overview')
+      setLeaveOverview(data || [])
+    }
+  }
+
+  // The database does the arithmetic and enforces every rule; the screen only asks and shows the answer.
+  async function handlePreviewLeave(start, end, memberId) {
+    const { data, error } = await supabase.rpc('leave_preview', { p_start: start, p_end: end, p_member: memberId || null })
+    if (error || !data) return { ok: false, message: 'Could not check these dates. Please try again.', days: null }
+    return data
+  }
+
+  async function handleApplyLeave({ startDate, endDate, reason }) {
+    const me = currentUserRef.current
+    const { error } = await supabase.from('leave_requests').insert({ member_id: me.id, start_date: startDate, end_date: endDate, reason: reason || null })
+    if (error) { showToast(error.message || 'Could not send the leave request.', 'error'); return false }
+    showToast(me.isDirector ? 'Leave recorded and approved.' : 'Leave request sent to the Director.')
+    await refreshLeave()
+    return true
+  }
+
+  async function handleCancelLeave(request) {
+    const { data, error } = await supabase.from('leave_requests').update({ status: 'cancelled' }).eq('id', request.id).select('id')
+    if (error || !data || data.length === 0) { showToast((error && error.message) || 'Could not cancel this leave.', 'error'); return }
+    showToast('Leave cancelled.')
+    await refreshLeave()
+  }
+
+  // Row-level security makes a request invisible to anyone but its owner and the Director, so "no rows changed" means "not allowed".
+  async function handleDecideLeave(request, status, note) {
+    const { data, error } = await supabase.from('leave_requests').update({ status, decision_note: note || null }).eq('id', request.id).select('id')
+    if (error) { showToast(error.message || 'Could not save the decision.', 'error'); await refreshLeave(); return }
+    if (!data || data.length === 0) { showToast('Only the Director can approve or reject leave.', 'error'); return }
+    showToast(status === 'approved' ? 'Leave approved.' : 'Leave rejected.')
+    await refreshLeave()
+  }
+
+  async function handleRecordLeave({ memberId, startDate, endDate, reason }) {
+    const { error } = await supabase.from('leave_requests').insert({ member_id: memberId, start_date: startDate, end_date: endDate, reason: reason || null, status: 'approved' })
+    if (error) { showToast(error.message || 'Could not record the leave.', 'error'); return false }
+    showToast('Leave recorded.')
+    await refreshLeave()
+    return true
+  }
+
+  async function handleAdjustLeave({ memberId, days, note }) {
+    const { error } = await supabase.from('leave_adjustments').insert({ member_id: memberId, leave_year: currentLeaveYear(leavePolicy.year_start_month), days, note })
+    if (error) { showToast('Could not save the adjustment.', 'error'); return false }
+    showToast('Leave days adjusted.')
+    await refreshLeave()
+    return true
+  }
+
+  async function handleSaveLeavePolicy(values) {
+    const { error } = await supabase.from('app_settings').update(values).eq('id', true)
+    if (error) { showToast(error.message || 'Could not save the leave policy.', 'error'); return }
+    showToast('Leave policy saved.')
+    await refreshLeave()
+  }
+
+  async function handleAddHoliday({ day, name }) {
+    const { error } = await supabase.from('non_working_days').insert({ day, name })
+    if (error) { showToast(error.code === '23505' ? 'That date is already on the list.' : 'Could not add the holiday.', 'error'); return }
+    showToast('Holiday added.')
+    await refreshLeave()
+  }
+
+  async function handleRemoveHoliday(holiday) {
+    const { error } = await supabase.from('non_working_days').delete().eq('id', holiday.id)
+    if (error) { showToast('Could not remove the holiday.', 'error'); return }
+    showToast('Holiday removed.')
+    await refreshLeave()
+  }
+
+  async function handleAddKenyanHolidays(list) {
+    const { error } = await supabase.from('non_working_days').upsert(list.map((h) => ({ day: h.day, name: h.name })), { onConflict: 'day', ignoreDuplicates: true })
+    if (error) { showToast('Could not add the public holidays.', 'error'); return }
+    showToast(`Public holidays added for this leave year.`)
+    await refreshLeave()
+  }
+
+  async function reloadSelf() {
+    const { data } = await supabase.from('profiles').select('*').eq('id', currentUserRef.current.id).single()
+    if (data) { const p = mapProfile(data); currentUserRef.current = p; setCurrentUser(p) }
+    if (currentUserRef.current.role === 'admin') await refreshUsers()
+  }
+
+  async function removeOldAvatars(userId, keepPath) {
+    const { data } = await supabase.storage.from('avatars').list(userId)
+    const old = (data || []).map((f) => `${userId}/${f.name}`).filter((p) => p !== keepPath)
+    if (old.length) await supabase.storage.from('avatars').remove(old)
+  }
+
+  async function handleUploadAvatar(file) {
+    const me = currentUserRef.current
+    try {
+      const blob = await processAvatar(file)
+      const path = `${me.id}/avatar-${Date.now()}.jpg`
+      const { error: uploadError } = await supabase.storage.from('avatars').upload(path, blob, { contentType: 'image/jpeg', cacheControl: '31536000' })
+      if (uploadError) { showToast('The picture could not be uploaded. Ask your admin to run the latest database update (update 40).', 'error'); return }
+      const { data: pub } = supabase.storage.from('avatars').getPublicUrl(path)
+      const { error } = await supabase.from('profiles').update({ avatar_url: pub.publicUrl }).eq('id', me.id)
+      if (error) { showToast('The picture was uploaded but could not be saved to your profile.', 'error'); return }
+      await removeOldAvatars(me.id, path)
+      await reloadSelf()
+      showToast('Profile picture updated.')
+    } catch (e) { showToast((e && e.message) || 'That picture could not be used.', 'error') }
+  }
+
+  async function handleRemoveAvatar(profileId) {
+    const id = profileId || currentUserRef.current.id
+    const { error } = await supabase.from('profiles').update({ avatar_url: null }).eq('id', id)
+    if (error) { showToast('Could not remove the picture.', 'error'); return }
+    await removeOldAvatars(id, null)
+    if (id === currentUserRef.current.id) await reloadSelf()
+    else if (currentUserRef.current.role === 'admin') await refreshUsers()
+    showToast('Picture removed.')
+  }
+
+  function handleBackupRecorded(at) { setLastBackup({ at: at || new Date().toISOString(), by: currentUserRef.current.id }) }
+
+  async function handleAssignCustomers(ids, memberId) {
+    const { data, error } = await supabase.rpc('assign_customers_to_member', { p_ids: ids, p_member: memberId })
+    if (error) { showToast(error.message || 'Could not change who recorded these customers.', 'error'); return false }
+    const who = allUsers.find((u) => u.id === memberId)
+    showToast(data === 0 ? 'Nothing changed: they were already recorded under that person.' : `${data} customer${data === 1 ? '' : 's'} now recorded under ${who ? who.fullName : 'that person'}.`)
+    await refreshCustomers()
+    return true
+  }
+
+  async function handleAddRouter(form) {
+    const me = currentUserRef.current
+    const { error } = await supabase.from('retrieved_routers').insert({ ...retrievedRouterToDbFields(form), retrieved_by: form.retrievedBy || me.id, recorded_by: me.id })
+    if (error) { showToast('Failed to save the record.', 'error'); return false }
+    showToast('Retrieved router recorded.')
+    await refreshRetrievedRouters()
+    return true
+  }
+
+  async function handleUpdateRouter(id, form) {
+    const { error } = await supabase.from('retrieved_routers').update(retrievedRouterToDbFields(form)).eq('id', id)
+    if (error) { showToast('Failed to update the record.', 'error'); return false }
+    showToast('Record updated.')
+    await refreshRetrievedRouters()
+    return true
+  }
+
+  async function handleSetRouterStatus(row, status, note) {
+    const { error } = await supabase.from('retrieved_routers').update({ status, status_note: note || null }).eq('id', row.id)
+    if (error) { showToast('Failed to update the router.', 'error'); return }
+    showToast('Router updated.')
+    await refreshRetrievedRouters()
+  }
+
+  async function handleDeleteRouter(row) {
+    const { error } = await supabase.from('retrieved_routers').delete().eq('id', row.id)
+    if (error) { showToast('Failed to delete the record.', 'error'); return }
+    showToast('Record deleted.')
+    await refreshRetrievedRouters()
+  }
+
   // After an import or restore: reload everything the admin sees.
   async function handleDataChanged() {
-    await Promise.all([refreshJobs(), refreshCustomers(), refreshExpenses(), refreshComplaints(), refreshUsers(), refreshStockItems(), refreshStockIn(), refreshStockOut(), refreshPlaces(), refreshVisits()])
+    await Promise.all([refreshJobs(), refreshCustomers(), refreshExpenses(), refreshRetrievedRouters(), refreshLeave(), refreshBank(), refreshUsers(), refreshStockItems(), refreshStockIn(), refreshStockOut(), refreshPlaces(), refreshVisits()])
   }
 
   async function handleAddStockIn(formData) {
@@ -639,7 +823,7 @@ export default function App() {
     await refreshUsers()
   }
 
-  async function handleUpdateProfile(profileId, updates) {
+  async function handleUpdateProfile(profileId, updates, bank) {
     const { error } = await supabase.from('profiles').update(updates).eq('id', profileId)
     if (error) {
       const text = String(error.message || '')
@@ -648,12 +832,20 @@ export default function App() {
         : 'Failed to update profile.', 'error')
       return
     }
+    if (bank) {
+      const empty = Object.values(bank).every((v) => !String(v || '').trim())
+      if (!(empty && !bankDetails[profileId])) {
+        const { error: bankError } = await supabase.from('staff_bank_details').upsert(bankToDbFields(profileId, bank), { onConflict: 'member_id' })
+        if (bankError) { showToast(bankError.code === '23514' ? 'The account number does not look right.' : 'Profile saved, but the bank details could not be saved.', 'error'); await refreshBank(); return }
+      }
+    }
     showToast('Profile updated.')
     if (profileId === currentUserRef.current.id) {
       const { data } = await supabase.from('profiles').select('*').eq('id', profileId).single()
       if (data) { const updated = mapProfile(data); currentUserRef.current = updated; setCurrentUser(updated) }
     }
     if (currentUserRef.current.role === 'admin') await refreshUsers()
+    await refreshBank()
   }
 
   async function handleDeleteJob(id) {
@@ -725,10 +917,28 @@ export default function App() {
     </>)
   }
 
+  const extras = {
+    lastBackup, bankDetails, onBackupRecorded: handleBackupRecorded, onAssignCustomers: handleAssignCustomers,
+    header: {
+      bank: bankDetails[currentUser.id], onUploadAvatar: handleUploadAvatar, onRemoveAvatar: handleRemoveAvatar,
+      leave: (
+        <LeavePanel userId={currentUser.id} isDirector={currentUser.isDirector}
+          requests={leaveRequests.filter((r) => r.memberId === currentUser.id)} adjustments={leaveAdjustments.filter((a) => a.memberId === currentUser.id)}
+          policy={leavePolicy} summary={leaveSummary} onPreview={handlePreviewLeave} onApply={handleApplyLeave} onCancel={handleCancelLeave} />
+      ),
+    },
+    leave: {
+      requests: leaveRequests, adjustments: leaveAdjustments, overview: leaveOverview, holidays, policy: leavePolicy, summary: leaveSummary,
+      onPreview: handlePreviewLeave, onDecide: handleDecideLeave, onCancelRequest: handleCancelLeave, onRecord: handleRecordLeave, onAdjust: handleAdjustLeave,
+      onSavePolicy: handleSaveLeavePolicy, onAddHoliday: handleAddHoliday, onRemoveHoliday: handleRemoveHoliday, onAddKenyanHolidays: handleAddKenyanHolidays,
+    },
+    routers: { rows: retrievedRouters, onAdd: handleAddRouter, onUpdate: handleUpdateRouter, onSetStatus: handleSetRouterStatus, onDelete: handleDeleteRouter },
+  }
+
   return (<>
     {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     {currentUser.role === 'admin'
-      ? <AdminDashboard currentUser={currentUser} users={allUsers} jobs={jobs} customers={customers} expenses={expenses} stockItems={stockItems} stockIn={stockIn} stockOut={stockOut} places={places} visits={visits} onAddPlace={handleAddPlace} onRecordVisit={handleRecordVisit} onDeleteVisit={handleDeleteVisit} onSetPlaceActive={handleSetPlaceActive} onUpdateCustomer={handleUpdateCustomer} onAssignEmployeeNumbers={handleAssignEmployeeNumbers} onDataChanged={handleDataChanged} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAssignJob={handleAssignJob} onPromote={handlePromote} onUpdateDepartment={handleUpdateDepartment} onUpdateProfile={handleUpdateProfile} accessCode={accessCode} onUpdateAccessCode={handleUpdateAccessCode} commissionRate={commissionRate} onUpdateCommissionRate={handleUpdateCommissionRate} onClearCommission={handleClearCommission} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onMarkTransportPaid={handleMarkTransportPaid} onAddExpense={handleAddExpense} onAddService={handleAddService} onAttachReceipt={handleAttachReceipt} onApproveExpense={handleApproveExpense} onRejectExpense={handleRejectExpense} onMarkExpensePaid={handleMarkExpensePaid} onDeleteExpense={handleDeleteExpense} onViewReceipt={getReceiptUrl} onToggleTeamLead={handleToggleTeamLead} onSetDirector={handleSetDirector} onAddStockItem={handleAddStockItem} onUpdateStockItem={handleUpdateStockItem} onDeleteStockItem={handleDeleteStockItem} onAddStockIn={handleAddStockIn} onAddStockInBatch={handleAddStockInBatch} onAddStockOut={handleAddStockOut} />
-      : <MemberDashboard currentUser={currentUser} jobs={jobs.filter((j) => j.memberId === currentUser.id)} raisedJobs={jobs.filter((j) => j.raisedBy === currentUser.id && j.memberId !== currentUser.id)} customers={customers} customerIdsWithJobs={customerIdsWithJobs} complaints={complaints} expenses={expenses.filter((e) => e.submittedBy === currentUser.id)} memberNames={memberNames} places={places} visits={visits} onAddPlace={handleAddPlace} onRecordVisit={handleRecordVisit} onDeleteVisit={handleDeleteVisit} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAddCustomer={handleAddCustomer} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onUpdateProfile={handleUpdateProfile} onAddComplaint={handleAddComplaint} onUpdateComplaintStatus={handleUpdateComplaintStatus} onResolveComplaint={handleResolveComplaint} onAddExpense={handleAddExpense} onAttachReceipt={handleAttachReceipt} onDeleteExpense={handleDeleteExpense} onViewReceipt={getReceiptUrl} commissionRate={commissionRate} />}
+      ? <AdminDashboard extras={extras} currentUser={currentUser} users={allUsers} jobs={jobs} customers={customers} expenses={expenses} stockItems={stockItems} stockIn={stockIn} stockOut={stockOut} places={places} visits={visits} onAddPlace={handleAddPlace} onRecordVisit={handleRecordVisit} onDeleteVisit={handleDeleteVisit} onSetPlaceActive={handleSetPlaceActive} onUpdateCustomer={handleUpdateCustomer} onAssignEmployeeNumbers={handleAssignEmployeeNumbers} onDataChanged={handleDataChanged} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAssignJob={handleAssignJob} onPromote={handlePromote} onUpdateDepartment={handleUpdateDepartment} onUpdateProfile={handleUpdateProfile} accessCode={accessCode} onUpdateAccessCode={handleUpdateAccessCode} commissionRate={commissionRate} onUpdateCommissionRate={handleUpdateCommissionRate} onClearCommission={handleClearCommission} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onMarkTransportPaid={handleMarkTransportPaid} onAddExpense={handleAddExpense} onAddService={handleAddService} onAttachReceipt={handleAttachReceipt} onApproveExpense={handleApproveExpense} onRejectExpense={handleRejectExpense} onMarkExpensePaid={handleMarkExpensePaid} onDeleteExpense={handleDeleteExpense} onViewReceipt={getReceiptUrl} onToggleTeamLead={handleToggleTeamLead} onSetDirector={handleSetDirector} onAddStockItem={handleAddStockItem} onUpdateStockItem={handleUpdateStockItem} onDeleteStockItem={handleDeleteStockItem} onAddStockIn={handleAddStockIn} onAddStockInBatch={handleAddStockInBatch} onAddStockOut={handleAddStockOut} />
+      : <MemberDashboard extras={extras} currentUser={currentUser} jobs={jobs.filter((j) => j.memberId === currentUser.id)} raisedJobs={jobs.filter((j) => j.raisedBy === currentUser.id && j.memberId !== currentUser.id)} customers={customers} customerIdsWithJobs={customerIdsWithJobs} expenses={expenses.filter((e) => e.submittedBy === currentUser.id)} memberNames={memberNames} places={places} visits={visits} onAddPlace={handleAddPlace} onRecordVisit={handleRecordVisit} onDeleteVisit={handleDeleteVisit} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAddCustomer={handleAddCustomer} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onUpdateProfile={handleUpdateProfile} onAddExpense={handleAddExpense} onAttachReceipt={handleAttachReceipt} onDeleteExpense={handleDeleteExpense} onViewReceipt={getReceiptUrl} commissionRate={commissionRate} />}
   </>)
 }

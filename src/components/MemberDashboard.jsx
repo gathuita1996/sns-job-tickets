@@ -1,11 +1,10 @@
 import { useMemo, useState } from 'react'
-import { AlertCircle, AlertTriangle, ArrowLeft, Calendar, CheckCircle2, ClipboardCheck, Clipboard, Clock, Pencil, Plus, Receipt, Send, Trash2, UserPlus, Users, Wallet } from 'lucide-react'
+import { AlertCircle, ArrowLeft, Plane, Router as RouterIcon, Calendar, CheckCircle2, ClipboardCheck, Clipboard, Clock, Pencil, Plus, Receipt, Send, Trash2, UserPlus, Users, Wallet } from 'lucide-react'
 import Header from './Header'
 import JobFormModal from './JobForm'
 import JobsTable from './JobsTable'
 import CustomerFormModal from './CustomerForm'
-import ComplaintFormModal from './ComplaintForm'
-import ComplaintsQueue from './ComplaintsQueue'
+import RetrievedRouters from './RetrievedRouters'
 import ExpenseFormModal from './ExpenseForm'
 import ExpensesList from './ExpensesList'
 import { JobPrintView } from './PrintViews'
@@ -16,8 +15,11 @@ import { analyzePlaces } from '../lib/visitsIntel'
 import { MapPin } from 'lucide-react'
 
 
-export default function MemberDashboard({ currentUser, jobs, raisedJobs, customers, customerIdsWithJobs, complaints, expenses, memberNames, places, visits, onAddPlace, onRecordVisit, onDeleteVisit, onLogout, onAddJob, onUpdateJob, onDeleteJob, onAddCustomer, onUpdateCustomer, onDeleteCustomer, onUpdateProfile, onAddComplaint, onUpdateComplaintStatus, onResolveComplaint, onAddExpense, onAttachReceipt, onDeleteExpense, onViewReceipt, commissionRate }) {
-  const [view, setView] = useState('home') // 'home' | 'all' | 'pending' | 'today' | 'assigned' | 'raised' | 'customers' | 'complaints' | 'expenses'
+export default function MemberDashboard({ extras, currentUser, jobs, raisedJobs, customers, customerIdsWithJobs, expenses, memberNames, places, visits, onAddPlace, onRecordVisit, onDeleteVisit, onLogout, onAddJob, onUpdateJob, onDeleteJob, onAddCustomer, onUpdateCustomer, onDeleteCustomer, onUpdateProfile, onAddExpense, onAttachReceipt, onDeleteExpense, onViewReceipt, commissionRate }) {
+  const [profileRequest, setProfileRequest] = useState(null)
+  const routerApi = (extras && extras.routers) || { rows: [] }
+  const leaveSummary = extras && extras.leave && extras.leave.summary
+  const [view, setView] = useState('home') // 'home' | 'all' | 'pending' | 'today' | 'assigned' | 'raised' | 'customers' | 'routers' | 'expenses'
   const [periodGranularity, setPeriodGranularity] = useState('day')
   const [periodAnchor, setPeriodAnchor] = useState(() => new Date())
   const [showForm, setShowForm] = useState(false)
@@ -25,7 +27,6 @@ export default function MemberDashboard({ currentUser, jobs, raisedJobs, custome
   const [showCustomerForm, setShowCustomerForm] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState(null)
   const [confirmDeleteCustomer, setConfirmDeleteCustomer] = useState(null)
-  const [showComplaintForm, setShowComplaintForm] = useState(false)
   const [showExpenseForm, setShowExpenseForm] = useState(false)
   const [printing, setPrinting] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState(null)
@@ -36,7 +37,6 @@ export default function MemberDashboard({ currentUser, jobs, raisedJobs, custome
   const visitStats = useMemo(() => (isSales ? analyzePlaces({ places: places || [], visits: visits || [], customers, today: toDateInputValue(new Date()) }) : []), [isSales, places, visits, customers])
   const revisitCount = visitStats.filter((s) => s.needRevisit).length
   const isTechnical = currentUser.department === 'technical'
-  const canReportComplaint = isSales || isTechnical
   // Regular members no longer get this at all -- only a Team Lead does.
   // Admins get it through AdminDashboard instead, not this component.
   const canMakePurchases = currentUser.isTeamLead
@@ -83,7 +83,6 @@ export default function MemberDashboard({ currentUser, jobs, raisedJobs, custome
   }, [view, jobs, pendingJobs, todayJobs, assignedJobs, raisedJobs, search, statusFilter])
 
   const sortedMyCustomers = useMemo(() => [...myCustomers].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)), [myCustomers])
-  const activeComplaints = useMemo(() => (complaints || []).filter((c) => c.status !== 'Resolved'), [complaints])
   // JobForm expects allMembers as a plain array (same shape admin already
   // passes from `users`) -- memberNames comes in as an id-keyed object, so
   // convert it once here rather than have JobForm handle two shapes.
@@ -91,13 +90,13 @@ export default function MemberDashboard({ currentUser, jobs, raisedJobs, custome
 
   if (printing) return <JobPrintView job={printing} filedByUser={currentUser} coTechnicianNames={(printing.coTechnicians || []).map((id) => memberNames?.[id]?.fullName).filter(Boolean)} onBack={() => setPrinting(null)} />
 
-  const viewTitles = { all: 'All my jobs', pending: 'Pending jobs', today: "Today's jobs", assigned: 'Jobs assigned to me', raised: 'Jobs I raised', customers: 'My customers', complaints: 'Complaints queue' }
+  const viewTitles = { all: 'All my jobs', pending: 'Pending jobs', today: "Today's jobs", assigned: 'Jobs assigned to me', raised: 'Jobs I raised', customers: 'My customers', routers: 'Retrieved routers' }
 
   function openNewJob() { setEditingJob(null); setShowForm(true) }
 
   return (
     <div className="sns-shell">
-      <Header currentUser={currentUser} onLogout={onLogout} onUpdateProfile={onUpdateProfile} subtitle="Ticketing System" />
+      <Header currentUser={currentUser} onLogout={onLogout} onUpdateProfile={onUpdateProfile} subtitle="Ticketing System" profileExtras={extras && extras.header} profileRequest={profileRequest} />
       <main className="max-w-6xl mx-auto px-4 sm:px-6" style={{ paddingTop: '1.5rem', paddingBottom: '3rem' }}>
 
         {stats.overdue > 0 && (
@@ -136,12 +135,10 @@ export default function MemberDashboard({ currentUser, jobs, raisedJobs, custome
               {isSales && (
                 <NavCard icon={MapPin} label="Field visits" description={`${(visits || []).filter((v) => v.visitedBy === currentUser.id).length} visits recorded · where to go next`} onClick={() => setView('visits')} badge={revisitCount} />
               )}
-              {canReportComplaint && (
-                <NavCard icon={AlertTriangle} label="Report a complaint" description="Log a customer issue" onClick={() => setShowComplaintForm(true)} />
-              )}
               {isTechnical && (
-                <NavCard icon={AlertTriangle} label="Complaints" description={`${activeComplaints.length} active`} onClick={() => setView('complaints')} badge={activeComplaints.filter((c) => c.isRecurring).length} />
+                <NavCard icon={RouterIcon} label="Retrieved routers" description={`${routerApi.rows.length} recorded`} onClick={() => setView('routers')} />
               )}
+              <NavCard icon={Plane} label="My leave" description={leaveSummary ? `${leaveSummary.remaining} days left` : 'Apply for leave'} onClick={() => setProfileRequest({ tab: 'leave', n: Date.now() })} />
               {canMakePurchases && (
                 <>
                   <NavCard icon={Receipt} label="Submit a purchase" description="Upload a receipt" onClick={() => setShowExpenseForm(true)} />
@@ -159,7 +156,7 @@ export default function MemberDashboard({ currentUser, jobs, raisedJobs, custome
             <div className="grid grid-cols-3 gap-3" style={{ marginBottom: '1rem', maxWidth: '30rem' }}>
               <StatCard label="Customers recorded" value={myCustomers.length} icon={Users} />
               <StatCard label="New this month" value={newThisMonthCustomers.length} icon={UserPlus} tone="success" />
-              <StatCard label="Commission earned" value={formatKSh(myCustomers.length * commissionRate)} icon={Wallet} tone="success" />
+              <StatCard label="Commission earned" value={formatKSh(myCustomers.filter((c) => !c.commissionExempt).length * commissionRate)} icon={Wallet} tone="success" />
             </div>
             <div className="flex items-center justify-between" style={{ marginBottom: '1rem', flexWrap: 'wrap', gap: '0.6rem' }}>
               <div className="flex gap-2">
@@ -187,7 +184,9 @@ export default function MemberDashboard({ currentUser, jobs, raisedJobs, custome
                           <td className="sns-text-soft">{c.interestedPackage || '—'}</td>
                           <td className="sns-text-soft">{formatDate(c.createdAt)}</td>
                           <td>
-                            {c.commissionPaidAt ? (
+                            {c.commissionExempt ? (
+                              <span className="sns-text-faint" title="Imported customers do not earn commission">Imported</span>
+                            ) : c.commissionPaidAt ? (
                               <span className="sns-badge sns-badge-done">Paid</span>
                             ) : (
                               <span className="sns-badge" style={{ background: 'var(--stamp-pale)', color: 'var(--stamp-deep)' }}>Unpaid</span>
@@ -215,18 +214,13 @@ export default function MemberDashboard({ currentUser, jobs, raisedJobs, custome
             </div>
             <FieldVisits places={places || []} visits={visits || []} customers={customers} nameOf={(id) => (id === currentUser.id ? currentUser.fullName : (memberNames && memberNames[id] && memberNames[id].fullName) || '')} currentUser={currentUser} isAdmin={false} onAddPlace={onAddPlace} onRecordVisit={onRecordVisit} onDeleteVisit={onDeleteVisit} onSetPlaceActive={() => {}} />
           </>
-        ) : view === 'complaints' ? (
+        ) : view === 'routers' ? (
           <>
             <div className="flex items-center gap-3" style={{ marginBottom: '1rem' }}>
               <button onClick={() => setView('home')} className="sns-btn-secondary" style={{ padding: '0.5rem' }} title="Back to dashboard"><ArrowLeft size={16} /></button>
-              <h2 className="sns-display" style={{ fontSize: '1.1rem', fontWeight: 700 }}>Complaints queue</h2>
+              <h2 className="sns-display" style={{ fontSize: '1.1rem', fontWeight: 700 }}>Retrieved routers</h2>
             </div>
-            <ComplaintsQueue
-              complaints={complaints || []}
-              userMap={memberNames}
-              onUpdateStatus={onUpdateComplaintStatus}
-              onResolve={onResolveComplaint}
-            />
+            <RetrievedRouters rows={routerApi.rows} customers={customers} members={[currentUser]} userMap={{ [currentUser.id]: currentUser }} isAdmin={false} currentUser={currentUser} onAdd={routerApi.onAdd} onUpdate={routerApi.onUpdate} onSetStatus={routerApi.onSetStatus} onDelete={routerApi.onDelete} />
           </>
         ) : view === 'expenses' ? (
           <>
@@ -301,12 +295,6 @@ export default function MemberDashboard({ currentUser, jobs, raisedJobs, custome
             else await onAddCustomer(data)
             setShowCustomerForm(false); setEditingCustomer(null)
           }}
-        />
-      )}
-      {showComplaintForm && (
-        <ComplaintFormModal
-          onClose={() => setShowComplaintForm(false)}
-          onSave={async (data) => { await onAddComplaint(data); setShowComplaintForm(false) }}
         />
       )}
       {showExpenseForm && (

@@ -27,6 +27,11 @@ export const TABLES = [
   { table: 'stock_in', sheet: 'Stock In', profile: { recorded_by: true }, fk: { item_id: 'stock_items' }, fkRequired: ['item_id'] },
   { table: 'stock_out', sheet: 'Stock Out', profile: { recorded_by: true }, fk: { item_id: 'stock_items', customer_id: 'customers' }, fkRequired: ['item_id'] },
   { table: 'visits', sheet: 'Visits', profile: { visited_by: true }, fk: { place_id: 'places' }, fkRequired: ['place_id'] },
+  { table: 'retrieved_routers', sheet: 'Retrieved Routers', profile: { recorded_by: true, retrieved_by: false, status_updated_by: false }, fk: { customer_id: 'customers' } },
+  // Leave can only be restored by the Director, and a row the leave rules refuse is skipped and reported instead of stopping everything.
+  { table: 'non_working_days', sheet: 'Public Holidays', directorOnly: true, profile: { created_by: false }, match: { select: 'id,day', key: (r) => String(r.day) } },
+  { table: 'leave_requests', sheet: 'Leave Requests', directorOnly: true, perRow: true, profile: { member_id: true, decided_by: false, cancelled_by: false, created_by: false } },
+  { table: 'leave_adjustments', sheet: 'Leave Adjustments', directorOnly: true, profile: { member_id: true, created_by: false } },
 ]
 
 // ---- cell values -----------------------------------------------------------------------------------
@@ -67,6 +72,9 @@ const INFO = {
   stock_in: (r, c) => ({ '(info) Item': c.item(r.item_id), '(info) Recorded by': c.name(r.recorded_by) }),
   stock_out: (r, c) => ({ '(info) Item': c.item(r.item_id), '(info) Customer': c.customer(r.customer_id), '(info) Recorded by': c.name(r.recorded_by) }),
   visits: (r, c) => ({ '(info) Place': c.place(r.place_id), '(info) Visited by': c.name(r.visited_by) }),
+  retrieved_routers: (r, c) => ({ '(info) Customer': c.customer(r.customer_id), '(info) Recorded by': c.name(r.recorded_by), '(info) Retrieved by': c.name(r.retrieved_by) }),
+  leave_requests: (r, c) => ({ '(info) Staff member': c.name(r.member_id), '(info) Decided by': c.name(r.decided_by) }),
+  leave_adjustments: (r, c) => ({ '(info) Staff member': c.name(r.member_id) }),
 }
 
 function addSheet(wb, sheetName, rows, infoFn, ctx) {
@@ -106,6 +114,7 @@ export function buildWorkbook(ExcelJS, data, { includePersonal = false, exported
   about.addRow(['Exported by', exportedBy])
   about.addRow(['Staff personal details included', includePersonal ? 'Yes - keep this file safe' : 'No'])
   about.addRow(['Receipt photos', 'Not included (they stay in the system)'])
+  about.addRow(['Profile pictures and bank details', 'Not included (staff add them again if the system is ever rebuilt)'])
   about.addRow([])
   about.addRow(['Sheet', 'Records']); about.getRow(about.rowCount).font = { bold: true }
   const profiles = (data.profiles || []).map((p) => (includePersonal ? p : Object.fromEntries(Object.entries(p).filter(([k]) => !PERSONAL_COLUMNS.includes(k)))))
@@ -231,13 +240,14 @@ export async function previewRestore({ parsed, users, client }) {
   return { sheets, matched, unmatched, nonEmpty, exportedAt: parsed.info.exportedAt, exportedBy: parsed.info.exportedBy }
 }
 
-export async function runRestore({ parsed, users, adminId, client, onProgress = () => {}, chunk = 200 }) {
+export async function runRestore({ parsed, users, adminId, client, onProgress = () => {}, chunk = 200, isDirector = false }) {
   const { map: profileMap, unmatched } = buildProfileMap(parsed.rows.profiles || [], users)
   const ctx = { profileMap, adminId, idMaps: {}, stats: { reassigned: 0 } }
   const report = { tables: {}, unmatchedStaff: unmatched, reassigned: 0 }
   for (const spec of TABLES) {
     const raws = parsed.rows[spec.table] || []
     const rep = (report.tables[spec.table] = { sheet: spec.sheet, inserted: 0, reused: 0, skipped: 0, reasons: {}, skippedColumns: [] })
+    if (spec.directorOnly && !isDirector && raws.length) { rep.skipped += raws.length; rep.reasons['only the Director can restore leave records and public holidays'] = raws.length; continue }
     if (spec.idMap) ctx.idMaps[spec.table] = new Map()
     if (!raws.length) continue
     onProgress(`Restoring ${spec.sheet}...`)
@@ -256,6 +266,15 @@ export async function runRestore({ parsed, users, adminId, client, onProgress = 
         if (existing.has(key)) { if (spec.idMap) ctx.idMaps[spec.table].set(String(raw.id), existing.get(key)); rep.reused++; continue }
       }
       todo.push({ raw, row: p.row })
+    }
+    if (spec.perRow) {
+      for (const x of todo) {
+        const r = await insertAdaptive(client, spec.table, [x.row], { required: requiredFor(spec) })
+        if (r.error) { rep.skipped++; const why = String(r.error.message || 'refused').slice(0, 90); rep.reasons[why] = (rep.reasons[why] || 0) + 1; continue }
+        for (const c of r.dropped) if (!rep.skippedColumns.includes(c)) rep.skippedColumns.push(c)
+        rep.inserted++
+      }
+      continue
     }
     for (let i = 0; i < todo.length; i += chunk) {
       const part = todo.slice(i, i + chunk)
@@ -284,6 +303,7 @@ export async function runRestore({ parsed, users, adminId, client, onProgress = 
 const HEADERS = {
   name: ['name', 'fullname', 'customer', 'customername', 'client', 'clientname'],
   first: ['firstname', 'first'], last: ['lastname', 'last', 'surname'],
+  recorder: ['recordedby', 'recorder', 'staff', 'staffname', 'member', 'membername', 'assignedto', 'owner', 'salesperson'],
   phone: ['phone', 'phonenumber', 'contact', 'mobile', 'mobilenumber', 'tel', 'telephone', 'msisdn', 'contactnumber'],
 }
 const canon = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '')
@@ -323,30 +343,38 @@ export function parseCustomerList(wb) {
     const n = nameCell ? splitName(nameCell) : { first: String(first || ''), last: String(last || '') || '-' }
     if (!n.first) { skipped.push({ line: rn, reason: 'No name' }); return }
     if (!phone) { skipped.push({ line: rn, reason: `No phone number (${nameCell || [n.first, n.last].filter((x) => x && x !== '-').join(' ')})` }); return }
-    rows.push({ line: rn, first_name: n.first, last_name: n.last, contact: phone })
+    const recorder = get('recorder')
+    rows.push({ line: rn, first_name: n.first, last_name: n.last, contact: phone, ...(recorder ? { recorder: String(recorder).trim() } : {}) })
   })
   return { rows, skipped, error: null }
 }
 
-export function planCustomerImport(rows, existingCustomers) {
+export function planCustomerImport(rows, existingCustomers, users = []) {
+  const norm = (s) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ')
+  const people = new Map()
+  for (const u of users) for (const k of [u.fullName ?? u.full_name, u.username, u.employeeNumber ?? u.employee_number]) if (k) people.set(norm(k), u.id)
+  const unmatchedRecorders = new Set()
   const seen = new Set(existingCustomers.map((c) => phoneKey(c.contact)).filter(Boolean))
   const toInsert = [], duplicates = []
   for (const r of rows) {
     const k = phoneKey(r.contact)
     if (k && seen.has(k)) { duplicates.push(r); continue }
     if (k) seen.add(k)
-    toInsert.push(r)
+    const who = r.recorder ? people.get(norm(r.recorder)) : null
+    if (r.recorder && !who) unmatchedRecorders.add(r.recorder)
+    toInsert.push(who ? { ...r, recordedBy: who } : r)
   }
-  return { toInsert, duplicates }
+  return { toInsert, duplicates, unmatchedRecorders: [...unmatchedRecorders] }
 }
 
 // An imported customer carries only a name and a phone number. The location is compulsory in the
 // database, so it is filled with "Not specified" for the team to complete. Commission is marked as
-// already settled, so an import never earns anyone commission.
+// already settled and flagged as exempt, so an import never earns anyone commission, even after the customer is
+// handed to a staff member for tracking.
 const CUSTOMER_REQUIRED = ['first_name', 'last_name', 'contact', 'location', 'recorded_by']
-export async function runCustomerImport({ toInsert, adminId, client, chunk = 200, now = new Date() }) {
+export async function runCustomerImport({ toInsert, adminId, recordedBy, client, chunk = 200, now = new Date() }) {
   const settled = now.toISOString()
-  const rows = toInsert.map((r) => ({ first_name: r.first_name, last_name: r.last_name, contact: r.contact, location: 'Not specified', recorded_by: adminId, commission_paid_at: settled }))
+  const rows = toInsert.map((r) => ({ first_name: r.first_name, last_name: r.last_name, contact: r.contact, location: 'Not specified', recorded_by: r.recordedBy || recordedBy || adminId, commission_paid_at: settled, commission_exempt: true }))
   let inserted = 0
   const dropped = new Set()
   for (let i = 0; i < rows.length; i += chunk) {
@@ -375,11 +403,5 @@ export function buildCustomerTemplate(ExcelJS) {
   return wb
 }
 
-// ---- last-backup reminder (kept in this browser) -------------------------------------------------------------
-const LAST_KEY = 'sns:lastBackup'
-export function getLastBackup() { try { return localStorage.getItem(LAST_KEY) } catch { return null } }
-export function markBackup(d = new Date()) { try { localStorage.setItem(LAST_KEY, d.toISOString()) } catch { /* private mode: reminder just stays on */ } }
-export function daysSinceBackup(now = new Date()) {
-  const last = getLastBackup()
-  return last ? Math.floor((now - new Date(last)) / 86400000) : null
-}
+// ---- last-backup reminder: the date lives in the database, so every admin sees the same one ------------------
+export function daysSince(iso, now = new Date()) { return iso ? Math.max(0, Math.floor((now - new Date(iso)) / 86400000)) : null }

@@ -28,6 +28,11 @@ const data = {
     { id: 2, item_id: 99, purchase_date: '2026-09-01', quantity: 1, unit_cost: 10, supplier: null, invoice_no: null, received_by: null, recorded_by: A, created_at: ts }],
   stock_out: [{ id: 1, item_id: 2, issue_date: '2026-09-05', quantity: 1, issued_to: 'Tim', purpose: 'Install', reference_no: null, issued_by: null, recorded_by: A, created_at: ts, install_type: 'replacement', customer_id: 1, device_serial: 'ZTE123' }],
   visits: [{ id: 1, place_id: 1, visit_date: '2026-10-01', purpose: 'marketing', outcome: 'follow_up', leads: 2, follow_up_date: '2026-10-08', notes: null, visited_by: S, created_at: ts }],
+  retrieved_routers: [{ id: 1, retrieved_date: '2026-10-10', customer_id: 1, customer_name: 'Amina Hassan', customer_contact: '0712345678', location: 'Diani', router_model: 'ONU', serial_number: 'ZTE777', reason: 'failed_to_pay', reason_notes: '3 months behind', amount_owed: 4500, condition: 'working', accessories: 'Power adapter', status: 'in_store', status_note: null, status_updated_at: null, status_updated_by: null, retrieved_by: T, recorded_by: T, created_at: ts }],
+  non_working_days: [{ id: 1, day: '2026-10-20', name: 'Mashujaa Day', created_by: A, created_at: ts }],
+  leave_requests: [{ id: 1, member_id: S, start_date: '2026-11-03', end_date: '2026-11-05', days: 3, leave_year: 2026, reason: 'Family', status: 'approved', requested_at: ts, decided_by: A, decided_at: ts, decision_note: null, cancelled_by: null, cancelled_at: null, created_by: S },
+    { id: 2, member_id: T, start_date: '2026-11-10', end_date: '2026-11-18', days: 8, leave_year: 2026, reason: null, status: 'approved', requested_at: ts, decided_by: A, decided_at: ts, decision_note: null, cancelled_by: null, cancelled_at: null, created_by: T }],
+  leave_adjustments: [{ id: 1, member_id: S, leave_year: 2026, days: 5, note: 'Opening balance', created_by: A, created_at: ts }],
 }
 
 // A pretend database: hands out new record numbers per table, as the real one does.
@@ -100,7 +105,7 @@ await ok('preview reports what is in the file against what is already in the sys
 const client = fakeClient()
 const report = await core.runRestore({ parsed, users, adminId: 'N-ADMIN', client })
 const R = client.rows
-await ok('tables are restored parents-first', () => assert.deepEqual(client.calls, ['customers', 'stock_items', 'places', 'jobs', 'expenses', 'complaints', 'stock_in', 'stock_out', 'visits']))
+await ok('tables are restored parents-first', () => assert.deepEqual(client.calls, ['customers', 'stock_items', 'places', 'jobs', 'expenses', 'complaints', 'stock_in', 'stock_out', 'visits', 'retrieved_routers']))
 await ok('old record numbers are never sent (the database makes new ones)', () => { for (const t of Object.keys(R)) for (const r of R[t]) assert.ok(!('id' in { ...r, id: undefined }) || true); assert.ok(R.customers.every((r) => !('contact_id' in r))) })
 await ok('staff links follow the matches; unmatched people fall back to the admin doing the restore', () => {
   assert.equal(R.customers[0].recorded_by, 'N-SALES'); assert.equal(R.customers[1].recorded_by, 'N-ADMIN')
@@ -157,11 +162,11 @@ await ok('duplicates are dropped: against the system, and inside the file', () =
 const c3 = fakeClient(); const res = await core.runCustomerImport({ toInsert: plan.toInsert, adminId: 'N-ADMIN', client: c3, now: new Date('2026-10-13T08:00:00Z') })
 await ok('an imported customer is a name and a phone number (plus the compulsory location placeholder), recorded by the admin, never earning commission', () => {
   assert.equal(res.inserted, 2); assert.deepEqual(res.dropped, [])
-  assert.deepEqual(Object.keys(c3.rows.customers[0]).filter((k) => k !== 'id').sort(), ['commission_paid_at', 'contact', 'first_name', 'last_name', 'location', 'recorded_by'])
+  assert.deepEqual(Object.keys(c3.rows.customers[0]).filter((k) => k !== 'id').sort(), ['commission_exempt', 'commission_paid_at', 'contact', 'first_name', 'last_name', 'location', 'recorded_by'])
   const [a] = c3.rows.customers; assert.equal(a.location, 'Not specified'); assert.equal(a.recorded_by, 'N-ADMIN'); assert.equal(a.commission_paid_at, '2026-10-13T08:00:00.000Z')
 })
 // the real customers table, exactly as the database builds it: no "status" column
-const REAL = ['contact', 'location', 'interested_package', 'notes', 'recorded_by', 'created_at', 'first_name', 'last_name', 'commission_paid_at', 'desired_date']
+const REAL = ['commission_exempt', 'contact', 'location', 'interested_package', 'notes', 'recorded_by', 'created_at', 'first_name', 'last_name', 'commission_paid_at', 'desired_date']
 await ok('works on the real customers table, which has no "status" column (the failure that was reported)', async () => {
   const db = fakeClient({}, { customers: REAL }); const r = await core.runCustomerImport({ toInsert: plan.toInsert, adminId: 'N-ADMIN', client: db })
   assert.equal(r.inserted, 2); assert.deepEqual(r.dropped, []); assert.equal(db.rows.customers.length, 2)
@@ -197,4 +202,41 @@ await ok('the customer template is just Name and Phone, and the importer reads i
   assert.equal(r.error, null); assert.equal(r.rows[0].first_name, 'Joy')
 })
 await ok('a file with no recognisable headings gives a clear message', () => { const w = new ExcelJS.Workbook(); w.addWorksheet('S').addRow(['foo', 'bar']); assert.match(core.parseCustomerList(w).error, /Name" and "Phone/) })
+
+// ---- update 40: leave, retrieved routers, who recorded a customer ----------------------------------------------------
+const users3 = [{ id: 'N-A', username: 'boss', fullName: 'Boss Admin', employeeNumber: 'SNS002' }, { id: 'N-S', username: 'sam', fullName: 'Sam Sales', employeeNumber: 'SNS003' }, { id: 'N-T', username: 'tim', fullName: 'Tim Tech', employeeNumber: 'SNS004' }]
+await ok('leave records are restored only by the Director; everyone else sees them skipped with the reason', async () => {
+  const c = fakeClient(); const r = await core.runRestore({ parsed, users: users3, adminId: 'N-A', client: c, isDirector: false })
+  for (const t of ['leave_requests', 'leave_adjustments', 'non_working_days']) { assert.equal(r.tables[t].inserted, 0); assert.ok(r.tables[t].skipped >= 1); assert.match(Object.keys(r.tables[t].reasons)[0], /only the Director/) }
+  assert.ok(!c.calls.includes('leave_requests')); assert.equal(r.tables.retrieved_routers.inserted, 1)
+})
+await ok('the Director restores leave with staff matched to the new accounts', async () => {
+  const c = fakeClient(); const r = await core.runRestore({ parsed, users: users3, adminId: 'N-A', client: c, isDirector: true })
+  assert.equal(r.tables.leave_requests.inserted, 2); assert.equal(r.tables.leave_adjustments.inserted, 1); assert.equal(r.tables.non_working_days.inserted, 1)
+  assert.deepEqual(c.rows.leave_requests.map((x) => x.member_id).sort(), ['N-S', 'N-T']); assert.equal(c.rows.leave_adjustments[0].member_id, 'N-S')
+  assert.equal(c.rows.retrieved_routers[0].recorded_by, 'N-T'); assert.equal(c.rows.retrieved_routers[0].customer_id, c.rows.customers[0].id)
+})
+await ok('a leave record the rules refuse is skipped and reported, and the rest of the restore carries on', async () => {
+  const c = fakeClient(); const inner = c.from
+  c.from = (t) => { const f = inner(t); if (t !== 'leave_requests') return f; return { ...f, insert: (batch) => { const done = batch[0].start_date === '2026-11-10'; const res = done ? { data: null, error: { message: 'Leave is limited to 3 days a month. In November 2026 there are already 3 and this adds 6.' } } : { data: null, error: null }; return { select: async () => res, then: (a, b) => Promise.resolve(res).then(a, b) } } } }
+  const r = await core.runRestore({ parsed, users: users3, adminId: 'N-A', client: c, isDirector: true })
+  assert.equal(r.tables.leave_requests.inserted, 1); assert.equal(r.tables.leave_requests.skipped, 1); assert.match(Object.keys(r.tables.leave_requests.reasons)[0], /limited to 3 days a month/); assert.equal(r.tables.leave_adjustments.inserted, 1)
+})
+await ok('the backup file carries the new sheets, with readable staff names', async () => {
+  for (const sheet of ['Retrieved Routers', 'Public Holidays', 'Leave Requests', 'Leave Adjustments']) assert.ok(wb2.getWorksheet(sheet), sheet)
+  const heads = []; wb2.getWorksheet('Leave Requests').getRow(1).eachCell((c) => heads.push(c.value)); assert.ok(heads.includes('(info) Staff member'))
+})
+await ok('a customer list can say who recorded each customer, and unknown names are reported (never guessed)', async () => {
+  const w = new ExcelJS.Workbook(); const s = w.addWorksheet('Customers'); s.addRow(['Name', 'Phone', 'Recorded by']); s.addRow(['Zawadi Omar', '0711000001', 'Sam Sales']); s.addRow(['Juma Ali', '0711000002', 'SNS004']); s.addRow(['Neema K', '0711000003', 'Nobody Known']); s.addRow(['Plain One', '0711000004', null])
+  const buf = await w.xlsx.writeBuffer(); const w2 = new ExcelJS.Workbook(); await w2.xlsx.load(buf)
+  const pl2 = core.parseCustomerList(w2); const plan2 = core.planCustomerImport(pl2.rows, [], users3)
+  assert.deepEqual(plan2.unmatchedRecorders, ['Nobody Known']); assert.deepEqual(plan2.toInsert.map((r) => r.recordedBy || null), ['N-S', 'N-T', null, null])
+  const c = fakeClient(); await core.runCustomerImport({ toInsert: plan2.toInsert, adminId: 'N-A', recordedBy: 'N-T', client: c })
+  assert.deepEqual(c.rows.customers.map((r) => r.recorded_by), ['N-S', 'N-T', 'N-T', 'N-T']); assert.ok(c.rows.customers.every((r) => r.commission_exempt === true && r.commission_paid_at))
+})
+await ok('with no choice made, imported customers stay with the admin who imported them', async () => {
+  const c = fakeClient(); await core.runCustomerImport({ toInsert: [{ first_name: 'A', last_name: 'B', contact: '0700000001' }], adminId: 'N-A', client: c }); assert.equal(c.rows.customers[0].recorded_by, 'N-A')
+})
+await ok('days since the last backup come from the shared date', () => { assert.equal(core.daysSince(null), null); assert.equal(core.daysSince('2026-10-01T00:00:00Z', new Date('2026-10-04T12:00:00Z')), 3); assert.equal(core.daysSince('2026-10-04T10:00:00Z', new Date('2026-10-04T12:00:00Z')), 0) })
+
 console.log(`\n${n} checks passed`)

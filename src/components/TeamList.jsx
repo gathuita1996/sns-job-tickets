@@ -1,10 +1,11 @@
 import { Award, Pencil, Phone, Shield, Star } from 'lucide-react'
 import { EmptyState } from './shared'
+import Avatar from './Avatar'
 import { DEPARTMENTS, departmentLabel } from '../lib/helpers'
 
 const DEPT_BADGE_CLASS = { sales: 'sns-badge-progress', technical: 'sns-badge-role', admin: 'sns-badge-pending' }
 
-export default function TeamList({ users, jobs, onPromote, onUpdateDepartment, onEditMember, onToggleTeamLead, onSetDirector }) {
+export default function TeamList({ users, jobs, onPromote, onUpdateDepartment, onEditMember, onToggleTeamLead, onSetDirector, onViewMember, awayIds }) {
   if (!users.length) return <EmptyState message="No team members registered yet." />
 
   return (
@@ -14,16 +15,15 @@ export default function TeamList({ users, jobs, onPromote, onUpdateDepartment, o
         return (
           <div key={m.id} className={i > 0 ? 'sns-border-t' : ''} style={{ padding: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
             <div className="flex items-center gap-3">
-              <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'var(--signal-pale)', color: 'var(--signal-deep)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontFamily: "'Space Grotesk', sans-serif", flexShrink: 0 }}>
-                {m.fullName.charAt(0).toUpperCase()}
-              </div>
+              <Avatar name={m.fullName} url={m.avatarUrl} size={38} />
               <div>
                 <div className="flex items-center gap-2" style={{ flexWrap: 'wrap' }}>
-                  <p style={{ fontWeight: 600, fontSize: '0.88rem' }}>{m.fullName}</p>
+                  {onViewMember ? <button type="button" onClick={() => onViewMember(m)} title="Open all details" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 600, fontSize: '0.88rem', color: 'var(--ink)', textAlign: 'left' }}>{m.fullName}</button> : <p style={{ fontWeight: 600, fontSize: '0.88rem' }}>{m.fullName}</p>}
                   {m.role === 'admin' && <span className="sns-badge sns-badge-role">{m.title || 'Admin'}</span>}
                   <span className={`sns-badge ${DEPT_BADGE_CLASS[m.department] || 'sns-badge-pending'}`}>{departmentLabel(m.department)}</span>
                   {m.isTeamLead && <span className="sns-badge" style={{ background: 'var(--confirmed-pale)', color: 'var(--confirmed)' }}><Star size={11} /> Team Lead</span>}
                   {m.isDirector && <span className="sns-badge" style={{ background: 'var(--stamp-pale)', color: 'var(--stamp-deep)' }}><Award size={11} /> Director</span>}
+                  {awayIds && awayIds.has(m.id) && <span className="sns-badge sns-badge-pending">On leave</span>}
                 </div>
                 <p className="flex items-center gap-2 sns-text-faint" style={{ fontSize: '0.75rem' }}>
                   <span className="flex items-center gap-1"><Phone size={11} /> {m.contact}</span>
@@ -47,6 +47,7 @@ export default function TeamList({ users, jobs, onPromote, onUpdateDepartment, o
                   {DEPARTMENTS.map((d) => <option key={d.key} value={d.key}>{d.label}</option>)}
                 </select>
               )}
+              {onViewMember && <button type="button" onClick={() => onViewMember(m)} className="sns-btn-secondary" style={{ fontSize: '0.78rem', padding: '0.45rem 0.75rem' }}>Details</button>}
               {onEditMember && (
                 <button onClick={() => onEditMember(m)} className="sns-icon-btn" title="Edit profile">
                   <Pencil size={15} />

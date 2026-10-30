@@ -1,15 +1,16 @@
 import { useState } from 'react'
 import { X } from 'lucide-react'
 import { FormField } from './shared'
-import { LOCATIONS, PACKAGES, defaultCustomerForm, packageLabel, resolveOtherField, toDateInputValue } from '../lib/helpers'
+import { DEFAULT_PACKAGE, LOCATIONS, PACKAGES, defaultCustomerForm, packageLabel, resolveOtherField, toDateInputValue } from '../lib/helpers'
 
-export default function CustomerFormModal({ initialCustomer, onClose, onSave }) {
+export default function CustomerFormModal({ initialCustomer, members, canChangeRecorder, onClose, onSave }) {
   const locationResolved = initialCustomer ? resolveOtherField(initialCustomer.location, LOCATIONS) : null
   const [form, setForm] = useState(initialCustomer ? {
     firstName: initialCustomer.firstName, lastName: initialCustomer.lastName, contact: initialCustomer.contact,
     location: locationResolved.selected, locationOther: locationResolved.other,
-    interestedPackage: initialCustomer.interestedPackage || PACKAGES[0],
+    interestedPackage: initialCustomer.interestedPackage || DEFAULT_PACKAGE,
     notes: initialCustomer.notes || '', desiredDate: initialCustomer.desiredDate || '',
+    recordedBy: initialCustomer.recordedBy || '',
   } : defaultCustomerForm())
   const [errors, setErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
@@ -85,6 +86,11 @@ export default function CustomerFormModal({ initialCustomer, onClose, onSave }) 
           >
             <input type="date" min={initialCustomer ? undefined : toDateInputValue(new Date())} className="sns-input" value={form.desiredDate} onChange={(e) => update('desiredDate', e.target.value)} />
           </FormField>
+          {canChangeRecorder && initialCustomer && members && (
+            <FormField label="Recorded by" hint="The staff member this customer belongs to, for tracking. Changing it does not create or move any commission.">
+              <select className="sns-input" value={form.recordedBy} onChange={(e) => update('recordedBy', e.target.value)}>{members.map((m) => <option key={m.id} value={m.id}>{m.fullName}</option>)}</select>
+            </FormField>
+          )}
           <FormField label="Notes" hint="Optional — how you met them, best time to reach them, anything useful for follow-up.">
             <textarea className="sns-input" rows={3} value={form.notes} onChange={(e) => update('notes', e.target.value)} placeholder="Optional notes…" />
           </FormField>

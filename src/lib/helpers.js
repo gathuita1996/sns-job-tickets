@@ -53,32 +53,17 @@ export function departmentLabel(key) {
 
 // Real product names from the marketing site -- kept as a plain list here
 // rather than importing across the two separate projects.
-export const PACKAGES = ['Swahili 10 Unlimited', 'Swahili 15 Unlimited', 'Swahili 20 Unlimited', 'Swahili 25 Unlimited', 'Swahili 30 Unlimited', 'Not sure yet']
+export const PACKAGES = ['Swahili 8 Unlimited', 'Swahili 10 Unlimited', 'Swahili 15 Unlimited', 'Swahili 20 Unlimited', 'Swahili 25 Unlimited', 'Swahili 30 Unlimited', 'Not sure yet']
+// What a new customer form starts on. Kept on 10 Mbps (the long-standing default) so adding 8 Mbps at the top of the list changes nothing by accident.
+export const DEFAULT_PACKAGE = 'Swahili 10 Unlimited'
 
 // Monthly price in KSh, for the packages that have one on record. It is only shown next to the name in
 // the package list; what is saved on a customer is still just the package name.
-export const PACKAGE_PRICES = { 'Swahili 25 Unlimited': 3350, 'Swahili 30 Unlimited': 2850 }
+export const PACKAGE_PRICES = { 'Swahili 8 Unlimited': 1500, 'Swahili 25 Unlimited': 3350, 'Swahili 30 Unlimited': 3850 }
 export function packageLabel(name) {
   const price = PACKAGE_PRICES[name]
   return price ? `${name} — ${formatKSh(price)}` : name
 }
-
-// Covers the realistic range of what an ISP actually hears from customers --
-// spans both technical issues (service down, speed, equipment) and
-// non-technical ones (billing, delays, conduct), since both departments can
-// raise a complaint.
-export const COMPLAINT_TYPES = [
-  'No Internet / Service Down',
-  'Slow Internet / Speed Issue',
-  'Intermittent Connection',
-  'Billing / Payment Issue',
-  'Installation Delay',
-  'Equipment Fault',
-  'Staff Conduct',
-  'Other',
-]
-
-export const COMPLAINT_STATUSES = ['New', 'In Progress', 'Resolved']
 
 // Relevant categories for an ISP's day-to-day purchases -- field equipment
 // and connectivity costs alongside the ordinary costs of running an office.
@@ -157,22 +142,9 @@ export function defaultCustomerForm() {
     contact: '',
     location: '',
     locationOther: '',
-    interestedPackage: PACKAGES[0],
+    interestedPackage: DEFAULT_PACKAGE,
     notes: '',
     desiredDate: '',
-  }
-}
-
-export function defaultComplaintForm() {
-  return {
-    complainantName: '',
-    location: '',
-    locationOther: '',
-    contact: '',
-    complaintType: '',
-    complaintTypeOther: '',
-    details: '',
-    isRecurring: false,
   }
 }
 
@@ -424,3 +396,22 @@ export function customerLabel(c) {
   const name = [c.firstName, c.lastName && c.lastName !== '-' ? c.lastName : ''].filter(Boolean).join(' ') || 'Unnamed customer'
   return c.location && c.location !== 'Not specified' ? `${name} — ${c.location}` : name
 }
+
+// ---- retrieved routers ----------------------------------------------------------------------------------
+export const RETRIEVED_REASONS = [
+  { key: 'failed_to_pay', label: 'Failed to pay' },
+  { key: 'customer_requested', label: 'Customer requested' },
+  { key: 'other', label: 'Other reason' },
+]
+export const reasonLabel = (k) => (RETRIEVED_REASONS.find((r) => r.key === k) || {}).label || k
+export const ROUTER_CONDITIONS = [{ key: 'working', label: 'Working' }, { key: 'faulty', label: 'Faulty' }, { key: 'damaged', label: 'Damaged' }]
+export const ROUTER_STATUSES = [
+  { key: 'in_store', label: 'In store' }, { key: 'under_repair', label: 'Under repair' },
+  { key: 'reissued', label: 'Re-issued' }, { key: 'written_off', label: 'Written off' },
+]
+export const routerStatusLabel = (k) => (ROUTER_STATUSES.find((r) => r.key === k) || {}).label || k
+export const ROUTER_MODELS = ['ONU', 'XPON router', 'Wi-Fi router', 'Other']
+
+// Common Kenyan banks, offered as suggestions in the bank-details form (any name can still be typed).
+export const BANKS = ['Equity Bank', 'KCB Bank', 'Co-operative Bank', 'NCBA Bank', 'Absa Bank Kenya', 'Stanbic Bank', 'I&M Bank', 'DTB (Diamond Trust Bank)', 'Family Bank', 'Standard Chartered', 'National Bank of Kenya', 'Sidian Bank', 'Gulf African Bank', 'HF Group', 'SBM Bank', 'Postbank']
+export const ACCOUNT_NUMBER_FORMAT = /^[0-9A-Za-z -]{4,30}$/

@@ -1,13 +1,13 @@
 import { useRef, useState } from 'react'
 import { AlertTriangle, CheckCircle2, DatabaseBackup, Download, FileSpreadsheet, Upload } from 'lucide-react'
 import { ConfirmDialog } from './shared'
-import { daysSinceBackup, getLastBackup } from '../lib/dataCore'
+import { daysSince } from '../lib/dataCore'
 import { downloadCustomerTemplate, exportAll, importCustomers, inspectBackupFile, inspectCustomerFile, restoreFromParsed } from '../lib/dataIO'
 import { formatDate } from '../lib/helpers'
 
 const box = { padding: '1.2rem 1.4rem', marginBottom: '1.2rem' }
 
-export default function DataTab({ currentUser, users, customers, onDataChanged }) {
+export default function DataTab({ currentUser, users, customers, onDataChanged, lastBackup, onBackupRecorded }) {
   const [includePersonal, setIncludePersonal] = useState(false)
   const [working, setWorking] = useState(null)
   const [notice, setNotice] = useState(null)
@@ -19,15 +19,19 @@ export default function DataTab({ currentUser, users, customers, onDataChanged }
   const [allowNonEmpty, setAllowNonEmpty] = useState(false)
   const [confirm, setConfirm] = useState(null)
   const [progress, setProgress] = useState('')
+  const [recordUnder, setRecordUnder] = useState('')
 
-  const days = daysSinceBackup(), last = getLastBackup()
+  const last = lastBackup && lastBackup.at, days = daysSince(last)
+  const lastByName = (users.find((u) => u.id === (lastBackup && lastBackup.by)) || {}).fullName
+  const who = lastByName ? ` by ${lastByName}` : ''
   const fail = (e) => setNotice({ type: 'error', text: e && e.message ? e.message : String(e) })
 
   async function save(kind) {
     setWorking(kind); setNotice(null)
     try {
-      const saved = await exportAll({ kind, includePersonal, exportedBy: currentUser.fullName })
-      if (saved) setNotice({ type: 'ok', text: kind === 'backup' ? 'Backup saved. Keep a second copy on a flash disk or in Google Drive.' : 'Excel file saved.' })
+      const { saved, recordedAt } = await exportAll({ kind, includePersonal, exportedBy: currentUser.fullName })
+      if (saved) setNotice({ type: 'ok', text: kind === 'backup' ? `Backup saved. Every admin now sees it as done. Keep a second copy on a flash disk or in Google Drive.${recordedAt ? '' : ' The date could not be shared with the other admins: run update 40 in Supabase.'}` : 'Excel file saved.' })
+      if (saved && kind === 'backup' && recordedAt && onBackupRecorded) onBackupRecorded(recordedAt)
       bump((n) => n + 1)
     } catch (e) { fail(e) } finally { setWorking(null) }
   }
@@ -36,12 +40,12 @@ export default function DataTab({ currentUser, users, customers, onDataChanged }
     const file = e.target.files && e.target.files[0]; e.target.value = ''
     if (!file) return
     setNotice(null); setCustPlan(null); setWorking('read')
-    try { setCustPlan(await inspectCustomerFile(file, customers)) } catch (err) { fail(err) } finally { setWorking(null) }
+    try { setCustPlan(await inspectCustomerFile(file, customers, users)) } catch (err) { fail(err) } finally { setWorking(null) }
   }
   async function runCustomers() {
     setConfirm(null); setWorking('import')
     try {
-      const { inserted, dropped = [] } = await importCustomers({ toInsert: custPlan.toInsert, adminId: currentUser.id })
+      const { inserted, dropped = [] } = await importCustomers({ toInsert: custPlan.toInsert, adminId: currentUser.id, recordedBy: recordUnder || currentUser.id })
       setNotice({ type: 'ok', text: `${inserted} customers imported with their names and phone numbers. Add their location and package in the system when you are ready.${dropped.length ? ` (This database has no ${dropped.join(', ')} column, so that part was skipped.)` : ''}` }); setCustPlan(null); await onDataChanged()
     } catch (err) { fail(err) } finally { setWorking(null) }
   }
@@ -65,9 +69,9 @@ export default function DataTab({ currentUser, users, customers, onDataChanged }
   }
 
   const busy = working != null
-  const age = days == null ? { color: 'var(--overdue)', text: 'No backup has been made on this computer yet.' }
-    : days > 7 ? { color: 'var(--overdue)', text: `Last backup: ${days} days ago (${formatDate(last)}). It is time for a new one.` }
-    : { color: 'var(--confirmed)', text: days === 0 ? 'Last backup: today.' : `Last backup: ${days} day${days === 1 ? '' : 's'} ago.` }
+  const age = days == null ? { color: 'var(--overdue)', text: 'No backup has been made yet.' }
+    : days > 7 ? { color: 'var(--overdue)', text: `Last backup${who}: ${days} days ago (${formatDate(last)}). It is time for a new one.` }
+    : { color: 'var(--confirmed)', text: days === 0 ? `Last backup${who}: today.` : `Last backup${who}: ${days} day${days === 1 ? '' : 's'} ago.` }
   const needsTick = restoreInfo && restoreInfo.preview.nonEmpty.length > 0
 
   return (
@@ -113,6 +117,17 @@ export default function DataTab({ currentUser, users, customers, onDataChanged }
               <div style={{ marginTop: '1rem', fontSize: '0.86rem' }}>
                 <p><strong>{custPlan.toInsert.length}</strong> customers ready to import · <strong>{custPlan.duplicates.length}</strong> already in the system (skipped) · <strong>{custPlan.skipped.length}</strong> rows skipped</p>
                 {custPlan.skipped.length > 0 && <ul className="sns-text-soft" style={{ margin: '0.4rem 0 0 1.1rem', listStyle: 'disc', fontSize: '0.8rem' }}>{custPlan.skipped.slice(0, 8).map((s) => <li key={s.line}>Row {s.line}: {s.reason}</li>)}{custPlan.skipped.length > 8 && <li>…and {custPlan.skipped.length - 8} more</li>}</ul>}
+                {custPlan.toInsert.length > 0 && (
+                  <div style={{ marginTop: '0.8rem' }}>
+                    <label className="sns-text-soft" style={{ fontSize: '0.82rem', display: 'block', marginBottom: '0.3rem' }} htmlFor="record-under">Record these customers under</label>
+                    <select id="record-under" className="sns-input" style={{ width: 'auto' }} value={recordUnder} onChange={(e) => setRecordUnder(e.target.value)}>
+                      <option value="">Me ({currentUser.fullName})</option>
+                      {users.filter((u) => u.id !== currentUser.id).map((u) => <option key={u.id} value={u.id}>{u.fullName}</option>)}
+                    </select>
+                    <p className="sns-text-faint" style={{ fontSize: '0.76rem', marginTop: '0.3rem' }}>A column called "Recorded by" in the file overrides this for that row. Imported customers never earn commission.</p>
+                    {custPlan.unmatchedRecorders && custPlan.unmatchedRecorders.length > 0 && <p style={{ color: 'var(--overdue)', fontSize: '0.8rem', marginTop: '0.3rem' }}>Not found in the team: {custPlan.unmatchedRecorders.join(', ')}. Those rows use the person chosen above.</p>}
+                  </div>
+                )}
                 {custPlan.toInsert.length > 0 && (
                   <div className="flex items-center gap-3" style={{ marginTop: '0.9rem', flexWrap: 'wrap' }}>
                     <button onClick={() => setConfirm('customers')} disabled={busy} className="sns-btn-primary">{working === 'import' ? 'Importing…' : `Import ${custPlan.toInsert.length} customers`}</button>

@@ -52,8 +52,10 @@ export async function saveBlob(blob, filename) {
 export async function exportAll({ kind, includePersonal, exportedBy }) {
   const blob = await makeWorkbookBlob({ includePersonal, exportedBy })
   const saved = await saveBlob(blob, `SNS-${kind === 'backup' ? 'Backup' : 'Export'}-${core.stamp()}.xlsx`)
-  if (saved && kind === 'backup') core.markBackup()
-  return saved
+  // A real backup is remembered in the database, so the reminder disappears for every admin, not just this computer.
+  let recordedAt = null
+  if (saved && kind === 'backup') { const { data, error } = await supabase.rpc('record_backup'); if (!error) recordedAt = data || new Date().toISOString() }
+  return { saved, recordedAt }
 }
 
 async function readFile(file) {
@@ -70,11 +72,11 @@ export async function inspectBackupFile(file, users) {
 }
 export const restoreFromParsed = (args) => core.runRestore({ ...args, client: supabase })
 
-export async function inspectCustomerFile(file, existingCustomers) {
+export async function inspectCustomerFile(file, existingCustomers, users = []) {
   const wb = await readFile(file)
   const parsed = core.parseCustomerList(wb)
   if (parsed.error) throw new Error(parsed.error)
-  return { ...parsed, ...core.planCustomerImport(parsed.rows, existingCustomers) }
+  return { ...parsed, ...core.planCustomerImport(parsed.rows, existingCustomers, users) }
 }
 export const importCustomers = (args) => core.runCustomerImport({ ...args, client: supabase })
 
