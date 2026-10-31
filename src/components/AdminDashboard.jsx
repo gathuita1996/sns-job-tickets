@@ -10,7 +10,8 @@ import TeamList from './TeamList'
 import TransportTab from './TransportTab'
 import ExpensesList from './ExpensesList'
 import ExpenseFormModal from './ExpenseForm'
-import MoneyReportModal from './MoneyReportModal'
+import CommissionReport from './CommissionReport'
+import Collapsible from './Collapsible'
 import StockTab from './StockTab'
 import FieldVisits from './FieldVisits'
 import DataTab from './DataTab'
@@ -36,6 +37,7 @@ export default function AdminDashboard({ extras, currentUser, users, jobs, custo
   const [customersFocus, setCustomersFocus] = useState(null)
   const leaveRequests = (extras && extras.leave && extras.leave.requests) || []
   const pendingLeave = leaveRequests.filter((r) => r.status === 'pending').length
+  const waitingExpenses = (expenses || []).filter((e) => e.status === 'Requested').length
   const awayIds = useMemo(() => awayNowIds(leaveRequests), [leaveRequests])
   const [tab, setTab] = useState('overview')
   const [periodGranularity, setPeriodGranularity] = useState('day')
@@ -139,14 +141,6 @@ export default function AdminDashboard({ extras, currentUser, users, jobs, custo
       .sort((a, b) => b.commission - a.commission)
   }, [users, customers, commissionRate])
 
-  // For the report specifically -- every customer recorded in the period
-  // counts as commission earned then, regardless of whether it's since
-  // been paid. The report is about activity over time, not current
-  // outstanding balance (that's what the table above already shows).
-  const commissionEntries = useMemo(
-    () => customers.filter((c) => !c.commissionExempt).map((c) => ({ memberId: c.recordedBy, amount: commissionRate, date: c.createdAt })),
-    [customers, commissionRate]
-  )
 
   // Derived straight from the table rows so the headline figure can never
   // disagree with the records listed under it.
@@ -246,11 +240,11 @@ export default function AdminDashboard({ extras, currentUser, users, jobs, custo
           </button>
         )}
 
-        <div className="no-print flex gap-1 sns-border-b" style={{ marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+        <div className="no-print sns-tabs-span sns-border-b" style={{ marginBottom: '1.5rem' }}>
           <button className={`sns-tab ${tab === 'overview' ? 'active' : ''}`} onClick={() => setTab('overview')}>Overview</button>
           <button className={`sns-tab ${tab === 'jobs' ? 'active' : ''}`} onClick={() => { setTab('jobs'); setJobsView('jobs') }}>All Jobs</button>
           <button className={`sns-tab ${tab === 'team' ? 'active' : ''}`} onClick={() => { setTab('team'); setStaffView('list') }}>Staff{pendingLeave > 0 && <span className="sns-badge sns-badge-overdue" style={{ marginLeft: '0.4rem' }}>{pendingLeave}</span>}</button>
-          <button className={`sns-tab ${tab === 'commissions' ? 'active' : ''}`} onClick={() => setTab('commissions')}>Commissions</button>
+          <button className={`sns-tab ${tab === 'commissions' ? 'active' : ''}`} onClick={() => { setTab('commissions'); setShowCommissionReport(false) }}>Commissions</button>
           <button className={`sns-tab ${tab === 'transport' ? 'active' : ''}`} onClick={() => setTab('transport')}>Transport</button>
           <button className={`sns-tab ${tab === 'expenses' ? 'active' : ''}`} onClick={() => setTab('expenses')}>
             Expense/Purchases{(expenses || []).filter((e) => e.status === 'Requested').length > 0 && <span className="sns-badge sns-badge-overdue" style={{ marginLeft: '0.4rem' }}>{(expenses || []).filter((e) => e.status === 'Requested').length}</span>}
@@ -335,19 +329,22 @@ export default function AdminDashboard({ extras, currentUser, users, jobs, custo
                 {PRIORITY_OPTIONS.map((p) => <option key={p} value={p}>{p}</option>)}
               </select>
               <StatusFilterSelect value={statusFilter} onChange={setStatusFilter} />
+              <button
+                onClick={() => setOverdueOnly((v) => !v)}
+                aria-pressed={overdueOnly}
+                className={overdueOnly ? 'sns-btn-primary' : 'sns-btn-secondary'}
+                style={overdueOnly ? { background: 'var(--overdue)' } : undefined}
+              >
+                <AlertCircle size={15} /> Overdue jobs
+              </button>
               <button onClick={() => setJobsView('visits')} className="sns-btn-secondary" title="Open the field visits"><MapPin size={15} /> Field visits</button>
+            </div>
+            <div className="no-print jobs-actions">
               <button onClick={() => setShowFileForm(true)} className="sns-btn-secondary">
                 <Plus size={15} /> File a job
               </button>
               <button onClick={() => setShowAssignForm(true)} className="sns-btn-primary">
                 <UserPlus size={15} /> Assign new job
-              </button>
-              <button
-                onClick={() => setOverdueOnly((v) => !v)}
-                className={overdueOnly ? 'sns-btn-primary' : 'sns-btn-secondary'}
-                style={overdueOnly ? { background: 'var(--overdue)' } : undefined}
-              >
-                <AlertCircle size={15} /> Overdue only
               </button>
               {selected.length > 0 && (
                 <button onClick={() => setPrinting({ type: 'batch', jobs: jobs.filter((j) => selected.includes(j.id)) })} className="sns-btn-primary">
@@ -387,7 +384,11 @@ export default function AdminDashboard({ extras, currentUser, users, jobs, custo
           </div>
         )}
 
-        {tab === 'commissions' && (
+        {tab === 'commissions' && showCommissionReport && (
+          <CommissionReport customers={customers} users={users} commissionRate={commissionRate} generatedBy={currentUser.fullName} onBack={() => setShowCommissionReport(false)} />
+        )}
+
+        {tab === 'commissions' && !showCommissionReport && (
           <div>
             <div className="flex items-center justify-between" style={{ marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
               <div className="grid grid-cols-2 gap-3" style={{ maxWidth: '24rem' }}>
@@ -474,6 +475,7 @@ export default function AdminDashboard({ extras, currentUser, users, jobs, custo
               </div>
             </div>
             <ExpenseSummary expenses={expenses || []} userMap={userMap} />
+            <Collapsible title="All expenses/purchases" summary={`${(expenses || []).length} item${(expenses || []).length === 1 ? '' : 's'}`} badge={waitingExpenses > 0 ? <span className="sns-badge sns-badge-overdue">{waitingExpenses} waiting for approval</span> : null}>
             <ExpensesList
               expenses={expenses || []}
               userMap={userMap}
@@ -485,6 +487,7 @@ export default function AdminDashboard({ extras, currentUser, users, jobs, custo
               onDelete={onDeleteExpense}
               onViewReceipt={onViewReceipt}
             />
+            </Collapsible>
           </div>
         )}
 
@@ -569,14 +572,6 @@ export default function AdminDashboard({ extras, currentUser, users, jobs, custo
           message={`Mark ${confirmClearCommission.member.fullName}'s ${confirmClearCommission.count} commission${confirmClearCommission.count === 1 ? '' : 's'} this month (${formatKSh(confirmClearCommission.commission)}) as paid? This can't be undone from the app.`}
           onCancel={() => setConfirmClearCommission(null)}
           onConfirm={async () => { await onClearCommission(confirmClearCommission.member); setConfirmClearCommission(null) }}
-        />
-      )}
-      {showCommissionReport && (
-        <MoneyReportModal
-          title="Commission Report"
-          entries={commissionEntries}
-          userMap={userMap}
-          onClose={() => setShowCommissionReport(false)}
         />
       )}
       {showServiceForm && (

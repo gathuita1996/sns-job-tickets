@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import ExcelJS from 'exceljs'
-import { summarizeExpenses, transportReport, buildTransportWorkbook, expenseDate, tripRoute } from '../src/lib/reportsCore.js'
+import { summarizeExpenses, transportReport, buildTransportWorkbook, expenseDate, tripRoute, commissionReport, buildCommissionWorkbook } from '../src/lib/reportsCore.js'
 import { getPeriodRange } from '../src/lib/helpers.js'
 let n = 0; const ok = (name, fn) => Promise.resolve().then(fn).then(() => { n++ }, (e) => { console.error('FAIL', name, '\n', e.message); process.exitCode = 1 })
 const d = (s) => new Date(`${s}T10:00:00`)
@@ -40,5 +40,26 @@ await ok('the Excel copy has who-spent-what with a total row, and one line per t
   const s = wb.getWorksheet('Who spent what'); const rows = []; s.eachRow((row) => rows.push(row.values.slice(1)))
   assert.match(rows[0][0], /Monthly transport report/); assert.deepEqual(rows.at(-1).slice(0, 4), ['TOTAL', '', 5, 1950]); assert.equal(wb.getWorksheet('Trips').rowCount, 1 + 5)
   const buf = await wb.xlsx.writeBuffer(); assert.ok(buf.byteLength > 1000)
+})
+
+const cu = [{ id: 'a', fullName: 'Amina', department: 'sales' }, { id: 'b', fullName: 'Brian', department: 'technical' }, { id: 'c', fullName: 'Chief Admin', department: 'admin' }]
+const C = (id, o) => ({ id, fullName: `Cust ${id}`, location: 'Diani', recordedBy: 'a', createdAt: '2026-10-14T09:00:00', commissionPaidAt: null, commissionExempt: false, ...o })
+const cs = [C(1), C(2, { commissionPaidAt: '2026-10-20T00:00:00' }), C(3, { recordedBy: 'b' }), C(4, { commissionExempt: true }), C(5, { recordedBy: 'c' }), C(6, { createdAt: '2026-09-20T09:00:00' }), C(7, { recordedBy: 'zzz' }), C(8, { recordedBy: 'b', createdAt: '2026-10-20T10:00:00' })]
+await ok('monthly commission report: who earned what, paid and not yet paid, and the total', () => {
+  const r = commissionReport(cs, cu, month.start, month.end, 500)
+  assert.deepEqual(r.rows.map((x) => [x.name, x.count, x.earned, x.paid, x.unpaid]), [['Amina', 2, 1000, 500, 500], ['Brian', 2, 1000, 0, 1000]])
+  assert.equal(r.total, 2000); assert.equal(r.count, 4); assert.equal(r.paid, 500); assert.equal(r.unpaid, 1500)
+})
+await ok('imports, admins, unknown recorders and other months never count towards commission', () => {
+  const r = commissionReport(cs, cu, month.start, month.end, 500); const ids = r.rows.flatMap((x) => x.customers.map((c) => c.id))
+  assert.deepEqual(ids.sort(), [1, 2, 3, 8])
+})
+await ok('the customers behind each person are in date order, and an empty month gives zeros', () => {
+  const r = commissionReport(cs, cu, month.start, month.end, 500); assert.deepEqual(r.rows[1].customers.map((c) => c.id), [3, 8])
+  const e = commissionReport(cs, cu, new Date('2030-01-01'), new Date('2030-02-01'), 500); assert.equal(e.total, 0); assert.deepEqual(e.rows, [])
+})
+await ok('the commission Excel copy has a total row and one line per customer', async () => {
+  const r = commissionReport(cs, cu, month.start, month.end, 500); const wb = buildCommissionWorkbook(ExcelJS, r, { periodLabel: 'October 2026', generatedBy: 'Boss' })
+  const rows = []; wb.getWorksheet('Who earned what').eachRow((row) => rows.push(row.values.slice(1))); assert.deepEqual(rows.at(-1).slice(0, 4), ['TOTAL', '', 4, 2000]); assert.equal(wb.getWorksheet('Customers').rowCount, 1 + 4)
 })
 console.log(`report numbers: ${n} checks ran`)

@@ -311,3 +311,13 @@ Removed from the package: the old `employee-number-and-service-fix-migration.sql
 - **Team became Staff** in the tab, hints and messages.
 - Backup and restore carry the stock links, so restoring does not add a second Stock In.
 
+## Update 42
+
+**To apply:** deploy the code. There are **no database changes** this time.
+
+- **Transport report:** **Day by day** and **Every trip** start closed and open when you click them. The main "Who spent what" table is always on show. A printout includes both sections even when they are closed.
+- **Commissions:** **View Report** now opens a **full page** (not a pop-up) with the whole month: who earned what, the total, paid and not yet paid, and every customer recorded, with month arrows, **Print** and **Download Excel**. Imported customers and staff who do not earn commission (admins) are not counted. The old pop-up report was removed.
+- **All Jobs:** the first row holds the search box, the filters, **Overdue jobs** (it was "Overdue only") and then **Field visits**. **File a job** and **Assign new job** are on a row of their own underneath (Print selected joins them there).
+- **Main tabs** now span the full width: one row on a desktop screen; on a phone they wrap and each row stretches to fill.
+- **Expenses/Purchases:** under the summary, the list is a closed section called **All expenses/purchases**. It shows how many items there are and how many are waiting for approval, and opens when clicked.
+

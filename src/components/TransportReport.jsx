@@ -2,14 +2,13 @@ import { useMemo, useState } from 'react'
 import { ArrowLeft, Calendar, ChevronLeft, ChevronRight, FileSpreadsheet, Printer } from 'lucide-react'
 import Avatar from './Avatar'
 import { EmptyState } from './shared'
+import Collapsible from './Collapsible'
+import { Bar } from './reportParts'
 import { departmentLabel, formatDate, formatKSh, formatPeriodLabel, getPeriodRange, shiftAnchor, toDateInputValue } from '../lib/helpers'
 import { buildTransportWorkbook, transportReport, tripRoute } from '../lib/reportsCore'
 import { loadExcelJS, saveBlob } from '../lib/dataIO'
 
 const MODES = { day: { title: 'Daily transport report', word: 'day' }, month: { title: 'Monthly transport report', word: 'month' } }
-const Bar = ({ pct, color = 'var(--signal)' }) => (
-  <div aria-hidden="true" style={{ height: 6, borderRadius: 4, background: 'var(--line-soft)', overflow: 'hidden', minWidth: 60 }}><div style={{ width: `${Math.max(0, Math.min(100, pct))}%`, height: '100%', background: color }} /></div>
-)
 
 // A full page (not a pop-up): who spent what on transport in a day or a month, the total, and every trip behind it.
 export default function TransportReport({ mode: startMode = 'day', anchor: startAnchor, jobs, users, generatedBy, onBack }) {
@@ -100,9 +99,8 @@ export default function TransportReport({ mode: startMode = 'day', anchor: start
           </div>
 
           {mode === 'month' && (
-            <>
-              <h3 className="sns-display" style={{ fontWeight: 700, margin: '0 0 0.5rem' }}>Day by day</h3>
-              <div className="sns-card" style={{ padding: '0.4rem 1.1rem', marginBottom: '1.2rem' }}>
+            <Collapsible title="Day by day" summary={`${report.byDay.length} day${report.byDay.length === 1 ? '' : 's'} with trips`} style={{ marginBottom: '1rem' }}>
+              <div className="sns-card" style={{ padding: '0.4rem 1.1rem' }}>
                 {report.byDay.map((d, i) => (
                   <div key={d.date} className={`flex items-center gap-3 ${i ? 'sns-border-t' : ''}`} style={{ padding: '0.5rem 0', fontSize: '0.85rem' }}>
                     <span style={{ width: '7.5rem', fontWeight: 600 }}>{formatDate(d.date)}</span>
@@ -112,10 +110,10 @@ export default function TransportReport({ mode: startMode = 'day', anchor: start
                   </div>
                 ))}
               </div>
-            </>
+            </Collapsible>
           )}
 
-          <h3 className="sns-display" style={{ fontWeight: 700, margin: '0 0 0.5rem' }}>Every trip</h3>
+          <Collapsible title="Every trip" summary={`${report.count} trip${report.count === 1 ? '' : 's'} · ${formatKSh(report.total)}`}>
           <div className="sns-card" style={{ overflow: 'hidden' }}>
             <div style={{ overflowX: 'auto' }}>
               <table className="sns-table" style={{ width: '100%', borderCollapse: 'collapse' }} aria-label="Every trip">
@@ -128,6 +126,7 @@ export default function TransportReport({ mode: startMode = 'day', anchor: start
               </table>
             </div>
           </div>
+          </Collapsible>
         </>
       )}
     </div>

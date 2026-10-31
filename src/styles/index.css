@@ -138,3 +138,19 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .jobs-toolbar .sns-btn-primary, .jobs-toolbar .sns-btn-secondary { padding: 0.5rem 0.65rem; font-size: 0.78rem; gap: 0.3rem; white-space: nowrap; flex: 0 0 auto; }
 .jobs-toolbar > div .sns-input { padding-left: 2.1rem; }
 @media (min-width: 1130px) { .jobs-toolbar { flex-wrap: nowrap; } }
+
+/* ---- update 42 ---------------------------------------------------------------------------------------------------- */
+/* The main tabs share the full width: one row on a desktop, and on a narrow screen each row stretches to fill. */
+.sns-tabs-span { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.sns-tabs-span > .sns-tab { flex: 1 1 auto; text-align: center; white-space: nowrap; }
+/* A section that stays closed until clicked; a printout still includes its content. */
+.sns-collapsible-head { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; width: 100%; padding: 0.85rem 1.1rem; background: var(--card); border: 1px solid var(--line); border-radius: 14px; cursor: pointer; text-align: left; font: inherit; color: inherit; transition: background 0.15s ease; }
+.sns-collapsible-head:hover { background: var(--paper); }
+.sns-collapsible-head:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+.sns-collapsible-hint { margin-left: auto; font-size: 0.74rem; color: var(--ink-faint); }
+.sns-collapsible-body { margin-top: 0.6rem; }
+@media print { .sns-collapsible-body { display: block !important; } .sns-collapsible-chevron { display: none !important; } }
+/* All Jobs: filters on the first row, the two "add a job" buttons on their own row beneath. */
+.jobs-toolbar { margin-bottom: 0.6rem; }
+.jobs-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+@media (min-width: 960px) { .jobs-toolbar { flex-wrap: nowrap; } }

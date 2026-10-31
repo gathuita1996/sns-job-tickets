@@ -69,3 +69,38 @@ export function buildTransportWorkbook(ExcelJS, report, { title = 'Transport rep
   ;[12, 28, 12, 44, 16, 10].forEach((w, i) => { d.getColumn(i + 1).width = w })
   return wb
 }
+
+// Commission earned in a period: every customer a commission-earning staff member recorded then, paid or not. Imported customers never count.
+export function commissionReport(customers, users, start, end, rate, departments = ['sales', 'technical']) {
+  const byId = new Map(users.map((u) => [u.id, u]))
+  const people = new Map()
+  const each = num(rate)
+  for (const c of customers) {
+    if (c.commissionExempt || !isInRange(c.createdAt, start, end)) continue
+    const u = byId.get(c.recordedBy)
+    if (!u || !departments.includes(u.department)) continue
+    const r = people.get(u.id) || { memberId: u.id, name: u.fullName, department: u.department, avatarUrl: u.avatarUrl || '', customers: [], count: 0, earned: 0, paid: 0, unpaid: 0 }
+    r.customers.push(c); r.count++; r.earned += each
+    if (c.commissionPaidAt) r.paid += each; else r.unpaid += each
+    people.set(u.id, r)
+  }
+  const rows = [...people.values()].map((r) => ({ ...r, customers: r.customers.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)) })).sort((a, b) => b.earned - a.earned || a.name.localeCompare(b.name))
+  return { rows, rate: each, count: rows.reduce((s, r) => s + r.count, 0), total: rows.reduce((s, r) => s + r.earned, 0), paid: rows.reduce((s, r) => s + r.paid, 0), unpaid: rows.reduce((s, r) => s + r.unpaid, 0) }
+}
+
+export function buildCommissionWorkbook(ExcelJS, report, { title = 'Monthly commission report', periodLabel = '', generatedBy = '', generatedAt = new Date() } = {}) {
+  const wb = new ExcelJS.Workbook(); wb.creator = 'SNS Job Cards'; wb.created = generatedAt
+  const head = (ws) => { ws.getRow(ws.rowCount).font = { bold: true }; ws.getRow(ws.rowCount).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9ECFA' } } }
+  const s = wb.addWorksheet('Who earned what')
+  s.addRow([`Swahili Net Solution - ${title}`]); s.getRow(1).font = { bold: true, size: 14 }
+  s.addRow([`${periodLabel} - KSh ${report.rate} for each new customer`]); s.addRow([`Prepared ${generatedAt.toISOString().slice(0, 10)}${generatedBy ? ` by ${generatedBy}` : ''}`]); s.addRow([])
+  s.addRow(['Staff member', 'Department', 'Customers', 'Commission (KSh)', 'Paid (KSh)', 'Not yet paid (KSh)']); head(s)
+  for (const r of report.rows) s.addRow([r.name, r.department, r.count, r.earned, r.paid, r.unpaid])
+  s.addRow(['TOTAL', '', report.count, report.total, report.paid, report.unpaid]); s.getRow(s.rowCount).font = { bold: true }
+  ;[30, 16, 11, 18, 14, 18].forEach((w, i) => { s.getColumn(i + 1).width = w })
+  const d = wb.addWorksheet('Customers')
+  d.addRow(['Date', 'Staff member', 'Customer', 'Location', 'Commission (KSh)', 'Status']); head(d)
+  for (const r of report.rows) for (const c of r.customers) d.addRow([toDateInputValue(c.createdAt), r.name, c.fullName, c.location || '', report.rate, c.commissionPaidAt ? `Paid ${toDateInputValue(c.commissionPaidAt)}` : 'Not yet paid'])
+  ;[12, 28, 28, 18, 18, 22].forEach((w, i) => { d.getColumn(i + 1).width = w })
+  return wb
+}
