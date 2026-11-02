@@ -154,3 +154,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .jobs-toolbar { margin-bottom: 0.6rem; }
 .jobs-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
 @media (min-width: 960px) { .jobs-toolbar { flex-wrap: nowrap; } }
+
+/* ---- update 43 ---------------------------------------------------------------------------------------------------- */
+/* A staff member's customers stay closed under their name until it is clicked; a printout shows them all. */
+@media print { .sns-group-row { display: table-row !important; } }

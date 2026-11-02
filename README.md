@@ -321,3 +321,11 @@ Removed from the package: the old `employee-number-and-service-fix-migration.sql
 - **Main tabs** now span the full width: one row on a desktop screen; on a phone they wrap and each row stretches to fill.
 - **Expenses/Purchases:** under the summary, the list is a closed section called **All expenses/purchases**. It shows how many items there are and how many are waiting for approval, and opens when clicked.
 
+## Update 43
+
+**To apply:** (1) run `supabase/update-43-migration.sql` in the Supabase SQL editor (safe to run again), (2) deploy the code. A fresh install needs only `job-card-rebuild.sql`, which now contains updates 40 to 43.
+
+- **Marking commission as paid is Director-only**, in the app and in the database. Other admins can still see every status, import customers, edit customers and hand customers to staff; only changing a customer's "paid" date needs the Director. (Before, any admin could.)
+- **Commission report > Every customer recorded:** each staff name is one closed row (name, number of customers, their commission). Click the name, or anywhere on the row, to open that person's customers. The Director gets a single **Mark as paid** in the Status column of that row: one click and Confirm, and every unpaid customer under that name shows **Paid**. The button marks exactly the customers shown, so it works for whichever month you are viewing, and it never touches customers already paid. A part-paid person shows "3 of 7 paid" and still has one button for the rest. A printout shows every customer and no buttons.
+- **Commissions tab:** its Mark as Paid is Director-only too (everyone else sees "Director only"), and it now pays exactly the customers listed, not whatever was recorded since the page was opened.
+

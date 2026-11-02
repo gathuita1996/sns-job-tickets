@@ -28,7 +28,7 @@ import ServiceFormModal from './ServiceForm'
 import { ConfirmDialog, EmptyState, EntryTypeChoice, FormField, PeriodSelector, SearchInput, StatCard, StatusBadge, StatusFilterSelect } from './shared'
 import { JOB_TYPES, PRIORITY_OPTIONS, CHART_COLORS, COMMISSION_DEPARTMENTS, departmentLabel, formatKSh, formatDate, formatDateTime, isOverdue, isInPeriod, getPeriodRange, isInRange, shiftAnchor, toWhatsAppNumber } from '../lib/helpers'
 
-export default function AdminDashboard({ extras, currentUser, users, jobs, customers, expenses, stockItems, stockIn, stockOut, places, visits, onAddPlace, onRecordVisit, onDeleteVisit, onSetPlaceActive, onDataChanged, onLogout, onAddJob, onUpdateJob, onDeleteJob, onAssignJob, onPromote, onUpdateDepartment, onUpdateProfile, accessCode, onUpdateAccessCode, commissionRate, onUpdateCommissionRate, onClearCommission, onUpdateCustomer, onAssignEmployeeNumbers, onDeleteCustomer, onMarkTransportPaid, onAddExpense, onAddService, onApproveExpense, onRejectExpense, onAttachReceipt, onMarkExpensePaid, onDeleteExpense, onViewReceipt, onToggleTeamLead, onSetDirector, onAddStockItem, onUpdateStockItem, onDeleteStockItem, onAddStockIn, onAddStockInBatch, onAddStockOut }) {
+export default function AdminDashboard({ extras, currentUser, users, jobs, customers, expenses, stockItems, stockIn, stockOut, places, visits, onAddPlace, onRecordVisit, onDeleteVisit, onSetPlaceActive, onDataChanged, onLogout, onAddJob, onUpdateJob, onDeleteJob, onAssignJob, onPromote, onUpdateDepartment, onUpdateProfile, accessCode, onUpdateAccessCode, commissionRate, onUpdateCommissionRate, onMarkCommissionPaid, onUpdateCustomer, onAssignEmployeeNumbers, onDeleteCustomer, onMarkTransportPaid, onAddExpense, onAddService, onApproveExpense, onRejectExpense, onAttachReceipt, onMarkExpensePaid, onDeleteExpense, onViewReceipt, onToggleTeamLead, onSetDirector, onAddStockItem, onUpdateStockItem, onDeleteStockItem, onAddStockIn, onAddStockInBatch, onAddStockOut }) {
   const backupDays = daysSince(extras && extras.lastBackup && extras.lastBackup.at)
   const [viewingStaffId, setViewingStaffId] = useState(null)
   const [profileRequest, setProfileRequest] = useState(null)
@@ -385,7 +385,7 @@ export default function AdminDashboard({ extras, currentUser, users, jobs, custo
         )}
 
         {tab === 'commissions' && showCommissionReport && (
-          <CommissionReport customers={customers} users={users} commissionRate={commissionRate} generatedBy={currentUser.fullName} onBack={() => setShowCommissionReport(false)} />
+          <CommissionReport customers={customers} users={users} commissionRate={commissionRate} generatedBy={currentUser.fullName} canMarkPaid={Boolean(currentUser.isDirector)} onMarkPaid={onMarkCommissionPaid} onBack={() => setShowCommissionReport(false)} />
         )}
 
         {tab === 'commissions' && !showCommissionReport && (
@@ -415,9 +415,11 @@ export default function AdminDashboard({ extras, currentUser, users, jobs, custo
                             <td className="sns-mono">{r.count}</td>
                             <td className="sns-mono" style={{ fontWeight: 700, color: 'var(--confirmed)' }}>{formatKSh(r.commission)}</td>
                             <td style={{ textAlign: 'right' }}>
-                              <button onClick={(e) => { e.stopPropagation(); setConfirmClearCommission(r) }} className="sns-btn-primary" style={{ fontSize: '0.78rem', padding: '0.5rem 0.9rem' }}>
+                              {currentUser.isDirector ? (
+                                <button onClick={(e) => { e.stopPropagation(); setConfirmClearCommission(r) }} className="sns-btn-primary" style={{ fontSize: '0.78rem', padding: '0.5rem 0.9rem' }}>
                                 Mark as Paid
                               </button>
+                              ) : <span className="sns-text-faint" style={{ fontSize: '0.74rem' }} title="Only the Director marks commission as paid">Director only</span>}
                             </td>
                           </tr>
                           {expandedMemberId === r.member.id && (
@@ -571,7 +573,7 @@ export default function AdminDashboard({ extras, currentUser, users, jobs, custo
           title="Mark commission as paid"
           message={`Mark ${confirmClearCommission.member.fullName}'s ${confirmClearCommission.count} commission${confirmClearCommission.count === 1 ? '' : 's'} this month (${formatKSh(confirmClearCommission.commission)}) as paid? This can't be undone from the app.`}
           onCancel={() => setConfirmClearCommission(null)}
-          onConfirm={async () => { await onClearCommission(confirmClearCommission.member); setConfirmClearCommission(null) }}
+          onConfirm={async () => { await onMarkCommissionPaid(confirmClearCommission.member, confirmClearCommission.unpaidCustomers.map((c) => c.id)); setConfirmClearCommission(null) }}
         />
       )}
       {showServiceForm && (

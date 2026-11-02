@@ -5,7 +5,7 @@ import { fetchAll } from './lib/dataIO'
 import { processAvatar } from './lib/image'
 import { currentLeaveYear } from './lib/leave'
 import LeavePanel from './components/LeavePanel'
-import { COMMISSION_DEPARTMENTS, startOfMonth } from './lib/helpers'
+import { COMMISSION_DEPARTMENTS } from './lib/helpers'
 import { LoadingScreen, Toast } from './components/shared'
 import { LoginView, SignupView, ForgotPasswordView, ResetPasswordView } from './components/Auth'
 import MemberDashboard from './components/MemberDashboard'
@@ -186,13 +186,23 @@ export default function App() {
   // Only clears this month's commissions -- that's all the Commissions tab
   // shows, so the button can never silently clear older ones that aren't
   // visible on screen.
-  async function handleClearCommission(member) {
-    const { error } = await supabase.from('customers').update({ commission_paid_at: new Date().toISOString() })
-      .eq('recorded_by', member.id).is('commission_paid_at', null)
-      .gte('created_at', startOfMonth().toISOString())
-    if (error) { showToast('Failed to clear commission.', 'error'); return }
-    showToast(`Marked ${member.fullName}'s commission for this month as paid.`)
+  // Marks exactly the customers the Director was looking at as paid (one click per person, whichever month): what you see is what gets paid.
+  // The database refuses anyone who is not the Director.
+  async function handleMarkCommissionPaid(member, customerIds) {
+    const ids = [...new Set(customerIds || [])]
+    if (ids.length === 0) return false
+    const paidAt = new Date().toISOString()
+    let marked = 0
+    for (let i = 0; i < ids.length; i += 200) {
+      const { data, error } = await supabase.from('customers').update({ commission_paid_at: paidAt })
+        .in('id', ids.slice(i, i + 200)).eq('recorded_by', member.id).eq('commission_exempt', false).is('commission_paid_at', null).select('id')
+      if (error) { showToast(/Director/.test(error.message || '') ? 'Only the Director can mark commission as paid.' : 'Failed to mark commission as paid.', 'error'); await refreshCustomers(); return false }
+      marked += (data || []).length
+    }
+    if (marked === 0) { showToast('Nothing to mark: it was already paid.', 'error'); await refreshCustomers(); return false }
+    showToast(`Marked ${member.fullName}'s ${marked} commission${marked === 1 ? '' : 's'} as paid.`)
     await refreshCustomers()
+    return true
   }
 
   // Customer status is no longer independently editable -- it's derived
@@ -947,7 +957,7 @@ export default function App() {
   return (<>
     {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     {currentUser.role === 'admin'
-      ? <AdminDashboard extras={extras} currentUser={currentUser} users={allUsers} jobs={jobs} customers={customers} expenses={expenses} stockItems={stockItems} stockIn={stockIn} stockOut={stockOut} places={places} visits={visits} onAddPlace={handleAddPlace} onRecordVisit={handleRecordVisit} onDeleteVisit={handleDeleteVisit} onSetPlaceActive={handleSetPlaceActive} onUpdateCustomer={handleUpdateCustomer} onAssignEmployeeNumbers={handleAssignEmployeeNumbers} onDataChanged={handleDataChanged} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAssignJob={handleAssignJob} onPromote={handlePromote} onUpdateDepartment={handleUpdateDepartment} onUpdateProfile={handleUpdateProfile} accessCode={accessCode} onUpdateAccessCode={handleUpdateAccessCode} commissionRate={commissionRate} onUpdateCommissionRate={handleUpdateCommissionRate} onClearCommission={handleClearCommission} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onMarkTransportPaid={handleMarkTransportPaid} onAddExpense={handleAddExpense} onAddService={handleAddService} onAttachReceipt={handleAttachReceipt} onApproveExpense={handleApproveExpense} onRejectExpense={handleRejectExpense} onMarkExpensePaid={handleMarkExpensePaid} onDeleteExpense={handleDeleteExpense} onViewReceipt={getReceiptUrl} onToggleTeamLead={handleToggleTeamLead} onSetDirector={handleSetDirector} onAddStockItem={handleAddStockItem} onUpdateStockItem={handleUpdateStockItem} onDeleteStockItem={handleDeleteStockItem} onAddStockIn={handleAddStockIn} onAddStockInBatch={handleAddStockInBatch} onAddStockOut={handleAddStockOut} />
+      ? <AdminDashboard extras={extras} currentUser={currentUser} users={allUsers} jobs={jobs} customers={customers} expenses={expenses} stockItems={stockItems} stockIn={stockIn} stockOut={stockOut} places={places} visits={visits} onAddPlace={handleAddPlace} onRecordVisit={handleRecordVisit} onDeleteVisit={handleDeleteVisit} onSetPlaceActive={handleSetPlaceActive} onUpdateCustomer={handleUpdateCustomer} onAssignEmployeeNumbers={handleAssignEmployeeNumbers} onDataChanged={handleDataChanged} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAssignJob={handleAssignJob} onPromote={handlePromote} onUpdateDepartment={handleUpdateDepartment} onUpdateProfile={handleUpdateProfile} accessCode={accessCode} onUpdateAccessCode={handleUpdateAccessCode} commissionRate={commissionRate} onUpdateCommissionRate={handleUpdateCommissionRate} onMarkCommissionPaid={handleMarkCommissionPaid} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onMarkTransportPaid={handleMarkTransportPaid} onAddExpense={handleAddExpense} onAddService={handleAddService} onAttachReceipt={handleAttachReceipt} onApproveExpense={handleApproveExpense} onRejectExpense={handleRejectExpense} onMarkExpensePaid={handleMarkExpensePaid} onDeleteExpense={handleDeleteExpense} onViewReceipt={getReceiptUrl} onToggleTeamLead={handleToggleTeamLead} onSetDirector={handleSetDirector} onAddStockItem={handleAddStockItem} onUpdateStockItem={handleUpdateStockItem} onDeleteStockItem={handleDeleteStockItem} onAddStockIn={handleAddStockIn} onAddStockInBatch={handleAddStockInBatch} onAddStockOut={handleAddStockOut} />
       : <MemberDashboard extras={extras} currentUser={currentUser} jobs={jobs.filter((j) => j.memberId === currentUser.id)} raisedJobs={jobs.filter((j) => j.raisedBy === currentUser.id && j.memberId !== currentUser.id)} customers={customers} customerIdsWithJobs={customerIdsWithJobs} expenses={expenses.filter((e) => e.submittedBy === currentUser.id)} memberNames={memberNames} places={places} visits={visits} onAddPlace={handleAddPlace} onRecordVisit={handleRecordVisit} onDeleteVisit={handleDeleteVisit} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAddCustomer={handleAddCustomer} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onUpdateProfile={handleUpdateProfile} onAddExpense={handleAddExpense} onAttachReceipt={handleAttachReceipt} onDeleteExpense={handleDeleteExpense} onViewReceipt={getReceiptUrl} commissionRate={commissionRate} />}
   </>)
 }
