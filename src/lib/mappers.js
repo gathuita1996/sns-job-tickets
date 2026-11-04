@@ -320,3 +320,13 @@ export function mapLeaveAdjustment(row) {
 export function mapHoliday(row) { return { id: row.id, day: row.day, name: row.name } }
 
 export function mapDeviceItem(row) { return { id: row.id, name: row.item_name } }
+
+export function mapContract(row) {
+  return { id: row.id, memberId: row.member_id, contractType: row.contract_type, startDate: row.start_date, termMonths: row.term_months, renewsOnCompletion: Boolean(row.renews_on_completion), notes: row.notes || '', updatedBy: row.updated_by, updatedAt: row.updated_at }
+}
+export function contractToDbFields(memberId, f) {
+  return { member_id: memberId, contract_type: f.contractType, start_date: f.startDate, term_months: Number(f.termMonths), renews_on_completion: Boolean(f.renewsOnCompletion), notes: String(f.notes || '').trim() || null }
+}
+export function mapContractChange(row) {
+  return { id: row.id, memberId: row.member_id, changedAt: row.changed_at, changedBy: row.changed_by, action: row.action, previousType: row.previous_type, contractType: row.contract_type, startDate: row.start_date, termMonths: row.term_months, renewsOnCompletion: Boolean(row.renews_on_completion), notes: row.notes || '' }
+}

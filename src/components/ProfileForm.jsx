@@ -44,7 +44,7 @@ function AvatarPicker({ profile, canUpload, onUpload, onRemove }) {
   )
 }
 
-function ProfileFields({ profile, bank, canEditNumber, isSelf, onClose, onSave, onUploadAvatar, onRemoveAvatar }) {
+function ProfileFields({ profile, bank, contract, canEditNumber, isSelf, onClose, onSave, onUploadAvatar, onRemoveAvatar }) {
   const [form, setForm] = useState({
     fullName: profile.fullName, username: profile.username, contact: profile.contact, title: profile.title || '',
     gender: profile.gender || '', dateOfBirth: profile.dateOfBirth || '',
@@ -117,6 +117,8 @@ function ProfileFields({ profile, bank, canEditNumber, isSelf, onClose, onSave, 
         </FormField>
       )}
 
+      {isSelf && contract ? <div className="sns-border-t sns-border-b" style={{ padding: '1rem 0' }}>{contract}</div> : null}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <FormField label="Gender">
           <select className="sns-input" value={form.gender} onChange={(e) => update('gender', e.target.value)}>
@@ -158,7 +160,7 @@ function ProfileFields({ profile, bank, canEditNumber, isSelf, onClose, onSave, 
 }
 
 // "My profile": picture, details, bank details, and (for yourself) Leave. An admin also gets Settings.
-export default function ProfileFormModal({ profile, isSelf, canEditNumber, settings, leave, leaveBadge, data, initialTab, bank, onClose, onSave, onUploadAvatar, onRemoveAvatar }) {
+export default function ProfileFormModal({ profile, isSelf, canEditNumber, settings, leave, leaveBadge, data, contract, initialTab, bank, onClose, onSave, onUploadAvatar, onRemoveAvatar }) {
   const tabs = [{ key: 'profile', label: isSelf ? 'My profile' : 'Profile' }]
   if (leave) tabs.push({ key: 'leave', label: 'Leave', badge: leaveBadge })
   if (data) tabs.push({ key: 'data', label: 'Data & Backup' })
@@ -184,7 +186,7 @@ export default function ProfileFormModal({ profile, isSelf, canEditNumber, setti
         {tab === 'settings' && settings ? <div style={{ padding: '1.4rem' }}>{settings}</div>
           : tab === 'leave' && leave ? <div style={{ padding: '1.4rem' }}>{leave}</div>
           : tab === 'data' && data ? <div style={{ padding: '1.4rem' }}>{data}</div>
-          : <ProfileFields profile={profile} bank={bank} canEditNumber={canEditNumber} isSelf={isSelf} onClose={onClose} onSave={onSave} onUploadAvatar={onUploadAvatar} onRemoveAvatar={onRemoveAvatar} />}
+          : <ProfileFields profile={profile} bank={bank} contract={contract} canEditNumber={canEditNumber} isSelf={isSelf} onClose={onClose} onSave={onSave} onUploadAvatar={onUploadAvatar} onRemoveAvatar={onRemoveAvatar} />}
       </div>
     </div>
   )

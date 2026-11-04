@@ -210,6 +210,8 @@ export default function AdminDashboard({ extras, currentUser, users, jobs, custo
             leaveRow={((extras && extras.leave && extras.leave.overview) || []).find((o) => o.member_id === viewingStaff.id)} policy={(extras && extras.leave && extras.leave.policy) || {}}
             userMap={userMap} commissionRate={commissionRate} onBack={() => setViewingStaffId(null)} onEdit={setEditingMember}
             onPromote={onPromote} onToggleTeamLead={onToggleTeamLead} onSetDirector={onSetDirector} onUpdateDepartment={onUpdateDepartment}
+            contract={extras && extras.contracts && extras.contracts.byMember[viewingStaff.id]} contractHistory={((extras && extras.contracts && extras.contracts.history) || []).filter((h) => h.memberId === viewingStaff.id)}
+            canEditContract={Boolean(currentUser.isDirector)} onSaveContract={extras && extras.contracts && extras.contracts.onSave} policyDays={(extras && extras.leave && extras.leave.policy && extras.leave.policy.annual_days) || 21}
             onOpenCustomers={(id) => { setCustomersFocus(id); setViewingStaffId(null); setTab('customers') }} />
         </main>
         {editMemberModal}
@@ -374,12 +376,12 @@ export default function AdminDashboard({ extras, currentUser, users, jobs, custo
             {staffView === 'leave' && extras && extras.leave ? (
               <div>
                 <button type="button" onClick={() => setStaffView('list')} className="sns-btn-secondary" style={{ marginBottom: '1rem' }}><ArrowLeft size={15} /> All staff</button>
-                <LeaveAdmin users={users} requests={leaveRequests} adjustments={extras.leave.adjustments} overview={extras.leave.overview} holidays={extras.leave.holidays} policy={extras.leave.policy} currentUser={currentUser}
+                <LeaveAdmin users={users} requests={leaveRequests} adjustments={extras.leave.adjustments} overview={extras.leave.overview} holidays={extras.leave.holidays} policy={extras.leave.policy} currentUser={currentUser} contracts={extras.contracts && extras.contracts.byMember}
                   onDecide={extras.leave.onDecide} onCancelRequest={extras.leave.onCancelRequest} onRecord={extras.leave.onRecord} onPreview={extras.leave.onPreview} onAdjust={extras.leave.onAdjust}
                   onSavePolicy={extras.leave.onSavePolicy} onAddHoliday={extras.leave.onAddHoliday} onRemoveHoliday={extras.leave.onRemoveHoliday} onAddKenyanHolidays={extras.leave.onAddKenyanHolidays} />
               </div>
             ) : (
-              <TeamList users={users} jobs={jobs} onViewMember={(m) => setViewingStaffId(m.id)} awayIds={awayIds} />
+              <TeamList users={users} jobs={jobs} onViewMember={(m) => setViewingStaffId(m.id)} awayIds={awayIds} contracts={extras && extras.contracts && extras.contracts.byMember} />
             )}
           </div>
         )}

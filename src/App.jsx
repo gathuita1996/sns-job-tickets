@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from './lib/supabaseClient'
-import { mapProfile, mapJob, jobToDbFields, mapCustomer, customerToDbFields, mapExpense, expenseToDbFields, serviceToDbFields, mapStockItem, stockItemToDbFields, mapStockIn, stockInToDbFields, mapStockOut, stockOutToDbFields , mapPlace, placeToDbFields, mapVisit, visitToDbFields, mapBank, bankToDbFields, mapRetrievedRouter, retrievedRouterToDbFields, mapLeaveRequest, mapLeaveAdjustment, mapHoliday, mapDeviceItem } from './lib/mappers'
+import { mapProfile, mapJob, jobToDbFields, mapCustomer, customerToDbFields, mapExpense, expenseToDbFields, serviceToDbFields, mapStockItem, stockItemToDbFields, mapStockIn, stockInToDbFields, mapStockOut, stockOutToDbFields , mapPlace, placeToDbFields, mapVisit, visitToDbFields, mapBank, bankToDbFields, mapRetrievedRouter, retrievedRouterToDbFields, mapLeaveRequest, mapLeaveAdjustment, mapHoliday, mapDeviceItem, mapContract, contractToDbFields, mapContractChange } from './lib/mappers'
 import { fetchAll } from './lib/dataIO'
 import { processAvatar } from './lib/image'
 import { currentLeaveYear } from './lib/leave'
 import LeavePanel from './components/LeavePanel'
+import ContractCard from './components/ContractCard'
 import { COMMISSION_DEPARTMENTS } from './lib/helpers'
 import { LoadingScreen, Toast } from './components/shared'
 import { LoginView, SignupView, ForgotPasswordView, ResetPasswordView } from './components/Auth'
@@ -24,8 +25,10 @@ export default function App() {
   const [leaveAdjustments, setLeaveAdjustments] = useState([])
   const [leaveOverview, setLeaveOverview] = useState([])
   const [leaveSummary, setLeaveSummary] = useState(null)
-  const [leavePolicy, setLeavePolicy] = useState({ annual_days: 21, max_per_month: 3, year_start_month: 8, count_saturdays: true })
+  const [leavePolicy, setLeavePolicy] = useState({ annual_days: 21, max_per_month: 3, year_start_month: 8, count_saturdays: false })
   const [holidays, setHolidays] = useState([])
+  const [contracts, setContracts] = useState({})
+  const [contractHistory, setContractHistory] = useState([])
   const [deviceItems, setDeviceItems] = useState([])
   const [expenses, setExpenses] = useState([])
   const [stockItems, setStockItems] = useState([])
@@ -83,6 +86,7 @@ export default function App() {
       if (profile.role !== 'admin') await refreshMemberNames()
     }
     await refreshLeave(profile)
+    await refreshContracts()
     await refreshBank(profile)
     setBooting(false)
   }
@@ -774,9 +778,25 @@ export default function App() {
     await refreshRetrievedRouters()
   }
 
+  // Contracts: everyone reads their own; admins read all. Only the Director can save one (the database refuses anyone else).
+  async function refreshContracts() {
+    const [rows, hist] = await Promise.all([supabase.from('staff_contracts').select('*'), supabase.from('staff_contract_history').select('*').order('changed_at', { ascending: false })])
+    if (!rows.error) { const map = {}; (rows.data || []).forEach((r) => { map[r.member_id] = mapContract(r) }); setContracts(map) }
+    if (!hist.error) setContractHistory((hist.data || []).map(mapContractChange))
+  }
+
+  async function handleSaveContract(memberId, form) {
+    const { error } = await supabase.from('staff_contracts').upsert(contractToDbFields(memberId, form), { onConflict: 'member_id' })
+    if (error) { showToast(/row-level security|permission/i.test(error.message || '') ? 'Only the Director can change a contract.' : 'Could not save the contract.', 'error'); return false }
+    showToast('Contract saved.')
+    await refreshContracts()
+    await refreshLeave()
+    return true
+  }
+
   // After an import or restore: reload everything the admin sees.
   async function handleDataChanged() {
-    await Promise.all([refreshJobs(), refreshCustomers(), refreshExpenses(), refreshRetrievedRouters(), refreshLeave(), refreshBank(), refreshUsers(), refreshStockItems(), refreshStockIn(), refreshStockOut(), refreshPlaces(), refreshVisits()])
+    await Promise.all([refreshJobs(), refreshCustomers(), refreshExpenses(), refreshRetrievedRouters(), refreshLeave(), refreshContracts(), refreshBank(), refreshUsers(), refreshStockItems(), refreshStockIn(), refreshStockOut(), refreshPlaces(), refreshVisits()])
   }
 
   async function handleAddStockIn(formData) {
@@ -940,7 +960,8 @@ export default function App() {
     lastBackup, bankDetails, onBackupRecorded: handleBackupRecorded, onAssignCustomers: handleAssignCustomers,
     header: {
       bank: bankDetails[currentUser.id], onUploadAvatar: handleUploadAvatar, onRemoveAvatar: handleRemoveAvatar,
-      leave: (
+      contract: <ContractCard contract={contracts[currentUser.id]} history={contractHistory.filter((h) => h.memberId === currentUser.id)} policyDays={leavePolicy.annual_days} heading />,
+      leave: leaveSummary && leaveSummary.eligible === false ? undefined : (
         <LeavePanel userId={currentUser.id} isDirector={currentUser.isDirector}
           requests={leaveRequests.filter((r) => r.memberId === currentUser.id)} adjustments={leaveAdjustments.filter((a) => a.memberId === currentUser.id)}
           policy={leavePolicy} summary={leaveSummary} onPreview={handlePreviewLeave} onApply={handleApplyLeave} onCancel={handleCancelLeave} />
@@ -951,6 +972,7 @@ export default function App() {
       onPreview: handlePreviewLeave, onDecide: handleDecideLeave, onCancelRequest: handleCancelLeave, onRecord: handleRecordLeave, onAdjust: handleAdjustLeave,
       onSavePolicy: handleSaveLeavePolicy, onAddHoliday: handleAddHoliday, onRemoveHoliday: handleRemoveHoliday, onAddKenyanHolidays: handleAddKenyanHolidays,
     },
+    contracts: { byMember: contracts, history: contractHistory, onSave: handleSaveContract },
     routers: { rows: retrievedRouters, deviceItems, onAdd: handleAddRouter, onUpdate: handleUpdateRouter, onSetStatus: handleSetRouterStatus, onDelete: handleDeleteRouter },
   }
 

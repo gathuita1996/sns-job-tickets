@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
 import { ArrowLeft, Award, Clipboard, CreditCard, Mail, Pencil, Phone, Plane, Shield, Star, Users, Wallet } from 'lucide-react'
 import Avatar from './Avatar'
+import ContractCard from './ContractCard'
+import ContractModal from './ContractModal'
 import { ConfirmDialog, EmptyState, StatCard, StatusBadge } from './shared'
 import { LEAVE_STATUS_BADGE, LEAVE_STATUS_LABEL, dayCount, formatLeaveRange, leaveYearLabel } from '../lib/leave'
 import { DEPARTMENTS, departmentLabel, formatDate, formatKSh, isInPeriod, isOverdue } from '../lib/helpers'
@@ -21,7 +23,8 @@ const Section = ({ title, action, children }) => (
 )
 
 // One page with everything about one staff member, for the admins.
-export default function StaffDetail({ member, bank, jobs, customers, expenses, visits, routers, leaveRequests, leaveAdjustments, leaveRow, policy, userMap, commissionRate, onBack, onEdit, onOpenCustomers, onPromote, onToggleTeamLead, onSetDirector, onUpdateDepartment }) {
+export default function StaffDetail({ member, bank, jobs, customers, expenses, visits, routers, leaveRequests, leaveAdjustments, leaveRow, policy, userMap, commissionRate, onBack, onEdit, onOpenCustomers, onPromote, onToggleTeamLead, onSetDirector, onUpdateDepartment, contract, contractHistory = [], canEditContract = false, onSaveContract, policyDays = 21 }) {
+  const [editingContract, setEditingContract] = useState(false)
   const [confirm, setConfirm] = useState(null)        // null | 'promote' | 'director'
   const currentDirector = Object.values(userMap || {}).find((u) => u.isDirector)
   const myJobs = useMemo(() => jobs.filter((j) => j.memberId === member.id || (j.coTechnicians || []).includes(member.id)).sort((a, b) => new Date(b.visitDate) - new Date(a.visitDate)), [jobs, member.id])
@@ -89,10 +92,15 @@ export default function StaffDetail({ member, bank, jobs, customers, expenses, v
       {confirm === 'promote' && <ConfirmDialog title="Promote to admin" message={`Make ${member.fullName} an admin? Admins can see every job, customer, expense and staff record.`} onCancel={() => setConfirm(null)} onConfirm={async () => { await onPromote(member); setConfirm(null) }} />}
       {confirm === 'director' && <ConfirmDialog title="Make Director" message={`Make ${member.fullName} the Director? There is only one Director${currentDirector ? `, so ${currentDirector.fullName} stops being Director` : ''}. Only the Director approves purchases and leave.`} onCancel={() => setConfirm(null)} onConfirm={async () => { await onSetDirector(member); setConfirm(null) }} />}
 
+      <Section title="Contract agreement">
+        <ContractCard contract={contract} history={contractHistory} userMap={userMap} canEdit={Boolean(canEditContract && onSaveContract)} onEdit={() => setEditingContract(true)} policyDays={policyDays} />
+      </Section>
+      {editingContract && <ContractModal member={member} contract={contract} policyDays={policyDays} onSave={(form) => onSaveContract(member.id, form)} onClose={() => setEditingContract(false)} />}
+
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3" style={{ marginBottom: '1rem' }}>
         <StatCard label="Jobs worked" value={myJobs.length} icon={Clipboard} />
         <StatCard label="Customers recorded" value={myCustomers.length} icon={Users} />
-        <StatCard label="Leave days left" value={leaveRow ? leaveRow.remaining : '—'} icon={Plane} tone="success" />
+        <StatCard label="Leave days left" value={leaveRow ? (leaveRow.eligible === false ? 'Not eligible' : leaveRow.remaining) : '—'} icon={Plane} tone="success" />
         <StatCard label="Commission owed (month)" value={formatKSh(owed)} icon={Wallet} tone="warning" masked />
       </div>
 
@@ -111,7 +119,8 @@ export default function StaffDetail({ member, bank, jobs, customers, expenses, v
               <Row label="Account name">{bank.accountName}</Row><Row label="Branch">{bank.branch}</Row></>) : <p className="sns-text-soft" style={{ fontSize: '0.85rem' }}>Not provided yet. {member.fullName.split(' ')[0]} can add them under My profile.</p>}
           </Section>
           <Section title="Leave" action={leaveRow ? <span className="sns-text-faint" style={{ fontSize: '0.74rem' }}>{leaveYearLabel(leaveRow.leave_year, policy.year_start_month)}</span> : null}>
-            {leaveRow && <p style={{ fontSize: '0.86rem', marginBottom: '0.6rem' }}><strong>{dayCount(leaveRow.remaining)}</strong> left of {leaveRow.entitlement} · {leaveRow.used_requests + leaveRow.adjustments} used{leaveRow.pending ? ` · ${leaveRow.pending} waiting` : ''}{myAdj.length ? ` (includes ${myAdj.reduce((s, a) => s + Number(a.days), 0)} opening)` : ''}</p>}
+            {leaveRow && leaveRow.eligible === false && <p className="sns-text-soft" style={{ fontSize: '0.85rem', marginBottom: '0.6rem' }}>Not eligible for annual leave: {contract ? 'short-term contract' : 'no contract on file'}. Leave days are added when the Director sets a 1-year contract.</p>}
+            {leaveRow && leaveRow.eligible !== false && <p style={{ fontSize: '0.86rem', marginBottom: '0.6rem' }}><strong>{dayCount(leaveRow.remaining)}</strong> left of {leaveRow.entitlement} · {leaveRow.used_requests + leaveRow.adjustments} used{leaveRow.pending ? ` · ${leaveRow.pending} waiting` : ''}{myAdj.length ? ` (includes ${myAdj.reduce((s, a) => s + Number(a.days), 0)} opening)` : ''}</p>}
             {myLeave.length === 0 ? <p className="sns-text-soft" style={{ fontSize: '0.85rem' }}>No leave requests yet.</p> : myLeave.slice(0, 8).map((r) => (
               <div key={r.id} className="flex items-center justify-between" style={{ fontSize: '0.84rem', padding: '0.3rem 0' }}><span>{formatLeaveRange(r.startDate, r.endDate)} · {dayCount(r.days)}</span><span className={`sns-badge ${LEAVE_STATUS_BADGE[r.status]}`}>{LEAVE_STATUS_LABEL[r.status]}</span></div>))}
           </Section>

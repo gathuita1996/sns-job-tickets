@@ -7,7 +7,7 @@ import { departmentLabel } from '../lib/helpers'
 const DEPT_BADGE_CLASS = { sales: 'sns-badge-progress', technical: 'sns-badge-role', admin: 'sns-badge-pending' }
 
 // The staff list: a plain list where the WHOLE row opens that person's page. Role, department and Director controls live on that page.
-export default function TeamList({ users, jobs, onViewMember, awayIds }) {
+export default function TeamList({ users, jobs, onViewMember, awayIds, contracts }) {
   const [search, setSearch] = useState('')
   const shown = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -34,6 +34,9 @@ export default function TeamList({ users, jobs, onViewMember, awayIds }) {
                       <p style={{ fontWeight: 600, fontSize: '0.9rem' }}>{m.fullName}</p>
                       {m.role === 'admin' && <span className="sns-badge sns-badge-role">{m.title || 'Admin'}</span>}
                       <span className={`sns-badge ${DEPT_BADGE_CLASS[m.department] || 'sns-badge-pending'}`}>{departmentLabel(m.department)}</span>
+                      {contracts && (contracts[m.id]
+                        ? <span className={`sns-badge ${contracts[m.id].contractType === 'annual' ? 'sns-badge-done' : 'sns-badge-pending'}`} title="Contract">{contracts[m.id].contractType === 'annual' ? '1 year' : 'Short term'}</span>
+                        : <span className="sns-badge sns-badge-role" title="No contract on file">No contract</span>)}
                       {m.isTeamLead && <span className="sns-badge" style={{ background: 'var(--confirmed-pale)', color: 'var(--confirmed)' }}><Star size={11} /> Team Lead</span>}
                       {m.isDirector && <span className="sns-badge" style={{ background: 'var(--stamp-pale)', color: 'var(--stamp-deep)' }}><Award size={11} /> Director</span>}
                       {awayIds && awayIds.has(m.id) && <span className="sns-badge sns-badge-pending">On leave</span>}

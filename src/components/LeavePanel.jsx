@@ -13,7 +13,7 @@ export default function LeavePanel({ userId, isDirector, requests, adjustments, 
   const [submitting, setSubmitting] = useState(false)
   const [confirmCancel, setConfirmCancel] = useState(null)
   const today = toDateInputValue(new Date())
-  const pol = policy || { annual_days: 21, max_per_month: 3, year_start_month: 8, count_saturdays: true }
+  const pol = policy || { annual_days: 21, max_per_month: 3, year_start_month: 8, count_saturdays: false }
 
   useEffect(() => {
     if (!start || !end) { setPreview(null); return undefined }

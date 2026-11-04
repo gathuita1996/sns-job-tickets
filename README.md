@@ -329,3 +329,15 @@ Removed from the package: the old `employee-number-and-service-fix-migration.sql
 - **Commission report > Every customer recorded:** each staff name is one closed row (name, number of customers, their commission). Click the name, or anywhere on the row, to open that person's customers. The Director gets a single **Mark as paid** in the Status column of that row: one click and Confirm, and every unpaid customer under that name shows **Paid**. The button marks exactly the customers shown, so it works for whichever month you are viewing, and it never touches customers already paid. A part-paid person shows "3 of 7 paid" and still has one button for the rest. A printout shows every customer and no buttons.
 - **Commissions tab:** its Mark as Paid is Director-only too (everyone else sees "Director only"), and it now pays exactly the customers listed, not whatever was recorded since the page was opened.
 
+## Update 44
+
+**To apply:** (1) run `supabase/update-44-migration.sql` in the Supabase SQL editor (safe to run again; apply the earlier updates first), (2) deploy the code. A fresh install needs only `job-card-rebuild.sql`, which now contains updates 40 to 44.
+
+- **Saturdays no longer count as leave days** (Sundays never did). Requests still waiting are counted again without their Saturdays; leave already approved is left exactly as approved. The Director can still switch Saturdays back on under Leave > Policy.
+- **Contract agreement** in every profile: **My profile** shows your own, read-only; the **Staff** page shows anyone's. **Only the Director can create or change a contract**, in the app and in the database. A contract has a type (1 year, or short term), a start date, a term in months, "renewed on completion", and notes. A contract that renews shows its current period and the next renewal, and every change is kept in a history. The Staff list shows each person's contract at a glance.
+- **Annual leave is only for staff on a 1-year contract.** Someone on a short-term contract (or with no contract on file) has no Leave section, no "My leave" card and no leave days, and the leave desk shows them as Not eligible. Their leave **records are kept**, so when the Director changes the contract to a 1-year term the days appear and the balance is the old records, not a reset. Changing a contract that adds or removes leave asks for confirmation first.
+- **The current contracts are entered by employee number:** SNS003, SNS004, SNS005 and SNS008 on a 1-year contract from 1 Aug 2026; SNS002 on a 1-year contract from 1 Nov 2026; SNS006 and SNS010 on a 3-month contract from 1 Jul 2026, and SNS007 on a 3-month contract from 4 Aug 2026, all renewed on completion. An employee number that does not exist is skipped. Existing contracts are never overwritten when the update is run again.
+- **No contract on file means no leave.** That includes the Director (SNS001) until a contract is entered on the Staff page.
+- Leave requests still waiting from someone on a short-term contract are closed with the reason. Leave that was already approved is untouched.
+- Backup and restore include contracts (restored by the Director, before leave).
+

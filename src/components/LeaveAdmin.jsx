@@ -75,7 +75,7 @@ function AdjustModal({ member, onAdjust, onClose }) {
   )
 }
 
-export default function LeaveAdmin({ users, requests, adjustments, overview, holidays, policy, currentUser, onDecide, onCancelRequest, onRecord, onPreview, onAdjust, onSavePolicy, onAddHoliday, onRemoveHoliday, onAddKenyanHolidays }) {
+export default function LeaveAdmin({ users, requests, adjustments, overview, holidays, policy, currentUser, contracts, onDecide, onCancelRequest, onRecord, onPreview, onAdjust, onSavePolicy, onAddHoliday, onRemoveHoliday, onAddKenyanHolidays }) {
   const isDirector = Boolean(currentUser.isDirector)
   const [sub, setSub] = useState('requests')
   const [rejecting, setRejecting] = useState(null)
@@ -159,6 +159,7 @@ export default function LeaveAdmin({ users, requests, adjustments, overview, hol
           <table className="sns-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr><th>Person</th><th>Allowance</th><th>Used</th><th>Waiting</th><th>Left</th><th>This month</th><th /></tr></thead>
             <tbody>{users.map((u) => { const o = rowOf(u.id); const used = o ? o.used_requests + o.adjustments : 0
+              if (o && o.eligible === false) return (<tr key={u.id}><td><div className="flex items-center gap-2"><Avatar name={u.fullName} url={u.avatarUrl} size={28} /><span style={{ fontWeight: 600 }}>{u.fullName}</span><span className="sns-badge sns-badge-pending">Not eligible</span></div></td><td colSpan={6} className="sns-text-faint" style={{ fontSize: '0.8rem' }}>{contracts && contracts[u.id] ? 'Short-term contract' : 'No contract on file'}. Leave days are added when the Director sets a 1-year contract.</td></tr>)
               return (<tr key={u.id}>
                 <td><div className="flex items-center gap-2"><Avatar name={u.fullName} url={u.avatarUrl} size={28} /><span style={{ fontWeight: 600 }}>{u.fullName}</span>{(o?.on_leave_today || away.has(u.id)) && <span className="sns-badge sns-badge-progress">On leave</span>}</div></td>
                 <td className="sns-mono">{o ? o.entitlement : policy.annual_days}</td>
@@ -216,7 +217,7 @@ export default function LeaveAdmin({ users, requests, adjustments, overview, hol
           <button type="button" className="sns-btn-primary" style={{ width: '100%', marginTop: '1rem' }} disabled={!note.trim()} onClick={async () => { await onDecide(rejecting, 'rejected', note.trim()); setRejecting(null) }}>Reject request</button>
         </Modal>
       )}
-      {recording && <RecordLeaveModal users={users} onPreview={onPreview} onRecord={onRecord} onClose={() => setRecording(false)} />}
+      {recording && <RecordLeaveModal users={users.filter((u) => { const o = rowOf(u.id); return !o || o.eligible !== false })} onPreview={onPreview} onRecord={onRecord} onClose={() => setRecording(false)} />}
       {adjusting && <AdjustModal member={adjusting} onAdjust={onAdjust} onClose={() => setAdjusting(null)} />}
       {cancelling && <ConfirmDialog title="Revoke leave" message={`Cancel ${name(cancelling.memberId)}'s approved leave (${formatLeaveRange(cancelling.startDate, cancelling.endDate)})? The days go back to their balance.`} danger onCancel={() => setCancelling(null)} onConfirm={async () => { await onCancelRequest(cancelling); setCancelling(null) }} />}
     </div>

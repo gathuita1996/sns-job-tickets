@@ -34,6 +34,8 @@ const data = {
   leave_requests: [{ id: 1, member_id: S, start_date: '2026-11-03', end_date: '2026-11-05', days: 3, leave_year: 2026, reason: 'Family', status: 'approved', requested_at: ts, decided_by: A, decided_at: ts, decision_note: null, cancelled_by: null, cancelled_at: null, created_by: S },
     { id: 2, member_id: T, start_date: '2026-11-10', end_date: '2026-11-18', days: 8, leave_year: 2026, reason: null, status: 'approved', requested_at: ts, decided_by: A, decided_at: ts, decision_note: null, cancelled_by: null, cancelled_at: null, created_by: T }],
   leave_adjustments: [{ id: 1, member_id: S, leave_year: 2026, days: 5, note: 'Opening balance', created_by: A, created_at: ts }],
+  staff_contracts: [{ id: 1, member_id: S, contract_type: 'annual', start_date: '2026-08-01', term_months: 12, renews_on_completion: false, notes: null, updated_by: A, updated_at: ts },
+    { id: 2, member_id: T, contract_type: 'short_term', start_date: '2026-07-01', term_months: 3, renews_on_completion: true, notes: 'Renewed on completion', updated_by: A, updated_at: ts }],
 }
 
 // A pretend database: hands out new record numbers per table, as the real one does.
@@ -208,12 +210,13 @@ await ok('a file with no recognisable headings gives a clear message', () => { c
 const users3 = [{ id: 'N-A', username: 'boss', fullName: 'Boss Admin', employeeNumber: 'SNS002' }, { id: 'N-S', username: 'sam', fullName: 'Sam Sales', employeeNumber: 'SNS003' }, { id: 'N-T', username: 'tim', fullName: 'Tim Tech', employeeNumber: 'SNS004' }]
 await ok('leave records are restored only by the Director; everyone else sees them skipped with the reason', async () => {
   const c = fakeClient(); const r = await core.runRestore({ parsed, users: users3, adminId: 'N-A', client: c, isDirector: false })
-  for (const t of ['leave_requests', 'leave_adjustments', 'non_working_days']) { assert.equal(r.tables[t].inserted, 0); assert.ok(r.tables[t].skipped >= 1); assert.match(Object.keys(r.tables[t].reasons)[0], /only the Director/) }
+  for (const t of ['leave_requests', 'leave_adjustments', 'non_working_days', 'staff_contracts']) { assert.equal(r.tables[t].inserted, 0); assert.ok(r.tables[t].skipped >= 1); assert.match(Object.keys(r.tables[t].reasons)[0], /only the Director/) }
   assert.ok(!c.calls.includes('leave_requests')); assert.equal(r.tables.retrieved_routers.inserted, 1)
 })
 await ok('the Director restores leave with staff matched to the new accounts', async () => {
   const c = fakeClient(); const r = await core.runRestore({ parsed, users: users3, adminId: 'N-A', client: c, isDirector: true })
   assert.equal(r.tables.leave_requests.inserted, 2); assert.equal(r.tables.leave_adjustments.inserted, 1); assert.equal(r.tables.non_working_days.inserted, 1)
+  assert.equal(r.tables.staff_contracts.inserted, 2); assert.deepEqual(c.rows.staff_contracts.map((x) => x.member_id).sort(), ['N-S', 'N-T']); assert.ok(c.calls.indexOf('staff_contracts') < c.calls.indexOf('leave_requests'))      // contracts go in before leave
   assert.deepEqual(c.rows.leave_requests.map((x) => x.member_id).sort(), ['N-S', 'N-T']); assert.equal(c.rows.leave_adjustments[0].member_id, 'N-S')
   assert.equal(c.rows.retrieved_routers[0].recorded_by, 'N-T'); assert.equal(c.rows.retrieved_routers[0].customer_id, c.rows.customers[0].id)
   assert.equal(c.rows.retrieved_routers[0].stock_item_id, c.rows.stock_items[1].id); assert.equal(c.rows.retrieved_routers[0].stock_in_id, c.rows.stock_in[1].id)   // linked to its restored stock rows, so no second Stock In is made
@@ -225,7 +228,7 @@ await ok('a leave record the rules refuse is skipped and reported, and the rest 
   assert.equal(r.tables.leave_requests.inserted, 1); assert.equal(r.tables.leave_requests.skipped, 1); assert.match(Object.keys(r.tables.leave_requests.reasons)[0], /limited to 3 days a month/); assert.equal(r.tables.leave_adjustments.inserted, 1)
 })
 await ok('the backup file carries the new sheets, with readable staff names', async () => {
-  for (const sheet of ['Retrieved Routers', 'Public Holidays', 'Leave Requests', 'Leave Adjustments']) assert.ok(wb2.getWorksheet(sheet), sheet)
+  for (const sheet of ['Retrieved Routers', 'Public Holidays', 'Leave Requests', 'Leave Adjustments', 'Contracts']) assert.ok(wb2.getWorksheet(sheet), sheet)
   const heads = []; wb2.getWorksheet('Leave Requests').getRow(1).eachCell((c) => heads.push(c.value)); assert.ok(heads.includes('(info) Staff member'))
 })
 await ok('a customer list can say who recorded each customer, and unknown names are reported (never guessed)', async () => {

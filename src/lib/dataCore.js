@@ -28,7 +28,8 @@ export const TABLES = [
   { table: 'stock_out', sheet: 'Stock Out', idMap: true, sig: 'quantity', profile: { recorded_by: true }, fk: { item_id: 'stock_items', customer_id: 'customers' }, fkRequired: ['item_id'] },
   { table: 'visits', sheet: 'Visits', profile: { visited_by: true }, fk: { place_id: 'places' }, fkRequired: ['place_id'] },
   { table: 'retrieved_routers', sheet: 'Retrieved Routers', profile: { recorded_by: true, retrieved_by: false, status_updated_by: false }, fk: { customer_id: 'customers', stock_item_id: 'stock_items', stock_in_id: 'stock_in', writeoff_stock_out_id: 'stock_out' } },
-  // Leave can only be restored by the Director, and a row the leave rules refuse is skipped and reported instead of stopping everything.
+  // Contracts and leave can only be restored by the Director (contracts first: they decide who has leave), and a row the leave rules refuse is skipped and reported instead of stopping everything.
+  { table: 'staff_contracts', sheet: 'Contracts', directorOnly: true, profile: { member_id: true, updated_by: false }, match: { select: 'id,member_id', key: (r) => String(r.member_id) } },
   { table: 'non_working_days', sheet: 'Public Holidays', directorOnly: true, profile: { created_by: false }, match: { select: 'id,day', key: (r) => String(r.day) } },
   { table: 'leave_requests', sheet: 'Leave Requests', directorOnly: true, perRow: true, profile: { member_id: true, decided_by: false, cancelled_by: false, created_by: false } },
   { table: 'leave_adjustments', sheet: 'Leave Adjustments', directorOnly: true, profile: { member_id: true, created_by: false } },
@@ -75,6 +76,7 @@ const INFO = {
   retrieved_routers: (r, c) => ({ '(info) Customer': c.customer(r.customer_id), '(info) Recorded by': c.name(r.recorded_by), '(info) Retrieved by': c.name(r.retrieved_by) }),
   leave_requests: (r, c) => ({ '(info) Staff member': c.name(r.member_id), '(info) Decided by': c.name(r.decided_by) }),
   leave_adjustments: (r, c) => ({ '(info) Staff member': c.name(r.member_id) }),
+  staff_contracts: (r, c) => ({ '(info) Staff member': c.name(r.member_id) }),
 }
 
 function addSheet(wb, sheetName, rows, infoFn, ctx) {

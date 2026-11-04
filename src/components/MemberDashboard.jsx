@@ -138,7 +138,9 @@ export default function MemberDashboard({ extras, currentUser, jobs, raisedJobs,
               {isTechnical && (
                 <NavCard icon={RouterIcon} label="Retrieved routers" description={`${routerApi.rows.length} recorded`} onClick={() => setView('routers')} />
               )}
-              <NavCard icon={Plane} label="My leave" description={leaveSummary ? `${leaveSummary.remaining} days left` : 'Apply for leave'} onClick={() => setProfileRequest({ tab: 'leave', n: Date.now() })} />
+              {!(leaveSummary && leaveSummary.eligible === false) && (
+                <NavCard icon={Plane} label="My leave" description={leaveSummary ? `${leaveSummary.remaining} days left` : 'Apply for leave'} onClick={() => setProfileRequest({ tab: 'leave', n: Date.now() })} />
+              )}
               {canMakePurchases && (
                 <>
                   <NavCard icon={Receipt} label="Submit a purchase" description="Upload a receipt" onClick={() => setShowExpenseForm(true)} />
