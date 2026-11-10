@@ -496,7 +496,7 @@ export default function AdminDashboard({ extras, currentUser, users, jobs, custo
         )}
 
         {tab === 'customers' && (
-          <CustomersTab key={customersFocus || 'all'} customers={customers} users={users} userMap={userMap} initialMemberId={customersFocus} onView={setViewingCustomer} onEdit={setEditingCustomer} onPrint={setPrintingCustomer} onDelete={setConfirmDeleteCustomer} onAssign={extras && extras.onAssignCustomers} onOpenStaff={(id) => setViewingStaffId(id)} />
+          <CustomersTab key={customersFocus || 'all'} customers={customers} users={users} userMap={userMap} initialMemberId={customersFocus} onView={setViewingCustomer} onEdit={setEditingCustomer} onPrint={setPrintingCustomer} onDelete={setConfirmDeleteCustomer} onOpenStaff={(id) => setViewingStaffId(id)} />
         )}
 
 
@@ -613,7 +613,7 @@ export default function AdminDashboard({ extras, currentUser, users, jobs, custo
       )}
       {editingCustomer && (
         <CustomerFormModal
-          initialCustomer={editingCustomer} members={users} canChangeRecorder
+          initialCustomer={editingCustomer}
           onClose={() => setEditingCustomer(null)}
           onSave={async (data) => { await onUpdateCustomer(editingCustomer.id, data); setEditingCustomer(null) }}
         />

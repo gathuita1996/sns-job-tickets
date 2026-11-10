@@ -305,7 +305,6 @@ export async function runRestore({ parsed, users, adminId, client, onProgress = 
 const HEADERS = {
   name: ['name', 'fullname', 'customer', 'customername', 'client', 'clientname'],
   first: ['firstname', 'first'], last: ['lastname', 'last', 'surname'],
-  recorder: ['recordedby', 'recorder', 'staff', 'staffname', 'member', 'membername', 'assignedto', 'owner', 'salesperson'],
   phone: ['phone', 'phonenumber', 'contact', 'mobile', 'mobilenumber', 'tel', 'telephone', 'msisdn', 'contactnumber'],
 }
 const canon = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '')
@@ -345,38 +344,30 @@ export function parseCustomerList(wb) {
     const n = nameCell ? splitName(nameCell) : { first: String(first || ''), last: String(last || '') || '-' }
     if (!n.first) { skipped.push({ line: rn, reason: 'No name' }); return }
     if (!phone) { skipped.push({ line: rn, reason: `No phone number (${nameCell || [n.first, n.last].filter((x) => x && x !== '-').join(' ')})` }); return }
-    const recorder = get('recorder')
-    rows.push({ line: rn, first_name: n.first, last_name: n.last, contact: phone, ...(recorder ? { recorder: String(recorder).trim() } : {}) })
+    rows.push({ line: rn, first_name: n.first, last_name: n.last, contact: phone })
   })
   return { rows, skipped, error: null }
 }
 
-export function planCustomerImport(rows, existingCustomers, users = []) {
-  const norm = (s) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ')
-  const people = new Map()
-  for (const u of users) for (const k of [u.fullName ?? u.full_name, u.username, u.employeeNumber ?? u.employee_number]) if (k) people.set(norm(k), u.id)
-  const unmatchedRecorders = new Set()
+export function planCustomerImport(rows, existingCustomers) {
   const seen = new Set(existingCustomers.map((c) => phoneKey(c.contact)).filter(Boolean))
   const toInsert = [], duplicates = []
   for (const r of rows) {
     const k = phoneKey(r.contact)
     if (k && seen.has(k)) { duplicates.push(r); continue }
     if (k) seen.add(k)
-    const who = r.recorder ? people.get(norm(r.recorder)) : null
-    if (r.recorder && !who) unmatchedRecorders.add(r.recorder)
-    toInsert.push(who ? { ...r, recordedBy: who } : r)
+    toInsert.push(r)
   }
-  return { toInsert, duplicates, unmatchedRecorders: [...unmatchedRecorders] }
+  return { toInsert, duplicates }
 }
 
 // An imported customer carries only a name and a phone number. The location is compulsory in the
 // database, so it is filled with "Not specified" for the team to complete. Commission is marked as
-// already settled and flagged as exempt, so an import never earns anyone commission, even after the customer is
-// handed to a staff member for tracking.
+// already settled and flagged as exempt, so an import never earns anyone commission.
 const CUSTOMER_REQUIRED = ['first_name', 'last_name', 'contact', 'location', 'recorded_by']
-export async function runCustomerImport({ toInsert, adminId, recordedBy, client, chunk = 200, now = new Date() }) {
+export async function runCustomerImport({ toInsert, adminId, client, chunk = 200, now = new Date() }) {
   const settled = now.toISOString()
-  const rows = toInsert.map((r) => ({ first_name: r.first_name, last_name: r.last_name, contact: r.contact, location: 'Not specified', recorded_by: r.recordedBy || recordedBy || adminId, commission_paid_at: settled, commission_exempt: true }))
+  const rows = toInsert.map((r) => ({ first_name: r.first_name, last_name: r.last_name, contact: r.contact, location: 'Not specified', recorded_by: adminId, commission_paid_at: settled, commission_exempt: true }))
   let inserted = 0
   const dropped = new Set()
   for (let i = 0; i < rows.length; i += chunk) {

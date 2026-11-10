@@ -36,7 +36,6 @@ export default function StaffDetail({ member, bank, jobs, customers, expenses, v
   const myExpenses = (expenses || []).filter((e) => e.submittedBy === member.id)
   const myVisits = (visits || []).filter((v) => v.visitedBy === member.id)
   const myRouters = (routers || []).filter((r) => r.recordedBy === member.id || r.retrievedBy === member.id)
-  const imported = myCustomers.filter((c) => c.commissionExempt).length
   const age = member.dateOfBirth ? Math.floor((Date.now() - new Date(member.dateOfBirth).getTime()) / 31557600000) : null
 
   return (
@@ -127,7 +126,7 @@ export default function StaffDetail({ member, bank, jobs, customers, expenses, v
         </div>
         <div>
           <Section title="Customers they recorded" action={myCustomers.length > 0 ? <button type="button" className="sns-btn-secondary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={() => onOpenCustomers(member.id)}>See all {myCustomers.length}</button> : null}>
-            <p className="sns-text-soft" style={{ fontSize: '0.82rem', marginBottom: '0.5rem' }}>{thisMonth.length} this month{imported ? ` · ${imported} imported (no commission)` : ''}</p>
+            <p className="sns-text-soft" style={{ fontSize: '0.82rem', marginBottom: '0.5rem' }}>{thisMonth.length} this month</p>
             {myCustomers.length === 0 ? <p className="sns-text-soft" style={{ fontSize: '0.85rem' }}>None yet.</p> : myCustomers.slice(0, 6).map((c) => (
               <div key={c.id} className="flex items-center justify-between" style={{ fontSize: '0.84rem', padding: '0.3rem 0' }}><span style={{ fontWeight: 600 }}>{c.fullName}</span><span className="sns-text-faint">{c.location} · {formatDate(c.createdAt)}</span></div>))}
           </Section>

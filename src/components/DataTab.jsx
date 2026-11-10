@@ -19,7 +19,6 @@ export default function DataTab({ currentUser, users, customers, onDataChanged, 
   const [allowNonEmpty, setAllowNonEmpty] = useState(false)
   const [confirm, setConfirm] = useState(null)
   const [progress, setProgress] = useState('')
-  const [recordUnder, setRecordUnder] = useState('')
 
   const last = lastBackup && lastBackup.at, days = daysSince(last)
   const lastByName = (users.find((u) => u.id === (lastBackup && lastBackup.by)) || {}).fullName
@@ -40,12 +39,12 @@ export default function DataTab({ currentUser, users, customers, onDataChanged, 
     const file = e.target.files && e.target.files[0]; e.target.value = ''
     if (!file) return
     setNotice(null); setCustPlan(null); setWorking('read')
-    try { setCustPlan(await inspectCustomerFile(file, customers, users)) } catch (err) { fail(err) } finally { setWorking(null) }
+    try { setCustPlan(await inspectCustomerFile(file, customers)) } catch (err) { fail(err) } finally { setWorking(null) }
   }
   async function runCustomers() {
     setConfirm(null); setWorking('import')
     try {
-      const { inserted, dropped = [] } = await importCustomers({ toInsert: custPlan.toInsert, adminId: currentUser.id, recordedBy: recordUnder || currentUser.id })
+      const { inserted, dropped = [] } = await importCustomers({ toInsert: custPlan.toInsert, adminId: currentUser.id })
       setNotice({ type: 'ok', text: `${inserted} customers imported with their names and phone numbers. Add their location and package in the system when you are ready.${dropped.length ? ` (This database has no ${dropped.join(', ')} column, so that part was skipped.)` : ''}` }); setCustPlan(null); await onDataChanged()
     } catch (err) { fail(err) } finally { setWorking(null) }
   }
@@ -117,17 +116,6 @@ export default function DataTab({ currentUser, users, customers, onDataChanged, 
               <div style={{ marginTop: '1rem', fontSize: '0.86rem' }}>
                 <p><strong>{custPlan.toInsert.length}</strong> customers ready to import · <strong>{custPlan.duplicates.length}</strong> already in the system (skipped) · <strong>{custPlan.skipped.length}</strong> rows skipped</p>
                 {custPlan.skipped.length > 0 && <ul className="sns-text-soft" style={{ margin: '0.4rem 0 0 1.1rem', listStyle: 'disc', fontSize: '0.8rem' }}>{custPlan.skipped.slice(0, 8).map((s) => <li key={s.line}>Row {s.line}: {s.reason}</li>)}{custPlan.skipped.length > 8 && <li>…and {custPlan.skipped.length - 8} more</li>}</ul>}
-                {custPlan.toInsert.length > 0 && (
-                  <div style={{ marginTop: '0.8rem' }}>
-                    <label className="sns-text-soft" style={{ fontSize: '0.82rem', display: 'block', marginBottom: '0.3rem' }} htmlFor="record-under">Record these customers under</label>
-                    <select id="record-under" className="sns-input" style={{ width: 'auto' }} value={recordUnder} onChange={(e) => setRecordUnder(e.target.value)}>
-                      <option value="">Me ({currentUser.fullName})</option>
-                      {users.filter((u) => u.id !== currentUser.id).map((u) => <option key={u.id} value={u.id}>{u.fullName}</option>)}
-                    </select>
-                    <p className="sns-text-faint" style={{ fontSize: '0.76rem', marginTop: '0.3rem' }}>A column called "Recorded by" in the file overrides this for that row. Imported customers never earn commission.</p>
-                    {custPlan.unmatchedRecorders && custPlan.unmatchedRecorders.length > 0 && <p style={{ color: 'var(--overdue)', fontSize: '0.8rem', marginTop: '0.3rem' }}>Not found in the team: {custPlan.unmatchedRecorders.join(', ')}. Those rows use the person chosen above.</p>}
-                  </div>
-                )}
                 {custPlan.toInsert.length > 0 && (
                   <div className="flex items-center gap-3" style={{ marginTop: '0.9rem', flexWrap: 'wrap' }}>
                     <button onClick={() => setConfirm('customers')} disabled={busy} className="sns-btn-primary">{working === 'import' ? 'Importing…' : `Import ${custPlan.toInsert.length} customers`}</button>

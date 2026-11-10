@@ -72,11 +72,11 @@ export async function inspectBackupFile(file, users) {
 }
 export const restoreFromParsed = (args) => core.runRestore({ ...args, client: supabase })
 
-export async function inspectCustomerFile(file, existingCustomers, users = []) {
+export async function inspectCustomerFile(file, existingCustomers) {
   const wb = await readFile(file)
   const parsed = core.parseCustomerList(wb)
   if (parsed.error) throw new Error(parsed.error)
-  return { ...parsed, ...core.planCustomerImport(parsed.rows, existingCustomers, users) }
+  return { ...parsed, ...core.planCustomerImport(parsed.rows, existingCustomers) }
 }
 export const importCustomers = (args) => core.runCustomerImport({ ...args, client: supabase })
 

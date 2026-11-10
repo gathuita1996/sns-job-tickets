@@ -407,9 +407,7 @@ export default function App() {
   }
 
   async function handleUpdateCustomer(id, formData) {
-    const fields = customerToDbFields(formData)
-    if (currentUserRef.current.role === 'admin' && formData.recordedBy) fields.recorded_by = formData.recordedBy
-    const { error } = await supabase.from('customers').update(fields).eq('id', id)
+    const { error } = await supabase.from('customers').update(customerToDbFields(formData)).eq('id', id)
     if (error) { showToast('Failed to update customer.', 'error'); return }
     showToast('Customer updated.')
     await refreshCustomers()
@@ -738,15 +736,6 @@ export default function App() {
 
   function handleBackupRecorded(at) { setLastBackup({ at: at || new Date().toISOString(), by: currentUserRef.current.id }) }
 
-  async function handleAssignCustomers(ids, memberId) {
-    const { data, error } = await supabase.rpc('assign_customers_to_member', { p_ids: ids, p_member: memberId })
-    if (error) { showToast(error.message || 'Could not change who recorded these customers.', 'error'); return false }
-    const who = allUsers.find((u) => u.id === memberId)
-    showToast(data === 0 ? 'Nothing changed: they were already recorded under that person.' : `${data} customer${data === 1 ? '' : 's'} now recorded under ${who ? who.fullName : 'that person'}.`)
-    await refreshCustomers()
-    return true
-  }
-
   async function handleAddRouter(form) {
     const me = currentUserRef.current
     const { error } = await supabase.from('retrieved_routers').insert({ ...retrievedRouterToDbFields(form), retrieved_by: form.retrievedBy || me.id, recorded_by: me.id })
@@ -957,7 +946,7 @@ export default function App() {
   }
 
   const extras = {
-    lastBackup, bankDetails, onBackupRecorded: handleBackupRecorded, onAssignCustomers: handleAssignCustomers,
+    lastBackup, bankDetails, onBackupRecorded: handleBackupRecorded,
     header: {
       bank: bankDetails[currentUser.id], onUploadAvatar: handleUploadAvatar, onRemoveAvatar: handleRemoveAvatar,
       contract: <ContractCard contract={contracts[currentUser.id]} history={contractHistory.filter((h) => h.memberId === currentUser.id)} policyDays={leavePolicy.annual_days} heading />,

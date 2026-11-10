@@ -187,7 +187,7 @@ export default function MemberDashboard({ extras, currentUser, jobs, raisedJobs,
                           <td className="sns-text-soft">{formatDate(c.createdAt)}</td>
                           <td>
                             {c.commissionExempt ? (
-                              <span className="sns-text-faint" title="Imported customers do not earn commission">Imported</span>
+                              <span className="sns-text-faint" title="No commission applies to this customer">—</span>
                             ) : c.commissionPaidAt ? (
                               <span className="sns-badge sns-badge-done">Paid</span>
                             ) : (

@@ -231,16 +231,13 @@ await ok('the backup file carries the new sheets, with readable staff names', as
   for (const sheet of ['Retrieved Routers', 'Public Holidays', 'Leave Requests', 'Leave Adjustments', 'Contracts']) assert.ok(wb2.getWorksheet(sheet), sheet)
   const heads = []; wb2.getWorksheet('Leave Requests').getRow(1).eachCell((c) => heads.push(c.value)); assert.ok(heads.includes('(info) Staff member'))
 })
-await ok('a customer list can say who recorded each customer, and unknown names are reported (never guessed)', async () => {
-  const w = new ExcelJS.Workbook(); const s = w.addWorksheet('Customers'); s.addRow(['Name', 'Phone', 'Recorded by']); s.addRow(['Zawadi Omar', '0711000001', 'Sam Sales']); s.addRow(['Juma Ali', '0711000002', 'SNS004']); s.addRow(['Neema K', '0711000003', 'Nobody Known']); s.addRow(['Plain One', '0711000004', null])
+await ok('a "Recorded by" column in a customer list is ignored: every imported customer is recorded under the admin who imported them', async () => {
+  const w = new ExcelJS.Workbook(); const s = w.addWorksheet('Customers'); s.addRow(['Name', 'Phone', 'Recorded by']); s.addRow(['Zawadi Omar', '0711000001', 'Sam Sales']); s.addRow(['Juma Ali', '0711000002', 'SNS004']); s.addRow(['Plain One', '0711000004', null])
   const buf = await w.xlsx.writeBuffer(); const w2 = new ExcelJS.Workbook(); await w2.xlsx.load(buf)
-  const pl2 = core.parseCustomerList(w2); const plan2 = core.planCustomerImport(pl2.rows, [], users3)
-  assert.deepEqual(plan2.unmatchedRecorders, ['Nobody Known']); assert.deepEqual(plan2.toInsert.map((r) => r.recordedBy || null), ['N-S', 'N-T', null, null])
-  const c = fakeClient(); await core.runCustomerImport({ toInsert: plan2.toInsert, adminId: 'N-A', recordedBy: 'N-T', client: c })
-  assert.deepEqual(c.rows.customers.map((r) => r.recorded_by), ['N-S', 'N-T', 'N-T', 'N-T']); assert.ok(c.rows.customers.every((r) => r.commission_exempt === true && r.commission_paid_at))
-})
-await ok('with no choice made, imported customers stay with the admin who imported them', async () => {
-  const c = fakeClient(); await core.runCustomerImport({ toInsert: [{ first_name: 'A', last_name: 'B', contact: '0700000001' }], adminId: 'N-A', client: c }); assert.equal(c.rows.customers[0].recorded_by, 'N-A')
+  const pl2 = core.parseCustomerList(w2); assert.ok(pl2.rows.every((r) => !('recorder' in r)))
+  const plan2 = core.planCustomerImport(pl2.rows, []); assert.deepEqual(Object.keys(plan2).sort(), ['duplicates', 'toInsert'])
+  const c = fakeClient(); await core.runCustomerImport({ toInsert: plan2.toInsert, adminId: 'N-A', client: c })
+  assert.deepEqual(c.rows.customers.map((r) => r.recorded_by), ['N-A', 'N-A', 'N-A']); assert.ok(c.rows.customers.every((r) => r.commission_exempt === true && r.commission_paid_at))      // and they still never earn commission
 })
 await ok('days since the last backup come from the shared date', () => { assert.equal(core.daysSince(null), null); assert.equal(core.daysSince('2026-10-01T00:00:00Z', new Date('2026-10-04T12:00:00Z')), 3); assert.equal(core.daysSince('2026-10-04T10:00:00Z', new Date('2026-10-04T12:00:00Z')), 0) })
 

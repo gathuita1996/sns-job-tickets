@@ -341,3 +341,11 @@ Removed from the package: the old `employee-number-and-service-fix-migration.sql
 - Leave requests still waiting from someone on a short-term contract are closed with the reason. Leave that was already approved is untouched.
 - Backup and restore include contracts (restored by the Director, before leave).
 
+## Update 45
+
+**To apply:** (1) run `supabase/update-45-migration.sql` in the Supabase SQL editor (safe to run again), (2) deploy the code. A fresh install needs only `job-card-rebuild.sql`, which now contains updates 40 to 45.
+
+- **The Imported tag is gone** from the Customers tab, the By staff member view (no more "N imported"), the staff page, and the member's own customer list (a customer that earns no commission shows a dash). The "Imported (no commission)" filter is gone too. **Commission itself is unchanged:** customers that came in through the customer-list import still never earn commission; they are simply no longer tagged.
+- **Editing "recorded by" is removed, completely:** no pencil on a customer row, no tick boxes or "assign to" bar, no "Recorded by" field on the customer edit form, no "record these customers under" choice or "Recorded by" column when importing a customer list (imports are recorded under the admin who imports them), and the database function behind it is gone. Who recorded each customer is still shown, you can still filter by it, and the By staff member view still works.
+- **Who recorded a customer is now fixed in the database,** for everyone including admins and the Director: nobody can change it through the app. Customers can still be recorded, imported or restored with their recorder, and a genuine mistake can still be corrected in the Supabase SQL editor.
+
