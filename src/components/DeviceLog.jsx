@@ -6,7 +6,9 @@ import { INSTALL_TYPES, customerLabel, formatDate, toDateInputValue } from '../l
 const typeLabel = (k) => (INSTALL_TYPES.find((t) => t.key === k) || {}).label
 
 // Every ONU / XPON router taken out of the store: new installation or replacement, and for whom.
-export default function DeviceLog({ stockOut, items, customers }) {
+// Routers thrown away (written off) are not devices given to customers, so they are left out of this log.
+// A router that came back from a customer and was used again is marked "Retrieved".
+export default function DeviceLog({ stockOut, items, customers, routers = [] }) {
   const [type, setType] = useState('all')
   const [itemId, setItemId] = useState('all')
   const [search, setSearch] = useState('')
@@ -15,11 +17,15 @@ export default function DeviceLog({ stockOut, items, customers }) {
   const itemMap = useMemo(() => Object.fromEntries(items.map((i) => [i.id, i])), [items])
   const custMap = useMemo(() => Object.fromEntries(customers.map((c) => [c.id, c])), [customers])
 
+  const writeOffIds = useMemo(() => new Set(routers.map((r) => r.writeoffStockOutId).filter((x) => x != null)), [routers])
+  const reusedIds = useMemo(() => new Set(routers.map((r) => r.reissueStockOutId).filter((x) => x != null)), [routers])
+  const isWriteOff = (so) => writeOffIds.has(so.id) || (so.issuedTo === 'Written off' && String(so.referenceNo || '').startsWith('RETRIEVED-'))
+
   const all = useMemo(() => {
     const ids = new Set(deviceItems.map((i) => i.id))
-    return stockOut.filter((so) => ids.has(so.itemId))
+    return stockOut.filter((so) => ids.has(so.itemId) && !isWriteOff(so))
       .sort((a, b) => String(b.issueDate).localeCompare(String(a.issueDate)) || b.id - a.id)
-  }, [stockOut, deviceItems])
+  }, [stockOut, deviceItems, writeOffIds])
 
   const month = toDateInputValue(new Date()).slice(0, 7)
   const sum = (rows) => rows.reduce((s, r) => s + r.quantity, 0)
@@ -98,7 +104,7 @@ export default function DeviceLog({ stockOut, items, customers }) {
                 {rows.map((r) => (
                   <tr key={r.id}>
                     <td className="sns-text-soft">{formatDate(r.issueDate)}</td>
-                    <td style={{ fontWeight: 600 }}>{itemMap[r.itemId]?.itemName || '—'}</td>
+                    <td style={{ fontWeight: 600 }}>{itemMap[r.itemId]?.itemName || '—'}{reusedIds.has(r.id) && <span className="sns-badge sns-badge-role" style={{ marginLeft: '0.4rem' }} title="A router taken back from another customer, used again">Retrieved</span>}</td>
                     <td className="sns-mono">{r.quantity}</td>
                     <td>{r.installType
                       ? <span className={`sns-badge ${r.installType === 'replacement' ? 'sns-badge-progress' : 'sns-badge-done'}`}>{typeLabel(r.installType)}</span>

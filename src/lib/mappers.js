@@ -294,6 +294,8 @@ export function mapRetrievedRouter(row) {
     statusUpdatedAt: row.status_updated_at, statusUpdatedBy: row.status_updated_by,
     retrievedBy: row.retrieved_by, recordedBy: row.recorded_by, createdAt: row.created_at,
     stockItemId: row.stock_item_id == null ? null : row.stock_item_id, stockInId: row.stock_in_id == null ? null : row.stock_in_id,
+    writeoffStockOutId: row.writeoff_stock_out_id == null ? null : row.writeoff_stock_out_id,   // the Stock Out that wrote it off
+    reissueStockOutId: row.reissue_stock_out_id == null ? null : row.reissue_stock_out_id,      // the Stock Out that used it again
   }
 }
 export function retrievedRouterToDbFields(f) {
@@ -304,6 +306,14 @@ export function retrievedRouterToDbFields(f) {
     amount_owed: f.reason === 'failed_to_pay' && f.amountOwed !== '' && f.amountOwed != null ? Number(f.amountOwed) : null,
     condition: f.condition, accessories: trimmed(f.accessories), retrieved_by: f.retrievedBy || null,
     stock_item_id: f.stockItemId || null,    // the router item it is added to in the stock list
+  }
+}
+
+// What the database function that issues a retrieved router (issue_retrieved_router) needs.
+export function issueRouterArgs(routerId, f) {
+  return {
+    p_router: routerId, p_issue_date: f.issueDate, p_install_type: f.installType, p_customer: f.customerId ? Number(f.customerId) : null,
+    p_issued_to: trimmed(f.issuedTo), p_purpose: trimmed(f.purpose), p_reference: trimmed(f.referenceNo), p_issued_by: trimmed(f.issuedBy),
   }
 }
 

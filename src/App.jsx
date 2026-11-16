@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from './lib/supabaseClient'
-import { mapProfile, mapJob, jobToDbFields, mapCustomer, customerToDbFields, mapExpense, expenseToDbFields, serviceToDbFields, mapStockItem, stockItemToDbFields, mapStockIn, stockInToDbFields, mapStockOut, stockOutToDbFields , mapPlace, placeToDbFields, mapVisit, visitToDbFields, mapBank, bankToDbFields, mapRetrievedRouter, retrievedRouterToDbFields, mapLeaveRequest, mapLeaveAdjustment, mapHoliday, mapDeviceItem, mapContract, contractToDbFields, mapContractChange } from './lib/mappers'
+import { mapProfile, mapJob, jobToDbFields, mapCustomer, customerToDbFields, mapExpense, expenseToDbFields, serviceToDbFields, mapStockItem, stockItemToDbFields, mapStockIn, stockInToDbFields, mapStockOut, stockOutToDbFields , mapPlace, placeToDbFields, mapVisit, visitToDbFields, mapBank, bankToDbFields, mapRetrievedRouter, retrievedRouterToDbFields, issueRouterArgs, mapLeaveRequest, mapLeaveAdjustment, mapHoliday, mapDeviceItem, mapContract, contractToDbFields, mapContractChange } from './lib/mappers'
 import { fetchAll } from './lib/dataIO'
 import { processAvatar } from './lib/image'
 import { currentLeaveYear } from './lib/leave'
@@ -739,15 +739,17 @@ export default function App() {
   async function handleAddRouter(form) {
     const me = currentUserRef.current
     const { error } = await supabase.from('retrieved_routers').insert({ ...retrievedRouterToDbFields(form), retrieved_by: form.retrievedBy || me.id, recorded_by: me.id })
-    if (error) { showToast('Failed to save the record.', 'error'); return false }
-    showToast(form.stockItemId ? 'Retrieved router recorded and added to the stock list.' : 'Retrieved router recorded.')
+    if (error) { showToast(routerFailure(error, 'Failed to save the record.'), 'error'); return false }
+    showToast(!form.stockItemId ? 'Retrieved router recorded. It is not linked to a router item, so it is not counted in the stock.'
+      : form.condition === 'working' ? 'Retrieved router recorded and added to the stock list.'
+      : 'Retrieved router recorded. It is not working, so it is not counted in the stock.')
     await refreshRetrievedRouters()
     return true
   }
 
   async function handleUpdateRouter(id, form) {
     const { error } = await supabase.from('retrieved_routers').update(retrievedRouterToDbFields(form)).eq('id', id)
-    if (error) { showToast('Failed to update the record.', 'error'); return false }
+    if (error) { showToast(routerFailure(error, 'Failed to update the record.'), 'error'); return false }
     showToast('Record updated.')
     await refreshRetrievedRouters()
     return true
@@ -755,16 +757,79 @@ export default function App() {
 
   async function handleSetRouterStatus(row, status, note) {
     const { error } = await supabase.from('retrieved_routers').update({ status, status_note: note || null }).eq('id', row.id)
-    if (error) { showToast('Failed to update the router.', 'error'); return }
+    if (error) { showToast(routerFailure(error, 'Failed to update the router.'), 'error'); return }
     showToast('Router updated.')
     await refreshRetrievedRouters()
   }
 
   async function handleDeleteRouter(row) {
     const { error } = await supabase.from('retrieved_routers').delete().eq('id', row.id)
-    if (error) { showToast('Failed to delete the record.', 'error'); return }
+    if (error) { showToast(routerFailure(error, 'Failed to delete the record.'), 'error'); return }
     showToast('Record deleted.')
     await refreshRetrievedRouters()
+  }
+
+  // ---- update 46: only working routers count; a working one can be used again in an installation ----------
+  // The database refuses with a plain sentence (written for people); a missing function means update 46 has not been run yet.
+  const routerFailure = (error, fallback) => (/schema cache|does not exist|Could not find the function/i.test(error.message || '')
+    ? 'This needs update 46 in the database: run supabase/update-46-migration.sql first.' : (error.code === 'P0001' && error.message ? error.message : fallback))
+
+  // Use a retrieved working router in a new installation or a replacement (one step: the Stock Out and the router record)
+  async function handleIssueRouter(row, form) {
+    const { error } = await supabase.rpc('issue_retrieved_router', issueRouterArgs(row.id, form))
+    if (error) { showToast(routerFailure(error, 'Could not issue the router.'), 'error'); return false }
+    showToast('Router issued. It has left the stock.')
+    await refreshRetrievedRouters()
+    return true
+  }
+
+  async function handleUndoReissue(row) {
+    const { error } = await supabase.rpc('undo_router_reissue', { p_router: row.id })
+    if (error) { showToast(routerFailure(error, 'Could not undo the re-issue.'), 'error'); return false }
+    showToast('Re-issue undone. The router is back in the store.')
+    await refreshRetrievedRouters()
+    return true
+  }
+
+  // Repaired: working again and in the store, so it counts in the stock
+  async function handleMarkRouterWorking(row) {
+    const patch = { condition: 'working', status: 'in_store' }
+    if (row.status !== 'in_store') patch.status_note = null
+    const { error } = await supabase.from('retrieved_routers').update(patch).eq('id', row.id)
+    if (error) { showToast(routerFailure(error, 'Could not update the router.'), 'error'); return false }
+    showToast(row.stockItemId ? 'Marked as working. It is now counted in the stock.' : 'Marked as working. Link it to a router item so it is counted in the stock.')
+    await refreshRetrievedRouters()
+    return true
+  }
+
+  // Link working routers that were recorded without a stock item: [{ id, stockItemId }]
+  async function handleLinkRouters(links) {
+    let done = 0, failed = 0
+    for (const l of links) {
+      const { error } = await supabase.from('retrieved_routers').update({ stock_item_id: l.stockItemId }).eq('id', l.id)
+      if (error) failed += 1; else done += 1
+    }
+    showToast(failed ? `${done} linked, ${failed} could not be linked.` : `${done} router${done === 1 ? '' : 's'} linked and added to the stock.`, failed ? 'error' : undefined)
+    await refreshRetrievedRouters()
+    return failed === 0
+  }
+
+  // Which stock items are routers (the "Field device" tick), changed for several at once
+  async function handleSetRouterItems(onIds, offIds) {
+    for (const [ids, flag] of [[onIds, true], [offIds, false]]) {
+      if (!ids.length) continue
+      const { error } = await supabase.from('stock_items').update({ is_device: flag }).in('id', ids)
+      if (error) { showToast('Could not update the router items.', 'error'); return false }
+    }
+    showToast('Router items updated.')
+    await refreshStockItems()
+    await refreshDeviceItems()
+    return true
+  }
+
+  // Technicians record routers while the admin has the Stock page open, so the page reloads what it shows
+  async function handleRefreshStock() {
+    await Promise.all([refreshStockItems(), refreshStockIn(), refreshStockOut(), refreshRetrievedRouters(false)])
   }
 
   // Contracts: everyone reads their own; admins read all. Only the Director can save one (the database refuses anyone else).
@@ -962,7 +1027,8 @@ export default function App() {
       onSavePolicy: handleSaveLeavePolicy, onAddHoliday: handleAddHoliday, onRemoveHoliday: handleRemoveHoliday, onAddKenyanHolidays: handleAddKenyanHolidays,
     },
     contracts: { byMember: contracts, history: contractHistory, onSave: handleSaveContract },
-    routers: { rows: retrievedRouters, deviceItems, onAdd: handleAddRouter, onUpdate: handleUpdateRouter, onSetStatus: handleSetRouterStatus, onDelete: handleDeleteRouter },
+    routers: { rows: retrievedRouters, deviceItems, onAdd: handleAddRouter, onUpdate: handleUpdateRouter, onSetStatus: handleSetRouterStatus, onDelete: handleDeleteRouter,
+      onIssue: handleIssueRouter, onUndoReissue: handleUndoReissue, onMarkWorking: handleMarkRouterWorking, onLink: handleLinkRouters, onSetItems: handleSetRouterItems, onRefresh: handleRefreshStock },
   }
 
   return (<>

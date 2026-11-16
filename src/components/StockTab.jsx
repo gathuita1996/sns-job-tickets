@@ -1,10 +1,13 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import RetrievedRouters from './RetrievedRouters'
-import { ArrowDownCircle, ArrowUpCircle, Cpu, Pencil, Plus, Trash2, X } from 'lucide-react'
+import RoutersRemaining from './RoutersRemaining'
+import { LinkRoutersModal, RouterItemsModal } from './RouterTools'
+import { ArrowDownCircle, ArrowUpCircle, Cpu, Pencil, Plus, RefreshCw, Settings, Trash2, X } from 'lucide-react'
 import PurchaseEntry from './PurchaseEntry'
 import DeviceLog from './DeviceLog'
 import { ConfirmDialog, EmptyState, FormField, SearchInput } from './shared'
 import { STOCK_CATEGORIES, STOCK_UNITS, defaultStockItemForm, defaultStockInForm, defaultStockOutForm, formatDate, formatKSh, toDateInputValue, customerLabel, INSTALL_TYPES } from '../lib/helpers'
+import { computeStock, routerCounts, routerStockSummary, readyRoutersFor } from '../lib/stockCore'
 
 function ItemFormModal({ item, onClose, onSave }) {
   const [form, setForm] = useState(item
@@ -175,14 +178,20 @@ function StockInFormModal({ items, onClose, onSave }) {
   )
 }
 
-function StockOutFormModal({ items, customers, onClose, onSave }) {
+function StockOutFormModal({ items, customers, routers = [], onIssueRetrieved, onClose, onSave }) {
   const [form, setForm] = useState(defaultStockOutForm())
   const [errors, setErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
   const [custSearch, setCustSearch] = useState('')
+  const [source, setSource] = useState('new')     // 'new' = bought new, 'retrieved' = a working router taken back from a customer
+  const [routerId, setRouterId] = useState('')
 
   const item = items.find((i) => String(i.id) === String(form.itemId))
   const isDevice = Boolean(item && item.isDevice)
+  // Retrieved routers that are working and in the store, oldest first: these can go into a new installation
+  const ready = useMemo(() => (isDevice && onIssueRetrieved ? readyRoutersFor(routers, item.id) : []), [isDevice, onIssueRetrieved, routers, item])
+  const useRetrieved = source === 'retrieved' && ready.length > 0
+  const picked = useRetrieved ? ready.find((r) => String(r.id) === String(routerId)) : null
   const sorted = useMemo(() => [...customers].sort((a, b) => customerLabel(a).localeCompare(customerLabel(b))), [customers])
   const options = useMemo(() => {
     const q = custSearch.trim().toLowerCase()
@@ -199,6 +208,7 @@ function StockOutFormModal({ items, customers, onClose, onSave }) {
 
   function pickItem(itemId) {
     const it = items.find((i) => String(i.id) === String(itemId))
+    setSource('new'); setRouterId('')
     setForm((f) => it && it.isDevice
       ? { ...f, itemId, quantity: f.quantity === '' ? '1' : f.quantity }
       : { ...f, itemId, installType: '', customerId: '', deviceSerial: '' })
@@ -209,7 +219,11 @@ function StockOutFormModal({ items, customers, onClose, onSave }) {
     const e = {}
     if (!form.itemId) e.itemId = 'Please select an item'
     if (!form.issueDate) e.issueDate = 'Required'
-    if (form.quantity === '' || isNaN(Number(form.quantity)) || Number(form.quantity) <= 0) e.quantity = 'Enter a valid quantity'
+    if (useRetrieved) {
+      if (!picked) e.router = 'Choose which retrieved router'
+      else if (form.issueDate && form.issueDate > toDateInputValue(new Date())) e.issueDate = 'The date cannot be in the future'
+      else if (form.issueDate && String(picked.retrievedDate).slice(0, 10) > form.issueDate) e.issueDate = 'It cannot be used before it was retrieved'
+    } else if (form.quantity === '' || isNaN(Number(form.quantity)) || Number(form.quantity) <= 0) e.quantity = 'Enter a valid quantity'
     if (isDevice && !form.installType) e.installType = 'Choose new installation or replacement'
     if (isDevice && form.installType === 'replacement' && !form.customerId) e.customerId = 'Choose the customer this device was replaced for'
     setErrors(e)
@@ -220,8 +234,14 @@ function StockOutFormModal({ items, customers, onClose, onSave }) {
     ev.preventDefault()
     if (!validate()) return
     setSubmitting(true)
-    await onSave(form)
+    if (useRetrieved) await onIssueRetrieved(picked, { ...form, quantity: '1' })    // one step: the Stock Out and the router's own record
+    else await onSave(form)
     setSubmitting(false)
+  }
+
+  function chooseSource(next) {
+    setSource(next); setErrors((e) => ({ ...e, router: undefined, quantity: undefined }))
+    if (next === 'retrieved') { setRouterId(ready.length === 1 ? String(ready[0].id) : ''); setForm((f) => ({ ...f, quantity: '1', deviceSerial: '' })) }
   }
 
   const itemCls = `sns-input${form.itemId === '' ? ' sns-select-placeholder' : ''}`
@@ -260,9 +280,25 @@ function StockOutFormModal({ items, customers, onClose, onSave }) {
                   </select>
                 </FormField>
               )}
-              <FormField label="Serial / MAC (optional)">
-                <input className="sns-input" value={form.deviceSerial} onChange={(e) => update('deviceSerial', e.target.value)} placeholder="Printed on the device label" />
-              </FormField>
+              {ready.length > 0 && (
+                <FormField label="Which router?" error={errors.router} hint={useRetrieved ? 'This router is taken off the stock list and its record is marked as used again.' : `${ready.length} retrieved router${ready.length === 1 ? ' is' : 's are'} working and ready to use. Choose "A retrieved router" to use one of them.`}>
+                  <div className="flex gap-2" role="radiogroup" aria-label="Which router">
+                    <button type="button" role="radio" aria-checked={!useRetrieved} onClick={() => chooseSource('new')} className={!useRetrieved ? 'sns-btn-primary' : 'sns-btn-secondary'} style={{ flex: 1, fontSize: '0.85rem' }}>Bought new</button>
+                    <button type="button" role="radio" aria-checked={useRetrieved} onClick={() => chooseSource('retrieved')} className={useRetrieved ? 'sns-btn-primary' : 'sns-btn-secondary'} style={{ flex: 1, fontSize: '0.85rem' }}>A retrieved router ({ready.length})</button>
+                  </div>
+                  {useRetrieved && (
+                    <select className="sns-input" aria-label="Retrieved router" value={routerId} onChange={(e) => { setRouterId(e.target.value); setErrors((er) => ({ ...er, router: undefined })) }} style={{ marginTop: 6 }}>
+                      <option value="" disabled>Choose the router…</option>
+                      {ready.map((r) => <option key={r.id} value={r.id}>{r.serialNumber || 'No serial'} — from {r.customerName}, {formatDate(r.retrievedDate)}</option>)}
+                    </select>
+                  )}
+                </FormField>
+              )}
+              {!useRetrieved && (
+                <FormField label="Serial / MAC (optional)">
+                  <input className="sns-input" value={form.deviceSerial} onChange={(e) => update('deviceSerial', e.target.value)} placeholder="Printed on the device label" />
+                </FormField>
+              )}
             </div>
           )}
 
@@ -271,7 +307,7 @@ function StockOutFormModal({ items, customers, onClose, onSave }) {
               <input type="date" className="sns-input" value={form.issueDate} onChange={(e) => update('issueDate', e.target.value)} />
             </FormField>
             <FormField label="Quantity" error={errors.quantity}>
-              <input type="number" min="0" step="1" className="sns-input" value={form.quantity} onChange={(e) => update('quantity', e.target.value)} placeholder="0" />
+              <input type="number" min="0" step="1" className="sns-input" value={useRetrieved ? '1' : form.quantity} disabled={useRetrieved} onChange={(e) => update('quantity', e.target.value)} placeholder="0" />
             </FormField>
           </div>
           <FormField label={isDevice ? 'Taken by (technician)' : 'Issued to / Job site'}>
@@ -309,22 +345,34 @@ export default function StockTab({ routers, stockItems, stockIn, stockOut, custo
   const [confirmDeleteItem, setConfirmDeleteItem] = useState(null)
   const [showStockInForm, setShowStockInForm] = useState(false)
   const [showStockOutForm, setShowStockOutForm] = useState(false)
+  const [showRouterItems, setShowRouterItems] = useState(false)
+  const [linkRouters, setLinkRouters] = useState(null)       // working routers being linked to a router item
+  const [refreshing, setRefreshing] = useState(false)
 
   const itemMap = useMemo(() => { const m = {}; stockItems.forEach((i) => { m[i.id] = i }); return m }, [stockItems])
+  const routerList = routers ? routers.rows : undefined
+  const routerRows = useMemo(() => routerList || [], [routerList])
+  // The router items come from the stock list itself, so ticking "Field device" shows up here straight away.
+  const deviceItems = useMemo(() => stockItems.filter((i) => i.isDevice).map((i) => ({ id: i.id, name: i.itemName })), [stockItems])
+
+  // Technicians record retrieved routers while this page may be open, so it reloads the stock figures when it opens.
+  async function refresh() {
+    if (!routers || !routers.onRefresh) return
+    setRefreshing(true)
+    try { await routers.onRefresh() } finally { setRefreshing(false) }
+  }
+  useEffect(() => { refresh() }, [])   // eslint-disable-line react-hooks/exhaustive-deps
 
   // Computed independently per item (filter each log separately) rather
   // than joined -- joining stock_in and stock_out together on item_id in
   // one pass multiplies rows together (a real bug caught while testing
   // this migration), not something that shows up from reading the code.
-  const summaryRows = useMemo(() => {
-    return stockItems.map((item) => {
-      const totalPurchased = stockIn.filter((si) => si.itemId === item.id).reduce((s, si) => s + si.quantity, 0)
-      const totalIssued = stockOut.filter((so) => so.itemId === item.id).reduce((s, so) => s + so.quantity, 0)
-      const currentStock = totalPurchased - totalIssued
-      const returned = ((routers && routers.rows) || []).filter((x) => x.stockItemId === item.id && (x.status === 'in_store' || x.status === 'under_repair')).length
-      return { item, totalPurchased, totalIssued, currentStock, returned, status: currentStock <= item.reorderLevel ? 'REORDER' : 'OK' }
-    }).sort((a, b) => (a.status === b.status ? 0 : a.status === 'REORDER' ? -1 : 1))
-  }, [stockItems, stockIn, stockOut, routers])
+  // Current stock = bought new + retrieved (working) - issued - written off (see lib/stockCore.js).
+  const stock = useMemo(() => computeStock({ items: stockItems, stockIn, stockOut, routers: routerRows }), [stockItems, stockIn, stockOut, routerRows])
+  const summary = useMemo(() => routerStockSummary({ items: stockItems, stockIn, stockOut, routers: routerRows }), [stockItems, stockIn, stockOut, routerRows])
+  const summaryRows = useMemo(() => [...stock].sort((a, b) => (a.status === b.status ? 0 : a.status === 'REORDER' ? -1 : 1)), [stock])
+  const readyCount = useMemo(() => routerRows.filter(routerCounts).length, [routerRows])
+  const reusedOut = useMemo(() => new Set(routerRows.map((r) => r.reissueStockOutId).filter((x) => x != null)), [routerRows])   // Stock Outs that used a retrieved router
 
   const reorderCount = summaryRows.filter((r) => r.status === 'REORDER').length
   const reorderRows = summaryRows.filter((r) => r.status === 'REORDER')
@@ -352,45 +400,60 @@ export default function StockTab({ routers, stockItems, stockIn, stockOut, custo
         </button>
         {routers && (
           <button onClick={() => setView('retrieved')} className={view === 'retrieved' ? 'sns-btn-primary' : 'sns-btn-secondary'} style={{ fontSize: '0.82rem' }}>
-            Retrieved Routers{routers.rows.filter((x) => x.status === 'in_store').length > 0 && <span className="sns-badge sns-badge-role" style={{ marginLeft: '0.4rem' }}>{routers.rows.filter((x) => x.status === 'in_store').length}</span>}
+            Retrieved Routers{readyCount > 0 && <span className="sns-badge sns-badge-done" style={{ marginLeft: '0.4rem' }} title="Working retrieved routers, ready to use again" data-testid="retrieved-tab-count">{readyCount}</span>}
           </button>
+        )}
+        {routers && routers.onRefresh && (
+          <button onClick={refresh} disabled={refreshing} className="sns-btn-secondary" style={{ fontSize: '0.82rem', marginLeft: 'auto' }} title="Reload the stock figures"><RefreshCw size={14} style={{ marginRight: '0.35rem', verticalAlign: '-2px' }} />{refreshing ? 'Refreshing…' : 'Refresh'}</button>
         )}
       </div>
 
       {view === 'summary' && (
-        summaryRows.length === 0 ? <EmptyState message="No items in the catalog yet." /> : (
-          <div className="sns-card" style={{ overflow: 'hidden' }}>
-            <div style={{ overflowX: 'auto' }}>
-              <table className="sns-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr><th>Item</th><th>Unit</th><th>Purchased</th><th>Issued</th><th>Current stock</th><th>Reorder level</th><th>Status</th></tr>
-                </thead>
-                <tbody>
-                  {summaryRows.map((r) => (
-                    <tr key={r.item.id}>
-                      <td style={{ fontWeight: 600 }}>{r.item.itemName}</td>
-                      <td className="sns-text-soft">{r.item.unit}</td>
-                      <td className="sns-mono">{r.totalPurchased}</td>
-                      <td className="sns-mono">{r.totalIssued}</td>
-                      <td className="sns-mono" style={{ fontWeight: 700 }}>{r.currentStock}{r.returned > 0 && <span className="sns-text-faint" style={{ fontSize: '0.68rem', marginLeft: '0.35rem', fontWeight: 400 }} title="Routers taken back from customers that are in the store now">(↩ {r.returned})</span>}</td>
-                      <td className="sns-text-soft">{r.item.reorderLevel}</td>
-                      <td>
-                        <span className="sns-badge" style={r.status === 'REORDER' ? { background: 'var(--overdue-pale)', color: 'var(--overdue)' } : { background: 'var(--confirmed-pale)', color: 'var(--confirmed)' }}>{r.status}</span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        <>
+          <RoutersRemaining summary={summary}
+            onSeeRetrieved={routers ? () => setView('retrieved') : undefined}
+            onLink={routers && routers.onLink ? () => setLinkRouters(summary.unlinked) : undefined}
+            onSetup={routers && routers.onSetItems ? () => setShowRouterItems(true) : undefined} />
+          {summaryRows.length === 0 ? <EmptyState message="No items in the catalog yet." /> : (
+            <div className="sns-card" style={{ overflow: 'hidden' }}>
+              <div style={{ overflowX: 'auto' }}>
+                <table className="sns-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr><th>Item</th><th>Unit</th><th>Purchased</th><th title="Working routers taken back from customers and added to the stock">Retrieved</th><th>Issued</th><th>Current stock</th><th>Reorder level</th><th>Status</th></tr>
+                  </thead>
+                  <tbody>
+                    {summaryRows.map((r) => (
+                      <tr key={r.item.id} data-testid={`stock-row-${r.item.id}`}>
+                        <td style={{ fontWeight: 600 }}>{r.item.itemName}{r.item.isDevice && <span className="sns-badge sns-badge-role" style={{ marginLeft: '0.4rem' }}>Router</span>}</td>
+                        <td className="sns-text-soft">{r.item.unit}</td>
+                        <td className="sns-mono" data-testid={`purchased-${r.item.id}`}>{r.bought}</td>
+                        <td className="sns-mono" data-testid={`retrieved-cell-${r.item.id}`}>{r.item.isDevice || r.retrieved > 0
+                          ? <>{r.retrieved}{r.notCounted.total > 0 && <span className="sns-text-faint" style={{ fontSize: '0.68rem', marginLeft: '0.35rem', fontWeight: 400 }} title="Faulty, damaged or under-repair routers are not counted in the stock">({r.notCounted.total} not counted)</span>}</>
+                          : <span className="sns-text-faint">—</span>}</td>
+                        <td className="sns-mono" data-testid={`issued-cell-${r.item.id}`}>{r.issued}{r.writtenOff > 0 && <span className="sns-text-faint" style={{ fontSize: '0.68rem', marginLeft: '0.35rem', fontWeight: 400 }} title="Retrieved routers that were written off">(+{r.writtenOff} written off)</span>}</td>
+                        <td className="sns-mono" style={{ fontWeight: 700 }} data-testid={`current-${r.item.id}`}>{r.remaining}{r.retrievedReady > 0 && <span className="sns-text-faint" style={{ fontSize: '0.68rem', marginLeft: '0.35rem', fontWeight: 400 }} title="Of these, retrieved routers that are working and ready to use again">({r.retrievedReady} retrieved)</span>}</td>
+                        <td className="sns-text-soft">{r.item.reorderLevel}</td>
+                        <td>
+                          <span className="sns-badge" style={r.status === 'REORDER' ? { background: 'var(--overdue-pale)', color: 'var(--overdue)' } : { background: 'var(--confirmed-pale)', color: 'var(--confirmed)' }}>{r.status}</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
-        )
+          )}
+        </>
       )}
 
       {view === 'items' && (
         <>
           <div className="flex items-center justify-between" style={{ marginBottom: '1rem', flexWrap: 'wrap', gap: '0.6rem' }}>
             <SearchInput value={search} onChange={setSearch} placeholder="Search by code, name, category, supplier…" />
-            <button onClick={() => setShowItemForm(true)} className="sns-btn-primary"><Plus size={16} /> Add item</button>
+            <div className="flex gap-2">
+              {routers && routers.onSetItems && <button onClick={() => setShowRouterItems(true)} className="sns-btn-secondary"><Settings size={15} style={{ marginRight: 4, verticalAlign: '-2px' }} />Router items</button>}
+              <button onClick={() => setShowItemForm(true)} className="sns-btn-primary"><Plus size={16} /> Add item</button>
+            </div>
           </div>
           {filteredItems.length === 0 ? <EmptyState message="No items match." /> : (
             <div className="sns-card" style={{ overflow: 'hidden' }}>
@@ -403,7 +466,7 @@ export default function StockTab({ routers, stockItems, stockIn, stockOut, custo
                     {filteredItems.map((i) => (
                       <tr key={i.id}>
                         <td className="sns-mono sns-text-soft">{i.itemCode}</td>
-                        <td style={{ fontWeight: 600 }}>{i.itemName}</td>
+                        <td style={{ fontWeight: 600 }}>{i.itemName}{i.isDevice && <span className="sns-badge sns-badge-role" style={{ marginLeft: '0.4rem' }}>Router</span>}</td>
                         <td className="sns-text-soft">{i.category || '—'}</td>
                         <td className="sns-text-soft">{i.unit}</td>
                         <td className="sns-text-soft">{i.reorderLevel}</td>
@@ -477,7 +540,7 @@ export default function StockTab({ routers, stockItems, stockIn, stockOut, custo
                     {sortedStockOut.map((so) => (
                       <tr key={so.id}>
                         <td className="sns-text-soft">{formatDate(so.issueDate)}</td>
-                        <td style={{ fontWeight: 600 }}>{itemMap[so.itemId]?.itemName || '—'}</td>
+                        <td style={{ fontWeight: 600 }}>{itemMap[so.itemId]?.itemName || '—'}{reusedOut.has(so.id) && <span className="sns-badge sns-badge-role" style={{ marginLeft: '0.4rem' }} title="A router taken back from another customer, used again">Retrieved</span>}</td>
                         <td className="sns-mono">{so.quantity}</td>
                         <td>{so.installType
                           ? <span className={`sns-badge ${so.installType === 'replacement' ? 'sns-badge-progress' : 'sns-badge-done'}`}>{so.installType === 'replacement' ? 'Replacement' : 'New installation'}</span>
@@ -497,11 +560,14 @@ export default function StockTab({ routers, stockItems, stockIn, stockOut, custo
         </>
       )}
 
-      {view === 'devices' && <DeviceLog stockOut={stockOut} items={stockItems} customers={customers || []} />}
+      {view === 'devices' && <DeviceLog stockOut={stockOut} items={stockItems} customers={customers || []} routers={routerRows} />}
 
       {view === 'retrieved' && routers && (
-        <RetrievedRouters rows={routers.rows} customers={customers || []} members={routers.members} userMap={routers.userMap} isAdmin currentUser={routers.currentUser} deviceItems={routers.deviceItems}
-          onAdd={routers.onAdd} onUpdate={routers.onUpdate} onSetStatus={routers.onSetStatus} onDelete={routers.onDelete} />
+        <RetrievedRouters rows={routers.rows} customers={customers || []} members={routers.members} userMap={routers.userMap} isAdmin currentUser={routers.currentUser} deviceItems={deviceItems} summary={summary}
+          onAdd={routers.onAdd} onUpdate={routers.onUpdate} onSetStatus={routers.onSetStatus} onDelete={routers.onDelete}
+          onIssue={routers.onIssue} onUndoReissue={routers.onUndoReissue} onMarkWorking={routers.onMarkWorking}
+          onLinkRouters={routers.onLink ? (list) => setLinkRouters(list) : undefined}
+          onSetup={routers.onSetItems ? () => setShowRouterItems(true) : undefined} onSeeSummary={() => setView('summary')} />
       )}
 
       {view === 'reorder' && (
@@ -517,7 +583,7 @@ export default function StockTab({ routers, stockItems, stockIn, stockOut, custo
                     <tr key={r.item.id}>
                       <td style={{ fontWeight: 600 }}>{r.item.itemName}</td>
                       <td className="sns-text-soft">{r.item.unit}</td>
-                      <td className="sns-mono" style={{ fontWeight: 700, color: 'var(--overdue)' }}>{r.currentStock}{r.returned > 0 && <span className="sns-text-faint" style={{ fontSize: '0.68rem', marginLeft: '0.35rem', fontWeight: 400 }} title="Routers taken back from customers that are in the store now">(↩ {r.returned})</span>}</td>
+                      <td className="sns-mono" style={{ fontWeight: 700, color: 'var(--overdue)' }}>{r.remaining}{r.retrievedReady > 0 && <span className="sns-text-faint" style={{ fontSize: '0.68rem', marginLeft: '0.35rem', fontWeight: 400 }} title="Of these, retrieved routers that are working and ready to use again">({r.retrievedReady} retrieved)</span>}</td>
                       <td className="sns-text-soft">{r.item.reorderLevel}</td>
                       <td className="sns-text-soft">{r.item.supplier || '—'}</td>
                     </tr>
@@ -551,9 +617,16 @@ export default function StockTab({ routers, stockItems, stockIn, stockOut, custo
         <StockOutFormModal
           items={stockItems}
           customers={customers || []}
+          routers={routerRows}
+          onIssueRetrieved={routers && routers.onIssue ? async (router, f) => { const done = await routers.onIssue(router, f); if (done !== false) setShowStockOutForm(false); return done } : undefined}
           onClose={() => setShowStockOutForm(false)}
           onSave={async (data) => { await onAddStockOut(data); setShowStockOutForm(false) }}
         />
+      )}
+      {showRouterItems && routers && routers.onSetItems && <RouterItemsModal items={stockItems} onSave={routers.onSetItems} onClose={() => setShowRouterItems(false)} />}
+      {linkRouters && routers && routers.onLink && (
+        <LinkRoutersModal routers={linkRouters} deviceItems={deviceItems} onClose={() => setLinkRouters(null)}
+          onSave={async (links) => { const ok = await routers.onLink(links); if (ok !== false) setLinkRouters(null) }} />
       )}
       {confirmDeleteItem && (
         <ConfirmDialog
