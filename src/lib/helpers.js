@@ -79,6 +79,14 @@ export const EXPENSE_CATEGORIES = [
 
 export const EXPENSE_STATUSES = ['Requested', 'Approved', 'Rejected', 'Purchased', 'Paid']
 
+// Who can ask for a purchase (the Expenses feature in the member portal): every Team Lead, and everyone in the
+// Technical department. "Log a service" is NOT part of it: paying an outside person stays an admin job, and the
+// database refuses it for anyone else. The database applies the same rule (Update 47), so this only decides what
+// the portal shows.
+export function canRequestPurchases(user) {
+  return Boolean(user && (user.isTeamLead || user.department === 'technical'))
+}
+
 // Matches the categories and units already in real use in the company's
 // actual item catalog, not an arbitrary invented list.
 export const STOCK_CATEGORIES = ['Networking', 'Power & Adapters', 'Accessories', 'Splitters', 'Connectors', 'Other']

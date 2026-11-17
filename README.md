@@ -365,3 +365,16 @@ Removed from the package: the old `employee-number-and-service-fix-migration.sql
 - **ONU / Router log:** a router thrown away (written off) is no longer listed as a device handed to a customer.
 - Backup and restore carry the new link between a router and the Stock Out that used it.
 - **Not new:** removing a staff member who recorded a Stock In (the automatic one for a retrieved router included) is still refused by the database, as before; reassign or keep the profile instead.
+
+## Update 47
+
+**To apply:** (1) run `supabase/update-47-migration.sql` in the Supabase SQL editor (safe to run again; apply the earlier updates first), (2) deploy the code. A fresh install needs only `job-card-rebuild.sql`, which now contains updates 40 to 47.
+
+- **Technical members can now ask for purchases.** Everyone whose department is **Technical** gets **Submit a purchase** and **My Expenses/Purchases** in their portal, the same two cards a Team Lead has. A person chooses their department when they sign up and an admin can change it from **Staff**, so who has this follows the department straight away. Nobody can move themselves into Technical: the database only lets an admin change a department.
+- **Nothing else about expenses changed.** A request goes to the Director, who approves or rejects it. Once it is approved the member buys the item and attaches the receipt, and the Director marks it paid. A member sees only their own requests and can withdraw one only while it is still Requested. Team Leads in other departments (Sales, for example) keep it exactly as before.
+- **"Log a service" is not added.** It stays an admin job (it pays someone outside the team). It is not in the technical portal, and the database refuses a service from anyone who is not an admin, even if someone sends it directly.
+- **Two gaps closed on the way.** They applied to Team Leads already and would now have applied to the whole Technical department. Neither changes what the screens do; they only stop someone who talks to the database directly from skipping the Director.
+  - A member's new request is always a plain request. It could be filed already **Approved** or **Paid**, or with a receipt or an approver filled in; it now cannot.
+  - When a member attaches a receipt to an approved request, nothing else on it can change: not the amount (this was already locked), the description, the payment date or who approved it.
+  - Admins are not affected, and restoring from a backup still works.
+- The **Staff** page now says "Technical members and Team Leads can submit purchases", and the hover text on **Make Team Lead** notes that technical members already can.

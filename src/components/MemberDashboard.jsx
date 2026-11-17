@@ -9,7 +9,7 @@ import ExpenseFormModal from './ExpenseForm'
 import ExpensesList from './ExpensesList'
 import { JobPrintView } from './PrintViews'
 import { ConfirmDialog, EmptyState, NavCard, PeriodSelector, SearchInput, StatCard, StatusFilterSelect } from './shared'
-import { formatKSh, formatDate, isOverdue, isInPeriod, getPeriodRange, isInRange, COMMISSION_DEPARTMENTS, toDateInputValue } from '../lib/helpers'
+import { formatKSh, formatDate, isOverdue, isInPeriod, getPeriodRange, isInRange, COMMISSION_DEPARTMENTS, toDateInputValue, canRequestPurchases } from '../lib/helpers'
 import FieldVisits from './FieldVisits'
 import { analyzePlaces } from '../lib/visitsIntel'
 import { MapPin } from 'lucide-react'
@@ -37,9 +37,10 @@ export default function MemberDashboard({ extras, currentUser, jobs, raisedJobs,
   const visitStats = useMemo(() => (isSales ? analyzePlaces({ places: places || [], visits: visits || [], customers, today: toDateInputValue(new Date()) }) : []), [isSales, places, visits, customers])
   const revisitCount = visitStats.filter((s) => s.needRevisit).length
   const isTechnical = currentUser.department === 'technical'
-  // Regular members no longer get this at all -- only a Team Lead does.
-  // Admins get it through AdminDashboard instead, not this component.
-  const canMakePurchases = currentUser.isTeamLead
+  // Asking for a purchase (the Expenses feature) is for a Team Lead and for everyone in the Technical department; other
+  // members do not get it. "Log a service" is never offered here -- it is an admin job (see AdminDashboard and the
+  // database). Admins get the purchase form through AdminDashboard instead, not this component.
+  const canMakePurchases = canRequestPurchases(currentUser)
 
   // jobs here is already scoped to this member (App.jsx filters it), so
   // "assigned" just means someone else (an admin) put it there.

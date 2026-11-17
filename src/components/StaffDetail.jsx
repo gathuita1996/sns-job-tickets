@@ -76,7 +76,7 @@ export default function StaffDetail({ member, bank, jobs, customers, expenses, v
             </label>
           )}
           {member.role !== 'admin' && onToggleTeamLead && (
-            <button type="button" className="sns-btn-secondary" style={{ fontSize: '0.8rem' }} onClick={() => onToggleTeamLead(member)} title="A Team Lead can submit purchases and expenses"><Star size={14} /> {member.isTeamLead ? 'Remove Team Lead' : 'Make Team Lead'}</button>
+            <button type="button" className="sns-btn-secondary" style={{ fontSize: '0.8rem' }} onClick={() => onToggleTeamLead(member)} title={member.department === 'technical' ? 'Technical members can already submit purchases and expenses' : 'A Team Lead can submit purchases and expenses'}><Star size={14} /> {member.isTeamLead ? 'Remove Team Lead' : 'Make Team Lead'}</button>
           )}
           {member.role !== 'admin' && onPromote && (
             <button type="button" className="sns-btn-secondary" style={{ fontSize: '0.8rem' }} onClick={() => setConfirm('promote')}><Shield size={14} /> Promote to admin</button>
@@ -86,7 +86,7 @@ export default function StaffDetail({ member, bank, jobs, customers, expenses, v
           )}
           {member.isDirector && <span className="sns-text-soft" style={{ fontSize: '0.82rem' }}>This person is the Director. Making someone else Director replaces them.</span>}
         </div>
-        <p className="sns-text-faint" style={{ fontSize: '0.74rem', marginTop: '0.6rem' }}>Team Leads can submit purchases. Admins can see and manage everything. Only the Director approves purchases and leave.</p>
+        <p className="sns-text-faint" style={{ fontSize: '0.74rem', marginTop: '0.6rem' }}>Technical members and Team Leads can submit purchases. Admins can see and manage everything. Only the Director approves purchases and leave.</p>
       </Section>
       {confirm === 'promote' && <ConfirmDialog title="Promote to admin" message={`Make ${member.fullName} an admin? Admins can see every job, customer, expense and staff record.`} onCancel={() => setConfirm(null)} onConfirm={async () => { await onPromote(member); setConfirm(null) }} />}
       {confirm === 'director' && <ConfirmDialog title="Make Director" message={`Make ${member.fullName} the Director? There is only one Director${currentDirector ? `, so ${currentDirector.fullName} stops being Director` : ''}. Only the Director approves purchases and leave.`} onCancel={() => setConfirm(null)} onConfirm={async () => { await onSetDirector(member); setConfirm(null) }} />}
