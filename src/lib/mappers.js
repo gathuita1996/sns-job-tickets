@@ -340,3 +340,27 @@ export function contractToDbFields(memberId, f) {
 export function mapContractChange(row) {
   return { id: row.id, memberId: row.member_id, changedAt: row.changed_at, changedBy: row.changed_by, action: row.action, previousType: row.previous_type, contractType: row.contract_type, startDate: row.start_date, termMonths: row.term_months, renewsOnCompletion: Boolean(row.renews_on_completion), notes: row.notes || '' }
 }
+
+// A receipt that was sent to a customer. Receipts are never edited afterwards, so there is no "to db" mapper:
+// the row is built in one place, when the receipt is made (receipts.js).
+export function mapReceipt(row) {
+  return {
+    id: row.id,
+    customerId: row.customer_id == null ? null : row.customer_id,
+    customerName: row.customer_name || '',
+    customerContact: row.customer_contact || '',
+    receiptNo: row.receipt_no,
+    mpesaCode: row.mpesa_code,
+    amount: Number(row.amount) || 0,
+    paidAt: row.paid_at,
+    validUntil: row.valid_until,
+    daysCovered: Number(row.days_covered) || 30,
+    payerName: row.payer_name || '',
+    accountRef: row.account_ref || '',
+    mpesaMessage: row.mpesa_message || '',
+    filePath: row.file_path || null,
+    sentVia: row.sent_via || 'whatsapp',
+    sentBy: row.sent_by || null,
+    sentAt: row.sent_at,
+  }
+}

@@ -24,6 +24,8 @@ import LeaveAdmin from './LeaveAdmin'
 import ExpenseSummary from './ExpenseSummary'
 import StaffDetail from './StaffDetail'
 import CustomersTab from './CustomersTab'
+import { SubscriptionBadge } from './CustomerReceipts'
+import { describeSubscription, groupReceipts, subscriptionOf } from '../lib/subscription'
 import ServiceFormModal from './ServiceForm'
 import { ConfirmDialog, EmptyState, EntryTypeChoice, FormField, PeriodSelector, SearchInput, StatCard, StatusBadge, StatusFilterSelect } from './shared'
 import { JOB_TYPES, PRIORITY_OPTIONS, CHART_COLORS, COMMISSION_DEPARTMENTS, departmentLabel, formatKSh, formatDate, formatDateTime, isOverdue, isInPeriod, getPeriodRange, isInRange, shiftAnchor, toWhatsAppNumber } from '../lib/helpers'
@@ -36,6 +38,8 @@ export default function AdminDashboard({ extras, currentUser, users, jobs, custo
   const [jobsView, setJobsView] = useState('jobs')       // 'jobs' | 'visits'  (Field visits live on the All Jobs page)
   const [customersFocus, setCustomersFocus] = useState(null)
   const leaveRequests = (extras && extras.leave && extras.leave.requests) || []
+  const receiptsApi = (extras && extras.receipts) || {}
+  const receipts = receiptsApi.rows || []
   const pendingLeave = leaveRequests.filter((r) => r.status === 'pending').length
   const waitingExpenses = (expenses || []).filter((e) => e.status === 'Requested').length
   const awayIds = useMemo(() => awayNowIds(leaveRequests), [leaveRequests])
@@ -496,7 +500,8 @@ export default function AdminDashboard({ extras, currentUser, users, jobs, custo
         )}
 
         {tab === 'customers' && (
-          <CustomersTab key={customersFocus || 'all'} customers={customers} users={users} userMap={userMap} initialMemberId={customersFocus} onView={setViewingCustomer} onEdit={setEditingCustomer} onPrint={setPrintingCustomer} onDelete={setConfirmDeleteCustomer} onOpenStaff={(id) => setViewingStaffId(id)} />
+          <CustomersTab key={customersFocus || 'all'} customers={customers} users={users} userMap={userMap} initialMemberId={customersFocus} onView={setViewingCustomer} onEdit={setEditingCustomer} onPrint={setPrintingCustomer} onDelete={setConfirmDeleteCustomer} onOpenStaff={(id) => setViewingStaffId(id)}
+            receipts={receipts} client={receiptsApi.client} isDirector={Boolean(currentUser.isDirector)} onReceiptsChanged={receiptsApi.onRefresh} notify={receiptsApi.notify} />
         )}
 
 
@@ -598,6 +603,7 @@ export default function AdminDashboard({ extras, currentUser, users, jobs, custo
           customer={viewingCustomer}
           recordedByName={userMap[viewingCustomer.recordedBy]?.fullName}
           displayStatus={(jobs.find((j) => j.customerId === viewingCustomer.id) || {}).status || 'Pending'}
+          subscription={subscriptionOf(groupReceipts(receipts).get(viewingCustomer.id), new Date())}
           onClose={() => setViewingCustomer(null)}
           onPrint={() => { setPrintingCustomer(viewingCustomer); setViewingCustomer(null) }}
         />
@@ -605,7 +611,7 @@ export default function AdminDashboard({ extras, currentUser, users, jobs, custo
       {confirmDeleteCustomer && (
         <ConfirmDialog
           title="Delete customer"
-          message={`Are you sure you want to delete ${confirmDeleteCustomer.fullName}? This cannot be undone.`}
+          message={`Are you sure you want to delete ${confirmDeleteCustomer.fullName}? This cannot be undone.${(groupReceipts(receipts).get(confirmDeleteCustomer.id) || []).length ? ' Their receipts stay on record, but they will no longer be linked to anyone.' : ''}`}
           danger
           onCancel={() => setConfirmDeleteCustomer(null)}
           onConfirm={async () => { await onDeleteCustomer(confirmDeleteCustomer.id); setConfirmDeleteCustomer(null) }}
@@ -754,7 +760,7 @@ function CommissionRateSettings({ commissionRate, onUpdate }) {
   )
 }
 
-function CustomerViewModal({ customer, recordedByName, displayStatus, onClose, onPrint }) {
+function CustomerViewModal({ customer, recordedByName, displayStatus, subscription, onClose, onPrint }) {
   return (
     <div className="no-print flex items-center justify-center p-4" style={{ position: 'fixed', inset: 0, background: 'rgba(27,36,48,0.55)', zIndex: 50 }}>
       <div className="sns-card sns-fade-in" style={{ width: '100%', maxWidth: '26rem' }}>
@@ -784,6 +790,12 @@ function CustomerViewModal({ customer, recordedByName, displayStatus, onClose, o
           <div className="flex items-center justify-between" style={{ fontSize: '0.85rem' }}>
             <span className="sns-text-faint">Status</span><StatusBadge status={displayStatus} />
           </div>
+          {subscription && (
+            <div className="flex items-center justify-between" style={{ fontSize: '0.85rem', gap: '1rem' }}>
+              <span className="sns-text-faint">Subscription</span>
+              <span style={{ textAlign: 'right' }}><SubscriptionBadge sub={subscription} /><span className="sns-text-faint" style={{ display: 'block', fontSize: '0.74rem', marginTop: '0.2rem' }}>{describeSubscription(subscription, new Date())}</span></span>
+            </div>
+          )}
           {customer.notes && (
             <div>
               <p className="sns-text-faint" style={{ fontSize: '0.85rem', marginBottom: '0.25rem' }}>Notes</p>

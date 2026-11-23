@@ -30,6 +30,8 @@ const data = {
   stock_out: [{ id: 1, item_id: 2, issue_date: '2026-09-05', quantity: 1, issued_to: 'Tim', purpose: 'Install', reference_no: null, issued_by: null, recorded_by: A, created_at: ts, install_type: 'replacement', customer_id: 1, device_serial: 'ZTE123' }],
   visits: [{ id: 1, place_id: 1, visit_date: '2026-10-01', purpose: 'marketing', outcome: 'follow_up', leads: 2, follow_up_date: '2026-10-08', notes: null, visited_by: S, created_at: ts }],
   retrieved_routers: [{ id: 1, retrieved_date: '2026-10-10', customer_id: 1, customer_name: 'Amina Hassan', customer_contact: '0712345678', location: 'Diani', router_model: 'ONU', stock_item_id: 2, stock_in_id: 3, writeoff_stock_out_id: null, serial_number: 'ZTE777', reason: 'failed_to_pay', reason_notes: '3 months behind', amount_owed: 4500, condition: 'working', accessories: 'Power adapter', status: 'in_store', status_note: null, status_updated_at: null, status_updated_by: null, retrieved_by: T, recorded_by: T, created_at: ts }],
+  customer_receipts: [{ id: 1, customer_id: 1, customer_name: 'Amina Hassan', customer_contact: '0712345678', receipt_no: '11/1008', mpesa_code: 'UKL41383DB', amount: 2000, paid_at: '2026-11-21T14:50:00+00:00', valid_until: '2026-12-21T14:50:00+00:00', days_covered: 30, payer_name: 'AMINA HASSAN', account_ref: '899118', mpesa_message: 'UKL41383DB Confirmed. KES 2,000.00 received from AMINA HASSAN for account 899118 on 21/11/26 at 05:50 PM.', file_path: 'a1b2c3/Receipt-11-1008.pdf', sent_via: 'whatsapp', sent_by: S, sent_at: ts },
+    { id: 2, customer_id: null, customer_name: 'Bob', customer_contact: '0722000000', receipt_no: '11/1009', mpesa_code: 'UKM55555XY', amount: 1500, paid_at: '2026-11-22T08:00:00+00:00', valid_until: '2026-12-22T08:00:00+00:00', days_covered: 30, payer_name: null, account_ref: null, mpesa_message: null, file_path: null, sent_via: 'whatsapp', sent_by: GHOST, sent_at: ts }],
   non_working_days: [{ id: 1, day: '2026-10-20', name: 'Mashujaa Day', created_by: A, created_at: ts }],
   leave_requests: [{ id: 1, member_id: S, start_date: '2026-11-03', end_date: '2026-11-05', days: 3, leave_year: 2026, reason: 'Family', status: 'approved', requested_at: ts, decided_by: A, decided_at: ts, decision_note: null, cancelled_by: null, cancelled_at: null, created_by: S },
     { id: 2, member_id: T, start_date: '2026-11-10', end_date: '2026-11-18', days: 8, leave_year: 2026, reason: null, status: 'approved', requested_at: ts, decided_by: A, decided_at: ts, decision_note: null, cancelled_by: null, cancelled_at: null, created_by: T }],
@@ -108,7 +110,7 @@ await ok('preview reports what is in the file against what is already in the sys
 const client = fakeClient()
 const report = await core.runRestore({ parsed, users, adminId: 'N-ADMIN', client })
 const R = client.rows
-await ok('tables are restored parents-first', () => assert.deepEqual(client.calls, ['customers', 'stock_items', 'places', 'jobs', 'expenses', 'complaints', 'stock_in', 'stock_out', 'visits', 'retrieved_routers']))
+await ok('tables are restored parents-first', () => assert.deepEqual(client.calls, ['customers', 'stock_items', 'places', 'jobs', 'expenses', 'complaints', 'stock_in', 'stock_out', 'visits', 'retrieved_routers', 'customer_receipts']))
 await ok('old record numbers are never sent (the database makes new ones)', () => { for (const t of Object.keys(R)) for (const r of R[t]) assert.ok(!('id' in { ...r, id: undefined }) || true); assert.ok(R.customers.every((r) => !('contact_id' in r))) })
 await ok('staff links follow the matches; unmatched people fall back to the admin doing the restore', () => {
   assert.equal(R.customers[0].recorded_by, 'N-SALES'); assert.equal(R.customers[1].recorded_by, 'N-ADMIN')
@@ -127,12 +129,28 @@ await ok('device log keeps its customer and item links; visits keep their place'
   assert.equal(R.visits[0].place_id, 3001); assert.equal(R.visits[0].visited_by, 'N-SALES')
 })
 await ok('the job-number counter is moved on exactly once, after jobs', () => assert.deepEqual(client.rpcs, ['bump_job_code_seq']))
+await ok('receipts go back linked to the NEW customer numbers, without the PDF link (the PDF is made again when needed)', () => {
+  assert.equal(R.customer_receipts.length, 2)
+  assert.equal(R.customer_receipts[0].customer_id, 1001); assert.equal(R.customer_receipts[1].customer_id, null)
+  assert.ok(R.customer_receipts.every((r) => r.file_path === null))
+  assert.equal(R.customer_receipts[0].sent_by, 'N-SALES'); assert.equal(R.customer_receipts[1].sent_by, null)      // someone who is not in the file is left empty, never guessed
+  assert.deepEqual(R.customer_receipts.map((r) => r.receipt_no), ['11/1008', '11/1009']); assert.deepEqual(R.customer_receipts.map((r) => r.mpesa_code), ['UKL41383DB', 'UKM55555XY'])
+  assert.equal(R.customer_receipts[0].paid_at, '2026-11-21T14:50:00+00:00')
+})
 
 const c2 = fakeClient({ stock_items: [{ id: 7, item_code: 'itm-001' }], places: [{ id: 8, name: 'coast dishes', area: 'DIANI' }] })
 const rep2 = await core.runRestore({ parsed, users, adminId: 'N-ADMIN', client: c2 })
 await ok('catalogue items and places that already exist are reused, never duplicated', () => {
   assert.equal(rep2.tables.stock_items.reused, 1); assert.equal(c2.rows.stock_items.length, 1); assert.equal(c2.rows.stock_items[0].item_code, 'ITM-006')
   assert.equal(c2.rows.stock_in[0].item_id, 7); assert.equal(rep2.tables.places.reused, 1); assert.ok(!c2.rows.places); assert.equal(c2.rows.visits[0].place_id, 8)
+})
+await ok('a receipt whose payment is already in the system is reused, never doubled', async () => {
+  const c = fakeClient({ customer_receipts: [{ id: 5, mpesa_code: 'ukl41383db' }] })
+  const r = await core.runRestore({ parsed, users, adminId: 'N-ADMIN', client: c })
+  assert.equal(r.tables.customer_receipts.reused, 1); assert.equal(r.tables.customer_receipts.inserted, 1)
+  assert.deepEqual(c.rows.customer_receipts.map((x) => x.mpesa_code), ['UKM55555XY'])
+  const p = await core.previewRestore({ parsed, users, client: fakeClient({ customer_receipts: [{ id: 5 }] }) })
+  assert.ok(!p.nonEmpty.includes('Customer Receipts'), 'receipts that can be matched do not raise the "already has data" warning')
 })
 await ok('a database error stops the restore with a message naming the sheet', async () => {
   const bad = fakeClient(); const f = bad.from; bad.from = (t) => t === 'jobs' ? ({ insert: () => ({ select: async () => ({ data: null, error: { message: 'boom' } }) }) }) : f(t)
@@ -228,8 +246,9 @@ await ok('a leave record the rules refuse is skipped and reported, and the rest 
   assert.equal(r.tables.leave_requests.inserted, 1); assert.equal(r.tables.leave_requests.skipped, 1); assert.match(Object.keys(r.tables.leave_requests.reasons)[0], /limited to 3 days a month/); assert.equal(r.tables.leave_adjustments.inserted, 1)
 })
 await ok('the backup file carries the new sheets, with readable staff names', async () => {
-  for (const sheet of ['Retrieved Routers', 'Public Holidays', 'Leave Requests', 'Leave Adjustments', 'Contracts']) assert.ok(wb2.getWorksheet(sheet), sheet)
+  for (const sheet of ['Retrieved Routers', 'Customer Receipts', 'Public Holidays', 'Leave Requests', 'Leave Adjustments', 'Contracts']) assert.ok(wb2.getWorksheet(sheet), sheet)
   const heads = []; wb2.getWorksheet('Leave Requests').getRow(1).eachCell((c) => heads.push(c.value)); assert.ok(heads.includes('(info) Staff member'))
+  const rh = []; wb2.getWorksheet('Customer Receipts').getRow(1).eachCell((c) => rh.push(c.value)); assert.ok(rh.includes('(info) Customer') && rh.includes('(info) Sent by') && rh.includes('receipt_no') && rh.includes('mpesa_code'))
 })
 await ok('a "Recorded by" column in a customer list is ignored: every imported customer is recorded under the admin who imported them', async () => {
   const w = new ExcelJS.Workbook(); const s = w.addWorksheet('Customers'); s.addRow(['Name', 'Phone', 'Recorded by']); s.addRow(['Zawadi Omar', '0711000001', 'Sam Sales']); s.addRow(['Juma Ali', '0711000002', 'SNS004']); s.addRow(['Plain One', '0711000004', null])

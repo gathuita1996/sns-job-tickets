@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from './lib/supabaseClient'
-import { mapProfile, mapJob, jobToDbFields, mapCustomer, customerToDbFields, mapExpense, expenseToDbFields, serviceToDbFields, mapStockItem, stockItemToDbFields, mapStockIn, stockInToDbFields, mapStockOut, stockOutToDbFields , mapPlace, placeToDbFields, mapVisit, visitToDbFields, mapBank, bankToDbFields, mapRetrievedRouter, retrievedRouterToDbFields, issueRouterArgs, mapLeaveRequest, mapLeaveAdjustment, mapHoliday, mapDeviceItem, mapContract, contractToDbFields, mapContractChange } from './lib/mappers'
+import { mapProfile, mapJob, jobToDbFields, mapCustomer, customerToDbFields, mapExpense, expenseToDbFields, serviceToDbFields, mapStockItem, stockItemToDbFields, mapStockIn, stockInToDbFields, mapStockOut, stockOutToDbFields , mapPlace, placeToDbFields, mapVisit, visitToDbFields, mapBank, bankToDbFields, mapRetrievedRouter, retrievedRouterToDbFields, issueRouterArgs, mapLeaveRequest, mapLeaveAdjustment, mapHoliday, mapDeviceItem, mapContract, contractToDbFields, mapContractChange, mapReceipt } from './lib/mappers'
 import { fetchAll } from './lib/dataIO'
 import { processAvatar } from './lib/image'
 import { currentLeaveYear } from './lib/leave'
@@ -19,6 +19,7 @@ export default function App() {
   const [customers, setCustomers] = useState([])
   const [customerIdsWithJobs, setCustomerIdsWithJobs] = useState(new Set())
   const [retrievedRouters, setRetrievedRouters] = useState([])
+  const [receipts, setReceipts] = useState([])
   const [lastBackup, setLastBackup] = useState({ at: null, by: null })
   const [bankDetails, setBankDetails] = useState({})
   const [leaveRequests, setLeaveRequests] = useState([])
@@ -72,6 +73,7 @@ export default function App() {
       await refreshStockItems()
       await refreshStockIn()
       await refreshStockOut()
+      await refreshReceipts()
     } else {
       await refreshCommissionRate()
     }
@@ -98,6 +100,11 @@ export default function App() {
     const { data, error } = await supabase.from('expenses').select('*')
     if (error) return
     setExpenses((data || []).map(mapExpense))
+  }
+
+  // Receipts sent to customers decide who is Active. Only admins can read them (the database refuses everyone else).
+  async function refreshReceipts() {
+    try { setReceipts((await fetchAll('customer_receipts')).map(mapReceipt)) } catch { /* not an admin, or offline: keep what is shown */ }
   }
 
   async function refreshPlaces() {
@@ -227,6 +234,7 @@ export default function App() {
         setCurrentUser(null)
         setJobs([])
         setAllUsers([])
+        setReceipts([])
         setAuthView('login')
         setBooting(false)
         return
@@ -256,13 +264,15 @@ export default function App() {
   // Other admins' backups show up here without a reload, and the leave numbers refresh when the window regains focus.
   useEffect(() => {
     if (!currentUser) return undefined
-    const onFocus = () => { if (currentUserRef.current) { refreshLeave(); if (currentUserRef.current.role === 'admin') refreshAppSettings() } }
+    const onFocus = () => { if (currentUserRef.current) { refreshLeave(); if (currentUserRef.current.role === 'admin') { refreshAppSettings(); refreshReceipts() } } }
     window.addEventListener('focus', onFocus)
-    let channel = null
+    let channel = null, receiptsChannel = null
     if (currentUser.role === 'admin') {
       channel = supabase.channel('settings-realtime').on('postgres_changes', { event: '*', schema: 'public', table: 'app_settings' }, () => refreshAppSettings()).subscribe()
+      // a receipt sent (or deleted) by another admin changes who is Active, so the list follows it
+      receiptsChannel = supabase.channel('receipts-realtime').on('postgres_changes', { event: '*', schema: 'public', table: 'customer_receipts' }, () => refreshReceipts()).subscribe()
     }
-    return () => { window.removeEventListener('focus', onFocus); if (channel) supabase.removeChannel(channel) }
+    return () => { window.removeEventListener('focus', onFocus); if (channel) supabase.removeChannel(channel); if (receiptsChannel) supabase.removeChannel(receiptsChannel) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser?.id])
 
@@ -850,7 +860,7 @@ export default function App() {
 
   // After an import or restore: reload everything the admin sees.
   async function handleDataChanged() {
-    await Promise.all([refreshJobs(), refreshCustomers(), refreshExpenses(), refreshRetrievedRouters(), refreshLeave(), refreshContracts(), refreshBank(), refreshUsers(), refreshStockItems(), refreshStockIn(), refreshStockOut(), refreshPlaces(), refreshVisits()])
+    await Promise.all([refreshJobs(), refreshCustomers(), refreshExpenses(), refreshRetrievedRouters(), refreshLeave(), refreshContracts(), refreshBank(), refreshUsers(), refreshStockItems(), refreshStockIn(), refreshStockOut(), refreshPlaces(), refreshVisits(), refreshReceipts()])
   }
 
   async function handleAddStockIn(formData) {
@@ -1027,6 +1037,7 @@ export default function App() {
       onSavePolicy: handleSaveLeavePolicy, onAddHoliday: handleAddHoliday, onRemoveHoliday: handleRemoveHoliday, onAddKenyanHolidays: handleAddKenyanHolidays,
     },
     contracts: { byMember: contracts, history: contractHistory, onSave: handleSaveContract },
+    receipts: { rows: receipts, client: supabase, onRefresh: refreshReceipts, notify: showToast },
     routers: { rows: retrievedRouters, deviceItems, onAdd: handleAddRouter, onUpdate: handleUpdateRouter, onSetStatus: handleSetRouterStatus, onDelete: handleDeleteRouter,
       onIssue: handleIssueRouter, onUndoReissue: handleUndoReissue, onMarkWorking: handleMarkRouterWorking, onLink: handleLinkRouters, onSetItems: handleSetRouterItems, onRefresh: handleRefreshStock },
   }
@@ -1034,7 +1045,7 @@ export default function App() {
   return (<>
     {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     {currentUser.role === 'admin'
-      ? <AdminDashboard extras={extras} currentUser={currentUser} users={allUsers} jobs={jobs} customers={customers} expenses={expenses} stockItems={stockItems} stockIn={stockIn} stockOut={stockOut} places={places} visits={visits} onAddPlace={handleAddPlace} onRecordVisit={handleRecordVisit} onDeleteVisit={handleDeleteVisit} onSetPlaceActive={handleSetPlaceActive} onUpdateCustomer={handleUpdateCustomer} onAssignEmployeeNumbers={handleAssignEmployeeNumbers} onDataChanged={handleDataChanged} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAssignJob={handleAssignJob} onPromote={handlePromote} onUpdateDepartment={handleUpdateDepartment} onUpdateProfile={handleUpdateProfile} accessCode={accessCode} onUpdateAccessCode={handleUpdateAccessCode} commissionRate={commissionRate} onUpdateCommissionRate={handleUpdateCommissionRate} onMarkCommissionPaid={handleMarkCommissionPaid} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onMarkTransportPaid={handleMarkTransportPaid} onAddExpense={handleAddExpense} onAddService={handleAddService} onAttachReceipt={handleAttachReceipt} onApproveExpense={handleApproveExpense} onRejectExpense={handleRejectExpense} onMarkExpensePaid={handleMarkExpensePaid} onDeleteExpense={handleDeleteExpense} onViewReceipt={getReceiptUrl} onToggleTeamLead={handleToggleTeamLead} onSetDirector={handleSetDirector} onAddStockItem={handleAddStockItem} onUpdateStockItem={handleUpdateStockItem} onDeleteStockItem={handleDeleteStockItem} onAddStockIn={handleAddStockIn} onAddStockInBatch={handleAddStockInBatch} onAddStockOut={handleAddStockOut} />
+      ? <AdminDashboard extras={extras} currentUser={currentUser} users={allUsers} jobs={jobs} customers={customers} expenses={expenses} stockItems={stockItems} stockIn={stockIn} stockOut={stockOut} places={places} visits={visits} onAddPlace={handleAddPlace} onRecordVisit={handleRecordVisit} onDeleteVisit={handleDeleteVisit} onSetPlaceActive={handleSetPlaceActive} onAssignEmployeeNumbers={handleAssignEmployeeNumbers} onDataChanged={handleDataChanged} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAssignJob={handleAssignJob} onPromote={handlePromote} onUpdateDepartment={handleUpdateDepartment} onUpdateProfile={handleUpdateProfile} accessCode={accessCode} onUpdateAccessCode={handleUpdateAccessCode} commissionRate={commissionRate} onUpdateCommissionRate={handleUpdateCommissionRate} onMarkCommissionPaid={handleMarkCommissionPaid} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onMarkTransportPaid={handleMarkTransportPaid} onAddExpense={handleAddExpense} onAddService={handleAddService} onAttachReceipt={handleAttachReceipt} onApproveExpense={handleApproveExpense} onRejectExpense={handleRejectExpense} onMarkExpensePaid={handleMarkExpensePaid} onDeleteExpense={handleDeleteExpense} onViewReceipt={getReceiptUrl} onToggleTeamLead={handleToggleTeamLead} onSetDirector={handleSetDirector} onAddStockItem={handleAddStockItem} onUpdateStockItem={handleUpdateStockItem} onDeleteStockItem={handleDeleteStockItem} onAddStockIn={handleAddStockIn} onAddStockInBatch={handleAddStockInBatch} onAddStockOut={handleAddStockOut} />
       : <MemberDashboard extras={extras} currentUser={currentUser} jobs={jobs.filter((j) => j.memberId === currentUser.id)} raisedJobs={jobs.filter((j) => j.raisedBy === currentUser.id && j.memberId !== currentUser.id)} customers={customers} customerIdsWithJobs={customerIdsWithJobs} expenses={expenses.filter((e) => e.submittedBy === currentUser.id)} memberNames={memberNames} places={places} visits={visits} onAddPlace={handleAddPlace} onRecordVisit={handleRecordVisit} onDeleteVisit={handleDeleteVisit} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAddCustomer={handleAddCustomer} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onUpdateProfile={handleUpdateProfile} onAddExpense={handleAddExpense} onAttachReceipt={handleAttachReceipt} onDeleteExpense={handleDeleteExpense} onViewReceipt={getReceiptUrl} commissionRate={commissionRate} />}
   </>)
 }

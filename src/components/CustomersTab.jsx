@@ -1,15 +1,33 @@
-import { useMemo, useState } from 'react'
-import { ArrowLeft, Eye, Pencil, Printer, Trash2, Users, X } from 'lucide-react'
+import { Fragment, Suspense, lazy, useMemo, useState } from 'react'
+import { ArrowLeft, ChevronDown, Eye, Pencil, Printer, Trash2, Users, X } from 'lucide-react'
 import Avatar from './Avatar'
+import CustomerReceipts, { SubscriptionBadge } from './CustomerReceipts'
 import { EmptyState, SearchInput } from './shared'
 import { departmentLabel, formatDateTime, isInPeriod } from '../lib/helpers'
+import { SUBSCRIPTION_DAYS, groupReceipts, subscriptionOf } from '../lib/subscription'
+import useNow from '../lib/useNow'
+
+// The screen for sending a receipt is only downloaded when someone presses "Send receipt" (it carries the receipt artwork).
+const SendReceipt = lazy(() => import('./SendReceipt'))
+const FILTERS = [['all', 'All'], ['active', 'Active'], ['inactive', 'Inactive']]
 
 // The admin's Customers tab: the full list, plus a "By staff member" view. Every customer belongs to the staff member who
 // recorded them, and that is fixed once the customer is recorded (it cannot be edited here or anywhere else in the app).
-export default function CustomersTab({ customers, users, userMap, onView, onEdit, onPrint, onDelete, onOpenStaff, initialMemberId }) {
+//
+// Click a customer anywhere on their row to open it: it shows whether they are Active or Inactive, the "Send receipt" button
+// and the receipts already sent. A customer is Active while the 30 days of a receipt that was sent to them have not run out.
+//   receipts : every receipt sent so far      client : the database client      isDirector : only the Director deletes a receipt
+//   onReceiptsChanged : reload the receipts   notify(message, type) : a toast
+export default function CustomersTab({ customers, users, userMap, onView, onEdit, onPrint, onDelete, onOpenStaff, initialMemberId, receipts = [], client, isDirector = false, onReceiptsChanged = async () => {}, notify = () => {} }) {
   const [view, setView] = useState('list')
   const [search, setSearch] = useState('')
   const [who, setWho] = useState(initialMemberId || 'all')          // 'all' | a staff member's id
+  const [subFilter, setSubFilter] = useState('all')                 // 'all' | 'active' | 'inactive'
+  const [openId, setOpenId] = useState(null)                        // the customer whose row is open
+  const [sending, setSending] = useState(null)                      // the customer a receipt is being sent to
+  const now = useNow()
+  const byCustomer = useMemo(() => groupReceipts(receipts), [receipts])
+  const subOf = (c) => subscriptionOf(byCustomer.get(c.id), now)
 
   const rowsByPerson = useMemo(() => {
     const m = new Map(users.map((u) => [u.id, { user: u, total: 0, thisMonth: 0 }]))
@@ -20,13 +38,26 @@ export default function CustomersTab({ customers, users, userMap, onView, onEdit
     return [...m.values()].sort((a, b) => b.total - a.total || a.user.fullName.localeCompare(b.user.fullName))
   }, [customers, users])
 
-  const filtered = useMemo(() => {
+  const base = useMemo(() => {
     const q = search.trim().toLowerCase()
     return [...customers]
       .filter((c) => (who === 'all' ? true : c.recordedBy === who))
       .filter((c) => !q || [c.fullName, c.contact, c.location, userMap[c.recordedBy]?.fullName].some((f) => (f || '').toLowerCase().includes(q)))
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
   }, [customers, search, who, userMap])
+
+  const counts = useMemo(() => {
+    let active = 0
+    for (const c of base) if (subscriptionOf(byCustomer.get(c.id), now).active) active++
+    return { all: base.length, active, inactive: base.length - active }
+  }, [base, byCustomer, now])
+  const filtered = useMemo(() => (subFilter === 'all' ? base : base.filter((c) => subscriptionOf(byCustomer.get(c.id), now).active === (subFilter === 'active'))), [base, subFilter, byCustomer, now])
+
+  // A click anywhere on the row opens it -- except when the click ended a text selection (someone copying a phone number).
+  const toggle = (id) => {
+    if (typeof window !== 'undefined' && window.getSelection && String(window.getSelection()).length > 0) return
+    setOpenId((cur) => (cur === id ? null : id))
+  }
 
   const whoLabel = who !== 'all' ? `${userMap[who]?.fullName || 'Staff member'}'s customers` : null
 
@@ -74,40 +105,77 @@ export default function CustomersTab({ customers, users, userMap, onView, onEdit
               <button type="button" className="sns-icon-btn" title="Show everyone" aria-label="Clear filter" onClick={() => setWho('all')}><X size={14} /></button>
             </p>
           )}
+          <div className="no-print flex items-center gap-2" role="group" aria-label="Show customers by subscription" style={{ marginBottom: '0.8rem', flexWrap: 'wrap' }}>
+            {FILTERS.map(([key, label]) => (
+              <button key={key} type="button" aria-pressed={subFilter === key} className={subFilter === key ? 'sns-btn-primary' : 'sns-btn-secondary'} style={{ fontSize: '0.78rem', padding: '0.4rem 0.85rem' }} onClick={() => setSubFilter(key)}>
+                {label} <span className="sns-mono" style={{ opacity: 0.85 }}>{counts[key]}</span>
+              </button>
+            ))}
+            <span className="sns-text-faint" style={{ fontSize: '0.76rem' }}>Click a customer to send a receipt. Active = a receipt was sent and its {SUBSCRIPTION_DAYS} days have not run out.</span>
+          </div>
           {filtered.length === 0 ? <EmptyState message={customers.length === 0 ? 'No customers recorded yet.' : 'No customers match.'} /> : (
             <div className="sns-card" style={{ overflow: 'hidden' }}>
-              <div style={{ overflowX: 'auto' }}>
+              <div className="sns-scroll-x">
                 <table className="sns-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead><tr>
-                    <th>No.</th><th>Name</th><th>Contact</th><th>Location</th><th>Package installed</th><th>Recorded by</th><th>Date &amp; time</th><th style={{ textAlign: 'right' }}>Actions</th></tr></thead>
+                    <th>No.</th><th>Name</th><th>Subscription</th><th>Contact</th><th>Location</th><th>Package installed</th><th>Recorded by</th><th>Date &amp; time</th><th style={{ textAlign: 'right' }}>Actions</th></tr></thead>
                   <tbody>
-                    {filtered.map((c, idx) => (
-                      <tr key={c.id}>
-                        <td className="sns-mono sns-text-faint">{idx + 1}</td>
-                        <td style={{ fontWeight: 600 }}>{c.fullName}</td>
-                        <td className="sns-text-soft">{c.contact}</td>
-                        <td className="sns-text-soft">{c.location}</td>
-                        <td className="sns-text-soft">{c.interestedPackage || '—'}</td>
-                        <td className="sns-text-soft">
-                          <button type="button" onClick={() => setWho(c.recordedBy)} title="Show everything this person recorded" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'inherit', textDecoration: 'underline dotted' }}>{userMap[c.recordedBy]?.fullName || '—'}</button>
-                        </td>
-                        <td className="sns-text-soft">{formatDateTime(c.createdAt)}</td>
-                        <td>
-                          <div className="flex items-center justify-end gap-1">
-                            <button onClick={() => onView(c)} title="View" aria-label="View" className="sns-icon-btn"><Eye size={15} /></button>
-                            <button onClick={() => onEdit(c)} title="Edit" aria-label="Edit" className="sns-icon-btn"><Pencil size={15} /></button>
-                            <button onClick={() => onPrint(c)} title="Print" aria-label="Print" className="sns-icon-btn"><Printer size={15} /></button>
-                            <button onClick={() => onDelete(c)} title="Delete" aria-label="Delete" className="sns-icon-btn danger"><Trash2 size={15} /></button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                    {filtered.map((c, idx) => {
+                      const sub = subOf(c), open = openId === c.id, mine = byCustomer.get(c.id) || []
+                      const stop = (e) => e.stopPropagation()
+                      return (
+                        <Fragment key={c.id}>
+                          <tr className="sns-row-click" onClick={() => toggle(c.id)} style={open ? { background: 'var(--signal-pale)' } : undefined}>
+                            <td className="sns-mono sns-text-faint">{idx + 1}</td>
+                            <td style={{ fontWeight: 600 }}>
+                              <button type="button" aria-expanded={open} aria-controls={`customer-panel-${c.id}`} aria-label={`${open ? 'Close' : 'Open'} ${c.fullName}`} onClick={(e) => { stop(e); setOpenId(open ? null : c.id) }}
+                                className="flex items-center gap-2" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'inherit', font: 'inherit', fontWeight: 600, textAlign: 'left' }}>
+                                <ChevronDown size={15} aria-hidden="true" style={{ transition: 'transform 0.15s ease', transform: open ? 'none' : 'rotate(-90deg)', flexShrink: 0 }} />
+                                {c.fullName}
+                              </button>
+                            </td>
+                            <td><SubscriptionBadge sub={sub} /></td>
+                            <td className="sns-text-soft">{c.contact}</td>
+                            <td className="sns-text-soft">{c.location}</td>
+                            <td className="sns-text-soft">{c.interestedPackage || '—'}</td>
+                            <td className="sns-text-soft">
+                              <button type="button" onClick={(e) => { stop(e); setWho(c.recordedBy) }} title="Show everything this person recorded" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'inherit', textDecoration: 'underline dotted' }}>{userMap[c.recordedBy]?.fullName || '—'}</button>
+                            </td>
+                            <td className="sns-text-soft">{formatDateTime(c.createdAt)}</td>
+                            <td onClick={stop}>
+                              <div className="flex items-center justify-end gap-1">
+                                <button onClick={() => onView(c)} title="View" aria-label="View" className="sns-icon-btn"><Eye size={15} /></button>
+                                <button onClick={() => onEdit(c)} title="Edit" aria-label="Edit" className="sns-icon-btn"><Pencil size={15} /></button>
+                                <button onClick={() => onPrint(c)} title="Print" aria-label="Print" className="sns-icon-btn"><Printer size={15} /></button>
+                                <button onClick={() => onDelete(c)} title="Delete" aria-label="Delete" className="sns-icon-btn danger"><Trash2 size={15} /></button>
+                              </div>
+                            </td>
+                          </tr>
+                          {open && (
+                            <tr>
+                              <td colSpan={9} style={{ background: 'var(--paper)', padding: 0, cursor: 'default' }}>
+                                <div className="sns-row-panel" style={{ padding: '0.9rem 1.1rem' }}>
+                                  <CustomerReceipts id={`customer-panel-${c.id}`} customer={c} sub={sub} now={now} mine={mine} client={client} isDirector={isDirector}
+                                    onSend={setSending} onEdit={onEdit} onChanged={onReceiptsChanged} notify={notify} />
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
             </div>
           )}
         </>
+      )}
+
+      {sending && (
+        <Suspense fallback={<div role="status" className="no-print flex items-center justify-center" style={{ position: 'fixed', inset: 0, zIndex: 70, background: 'var(--paper)', color: 'var(--ink-faint)', fontSize: '0.9rem' }}>Opening…</div>}>
+          <SendReceipt customer={sending} receipts={receipts} client={client} onSent={onReceiptsChanged} onClose={() => setSending(null)} />
+        </Suspense>
       )}
     </div>
   )

@@ -103,10 +103,10 @@ ok('it is safe to run twice, and it replaces the old rule instead of adding to i
   assert.ok(mig.trim().endsWith("notify pgrst, 'reload schema';"))
 })
 
-ok('the two full scripts are identical and end with update 47', () => {
+ok('the two full scripts are identical and carry update 47 (later updates follow it)', () => {
   const mig = read('supabase/update-47-migration.sql'), rebuild = read('supabase/job-card-rebuild.sql'), schema = read('supabase/schema.sql')
   assert.equal(rebuild, schema, 'job-card-rebuild.sql and schema.sql must be the same file')
-  assert.ok(rebuild.endsWith(mig), 'the full script ends with update 47, byte for byte')
+  assert.ok(rebuild.includes(mig), 'the full script carries update 47, byte for byte')
   assert.ok(rebuild.includes('UPDATE 46 -- safe to run more than once') && rebuild.includes('UPDATE 45 -- safe to run more than once'), 'and still has the earlier updates')
 })
 

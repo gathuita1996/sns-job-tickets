@@ -55,6 +55,8 @@ body { margin: 0; }
 .sns-btn-danger { background: var(--danger); color: white; border: none; }
 .sns-btn-danger:hover:not(:disabled) { background: #8f3626; }
 .sns-btn-link { background: none; border: none; padding: 0; color: var(--signal-deep); font-weight: 600; font-size: 0.8rem; cursor: pointer; font-family: 'IBM Plex Sans', sans-serif; text-decoration: underline; }
+/* a link with a little picture before its words (icons are block-level here, so they need a row to sit in) */
+.sns-link-icon { display: inline-flex; align-items: center; gap: 0.3rem; white-space: nowrap; }
 .sns-badge { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.2rem 0.6rem; border-radius: 999px; font-size: 0.72rem; font-weight: 600; }
 .sns-badge-pending { background: var(--line-soft); color: var(--ink-soft); }
 .sns-badge-progress { background: var(--stamp-pale); color: var(--stamp-deep); }
@@ -78,6 +80,16 @@ body { margin: 0; }
 .sns-icon-btn { padding: 0.4rem; border-radius: 7px; border: none; background: transparent; cursor: pointer; color: var(--ink-faint); transition: background 0.15s, color 0.15s; display: inline-flex; }
 .sns-icon-btn:hover { background: var(--line-soft); color: var(--ink); }
 .sns-icon-btn.danger:hover { background: var(--danger-pale); color: var(--danger); }
+
+/* A panel that opens under a row of a wide table (the customer's receipts) must stay in view when the table is scrolled
+   sideways on a phone: it is as wide as the visible part of the table and sticks to its left edge. Where the browser does
+   not know container units it is simply as wide as the table, as before. */
+.sns-scroll-x { overflow-x: auto; }
+.sns-row-panel { position: sticky; left: 0; box-sizing: border-box; width: 100%; }
+@supports (width: 1cqw) {
+  .sns-scroll-x { container-type: inline-size; }
+  .sns-row-panel { width: 100cqw; }
+}
 .sns-fade-in { animation: snsFadeIn 0.5s ease; }
 @keyframes snsFadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes snsSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }

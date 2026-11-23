@@ -28,6 +28,9 @@ export const TABLES = [
   { table: 'stock_out', sheet: 'Stock Out', idMap: true, sig: 'quantity', profile: { recorded_by: true }, fk: { item_id: 'stock_items', customer_id: 'customers' }, fkRequired: ['item_id'] },
   { table: 'visits', sheet: 'Visits', profile: { visited_by: true }, fk: { place_id: 'places' }, fkRequired: ['place_id'] },
   { table: 'retrieved_routers', sheet: 'Retrieved Routers', profile: { recorded_by: true, retrieved_by: false, status_updated_by: false }, fk: { customer_id: 'customers', stock_item_id: 'stock_items', stock_in_id: 'stock_in', writeoff_stock_out_id: 'stock_out', reissue_stock_out_id: 'stock_out' } },
+  // Receipts sent to customers (what makes a customer Active). A payment that is already in the system is reused, never doubled; the PDF copies are not in the file, so the link is cleared and the PDF is made again when a receipt is opened or sent again.
+  { table: 'customer_receipts', sheet: 'Customer Receipts', profile: { sent_by: false }, fk: { customer_id: 'customers' }, clear: ['file_path'],
+    match: { select: 'id,mpesa_code', key: (r) => String(r.mpesa_code || '').trim().toUpperCase() } },
   // Contracts and leave can only be restored by the Director (contracts first: they decide who has leave), and a row the leave rules refuse is skipped and reported instead of stopping everything.
   { table: 'staff_contracts', sheet: 'Contracts', directorOnly: true, profile: { member_id: true, updated_by: false }, match: { select: 'id,member_id', key: (r) => String(r.member_id) } },
   { table: 'non_working_days', sheet: 'Public Holidays', directorOnly: true, profile: { created_by: false }, match: { select: 'id,day', key: (r) => String(r.day) } },
@@ -74,6 +77,7 @@ const INFO = {
   stock_out: (r, c) => ({ '(info) Item': c.item(r.item_id), '(info) Customer': c.customer(r.customer_id), '(info) Recorded by': c.name(r.recorded_by) }),
   visits: (r, c) => ({ '(info) Place': c.place(r.place_id), '(info) Visited by': c.name(r.visited_by) }),
   retrieved_routers: (r, c) => ({ '(info) Customer': c.customer(r.customer_id), '(info) Recorded by': c.name(r.recorded_by), '(info) Retrieved by': c.name(r.retrieved_by) }),
+  customer_receipts: (r, c) => ({ '(info) Customer': c.customer(r.customer_id), '(info) Sent by': c.name(r.sent_by) }),
   leave_requests: (r, c) => ({ '(info) Staff member': c.name(r.member_id), '(info) Decided by': c.name(r.decided_by) }),
   leave_adjustments: (r, c) => ({ '(info) Staff member': c.name(r.member_id) }),
   staff_contracts: (r, c) => ({ '(info) Staff member': c.name(r.member_id) }),
@@ -116,6 +120,7 @@ export function buildWorkbook(ExcelJS, data, { includePersonal = false, exported
   about.addRow(['Exported by', exportedBy])
   about.addRow(['Staff personal details included', includePersonal ? 'Yes - keep this file safe' : 'No'])
   about.addRow(['Receipt photos', 'Not included (they stay in the system)'])
+  about.addRow(['Customer receipt PDFs', 'Not included (each one is made again from its details whenever it is opened)'])
   about.addRow(['Profile pictures and bank details', 'Not included (staff add them again if the system is ever rebuilt)'])
   about.addRow([])
   about.addRow(['Sheet', 'Records']); about.getRow(about.rowCount).font = { bold: true }
