@@ -2,6 +2,7 @@
 // field names as the original artifact (jobId, jobType, requestedBy, ...).
 // Keeping that mapping in one place means the rest of the app barely
 // changed when the storage layer moved from window.storage to Postgres.
+import { eatDateKey } from './eat.js'
 
 export function mapProfile(row) {
   return {
@@ -354,6 +355,8 @@ export function mapReceipt(row) {
     amount: Number(row.amount) || 0,
     paidAt: row.paid_at,
     validUntil: row.valid_until,
+    // the Kenya date the subscription runs through ("2026-12-21"); a row that has none yet gets it from the end moment
+    expiresOn: row.expires_on ? String(row.expires_on).slice(0, 10) : (row.valid_until ? eatDateKey(new Date(new Date(row.valid_until).getTime() - 1)) : null),
     daysCovered: Number(row.days_covered) || 30,
     payerName: row.payer_name || '',
     accountRef: row.account_ref || '',
@@ -362,5 +365,27 @@ export function mapReceipt(row) {
     sentVia: row.sent_via || 'whatsapp',
     sentBy: row.sent_by || null,
     sentAt: row.sent_at,
+  }
+}
+
+// One message the server handed to WhatsApp for a receipt (a row of the log kept in receipt_messages).
+export function mapReceiptMessage(row) {
+  return {
+    id: row.id,
+    receiptId: row.receipt_id,
+    channel: row.channel || 'whatsapp',
+    recipient: row.recipient || '',
+    template: row.template || null,
+    waMessageId: row.wa_message_id || null,
+    status: row.status || 'queued',
+    errorCode: row.error_code == null ? null : Number(row.error_code),
+    errorText: row.error_text || '',
+    createdBy: row.created_by || null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    sentAt: row.sent_at || null,
+    deliveredAt: row.delivered_at || null,
+    readAt: row.read_at || null,
+    failedAt: row.failed_at || null,
   }
 }

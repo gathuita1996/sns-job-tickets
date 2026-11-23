@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from './lib/supabaseClient'
-import { mapProfile, mapJob, jobToDbFields, mapCustomer, customerToDbFields, mapExpense, expenseToDbFields, serviceToDbFields, mapStockItem, stockItemToDbFields, mapStockIn, stockInToDbFields, mapStockOut, stockOutToDbFields , mapPlace, placeToDbFields, mapVisit, visitToDbFields, mapBank, bankToDbFields, mapRetrievedRouter, retrievedRouterToDbFields, issueRouterArgs, mapLeaveRequest, mapLeaveAdjustment, mapHoliday, mapDeviceItem, mapContract, contractToDbFields, mapContractChange, mapReceipt } from './lib/mappers'
+import { mapProfile, mapJob, jobToDbFields, mapCustomer, customerToDbFields, mapExpense, expenseToDbFields, serviceToDbFields, mapStockItem, stockItemToDbFields, mapStockIn, stockInToDbFields, mapStockOut, stockOutToDbFields , mapPlace, placeToDbFields, mapVisit, visitToDbFields, mapBank, bankToDbFields, mapRetrievedRouter, retrievedRouterToDbFields, issueRouterArgs, mapLeaveRequest, mapLeaveAdjustment, mapHoliday, mapDeviceItem, mapContract, contractToDbFields, mapContractChange, mapReceipt, mapReceiptMessage } from './lib/mappers'
 import { fetchAll } from './lib/dataIO'
 import { processAvatar } from './lib/image'
 import { currentLeaveYear } from './lib/leave'
@@ -20,6 +20,7 @@ export default function App() {
   const [customerIdsWithJobs, setCustomerIdsWithJobs] = useState(new Set())
   const [retrievedRouters, setRetrievedRouters] = useState([])
   const [receipts, setReceipts] = useState([])
+  const [receiptMessages, setReceiptMessages] = useState([])
   const [lastBackup, setLastBackup] = useState({ at: null, by: null })
   const [bankDetails, setBankDetails] = useState({})
   const [leaveRequests, setLeaveRequests] = useState([])
@@ -74,6 +75,7 @@ export default function App() {
       await refreshStockIn()
       await refreshStockOut()
       await refreshReceipts()
+      await refreshReceiptMessages()
     } else {
       await refreshCommissionRate()
     }
@@ -105,6 +107,16 @@ export default function App() {
   // Receipts sent to customers decide who is Active. Only admins can read them (the database refuses everyone else).
   async function refreshReceipts() {
     try { setReceipts((await fetchAll('customer_receipts')).map(mapReceipt)) } catch { /* not an admin, or offline: keep what is shown */ }
+  }
+
+  // What went out on WhatsApp for each receipt, and whether it was delivered or read. Only admins can read it. The newest 2,000
+  // are kept on screen, which is far more than the receipts anyone looks at.
+  async function refreshReceiptMessages() {
+    try {
+      const { data, error } = await supabase.from('receipt_messages').select('*').order('created_at', { ascending: false }).limit(2000)
+      if (error) throw error
+      setReceiptMessages((data || []).map(mapReceiptMessage))
+    } catch { /* not an admin, the update has not been applied yet, or offline: keep what is shown */ }
   }
 
   async function refreshPlaces() {
@@ -235,6 +247,7 @@ export default function App() {
         setJobs([])
         setAllUsers([])
         setReceipts([])
+        setReceiptMessages([])
         setAuthView('login')
         setBooting(false)
         return
@@ -264,13 +277,17 @@ export default function App() {
   // Other admins' backups show up here without a reload, and the leave numbers refresh when the window regains focus.
   useEffect(() => {
     if (!currentUser) return undefined
-    const onFocus = () => { if (currentUserRef.current) { refreshLeave(); if (currentUserRef.current.role === 'admin') { refreshAppSettings(); refreshReceipts() } } }
+    const onFocus = () => { if (currentUserRef.current) { refreshLeave(); if (currentUserRef.current.role === 'admin') { refreshAppSettings(); refreshReceipts(); refreshReceiptMessages() } } }
     window.addEventListener('focus', onFocus)
     let channel = null, receiptsChannel = null
     if (currentUser.role === 'admin') {
       channel = supabase.channel('settings-realtime').on('postgres_changes', { event: '*', schema: 'public', table: 'app_settings' }, () => refreshAppSettings()).subscribe()
       // a receipt sent (or deleted) by another admin changes who is Active, so the list follows it
-      receiptsChannel = supabase.channel('receipts-realtime').on('postgres_changes', { event: '*', schema: 'public', table: 'customer_receipts' }, () => refreshReceipts()).subscribe()
+      // ...and WhatsApp's news about a message (sent, delivered, read, failed) shows up as it arrives
+      receiptsChannel = supabase.channel('receipts-realtime')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_receipts' }, () => refreshReceipts())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'receipt_messages' }, () => refreshReceiptMessages())
+        .subscribe()
     }
     return () => { window.removeEventListener('focus', onFocus); if (channel) supabase.removeChannel(channel); if (receiptsChannel) supabase.removeChannel(receiptsChannel) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -860,7 +877,7 @@ export default function App() {
 
   // After an import or restore: reload everything the admin sees.
   async function handleDataChanged() {
-    await Promise.all([refreshJobs(), refreshCustomers(), refreshExpenses(), refreshRetrievedRouters(), refreshLeave(), refreshContracts(), refreshBank(), refreshUsers(), refreshStockItems(), refreshStockIn(), refreshStockOut(), refreshPlaces(), refreshVisits(), refreshReceipts()])
+    await Promise.all([refreshJobs(), refreshCustomers(), refreshExpenses(), refreshRetrievedRouters(), refreshLeave(), refreshContracts(), refreshBank(), refreshUsers(), refreshStockItems(), refreshStockIn(), refreshStockOut(), refreshPlaces(), refreshVisits(), refreshReceipts(), refreshReceiptMessages()])
   }
 
   async function handleAddStockIn(formData) {
@@ -1037,7 +1054,7 @@ export default function App() {
       onSavePolicy: handleSaveLeavePolicy, onAddHoliday: handleAddHoliday, onRemoveHoliday: handleRemoveHoliday, onAddKenyanHolidays: handleAddKenyanHolidays,
     },
     contracts: { byMember: contracts, history: contractHistory, onSave: handleSaveContract },
-    receipts: { rows: receipts, client: supabase, onRefresh: refreshReceipts, notify: showToast },
+    receipts: { rows: receipts, messages: receiptMessages, client: supabase, onRefresh: refreshReceipts, onRefreshMessages: refreshReceiptMessages, notify: showToast },
     routers: { rows: retrievedRouters, deviceItems, onAdd: handleAddRouter, onUpdate: handleUpdateRouter, onSetStatus: handleSetRouterStatus, onDelete: handleDeleteRouter,
       onIssue: handleIssueRouter, onUndoReissue: handleUndoReissue, onMarkWorking: handleMarkRouterWorking, onLink: handleLinkRouters, onSetItems: handleSetRouterItems, onRefresh: handleRefreshStock },
   }

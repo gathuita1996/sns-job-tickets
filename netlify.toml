@@ -2,9 +2,17 @@
   command = "npm run build"
   publish = "dist"
 
+# Update 49: the two functions behind automatic WhatsApp sending (netlify/functions). Netlify builds them with esbuild,
+# which also pulls in the shared code from netlify/lib and src/lib. They only do something once the settings in
+# WHATSAPP-SETUP.md are in place; until then the app opens WhatsApp for you to press Send.
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
 # Single-page app: any path that isn't a real file falls back to index.html.
 # Not strictly needed today (the app has no URL routing yet) but it's the
 # standard safety net if routing gets added later.
+# (Addresses under /.netlify/functions/ are not caught by this: Netlify answers those first.)
 [[redirects]]
   from = "/*"
   to = "/index.html"

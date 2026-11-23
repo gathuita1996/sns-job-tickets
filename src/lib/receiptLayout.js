@@ -9,11 +9,11 @@
 // on screen as the preview (ReceiptPreview.jsx) -- so what you check on screen is what the customer gets.
 import { HELVETICA, HELVETICA_BOLD } from './pdfMetrics.js'
 import { WATERMARK_PATHS } from './receiptWatermark.js'
-import { formatEatDateTime, formatEatDateTimeComma } from './eat.js'
-import { SUBSCRIPTION_DAYS, subscriptionEnd } from './subscription.js'
-import { formatReceiptMoney, subscriptionNote } from './receiptText.js'
+import { formatEatDateTime } from './eat.js'
+import { SUBSCRIPTION_DAYS, paymentExpiryKey } from './subscription.js'
+import { expiryNote, formatReceiptMoney, subscriptionNote } from './receiptText.js'
 
-export { formatReceiptMoney, receiptFileName, subscriptionNote } from './receiptText.js'
+export { expiryNote, formatReceiptMoney, receiptFileName, subscriptionNote } from './receiptText.js'
 
 export const PAGE = { w: 612, h: 792 }
 export const METHOD = 'M-Pesa'
@@ -68,7 +68,7 @@ export function fitText(font, size, text, max) {
 }
 
 // ---- the page ----------------------------------------------------------------------------------------------------
-// m = { customerName, paidAt (a Date), amount, code, receiptNo, days }
+// m = { customerName, paidAt (a Date), amount, code, receiptNo, days, expiresOn ("2026-12-21") }
 export function buildReceiptLayout(m) {
   const days = m.days || SUBSCRIPTION_DAYS
   const items = []
@@ -111,11 +111,10 @@ export function buildReceiptLayout(m) {
   textRight(rights[2], 435.67, SIZE.body, 'regular', formatReceiptMoney(0))
 
   // ---- the note about how long the subscription runs
-  const end = subscriptionEnd(m.paidAt, days)
   rect(43.2, 366, 3, 46, BLUE)
   text(53, 402, 7.5, 'bold', 'NOTE', BLUE)
   text(53, 388, 10, 'bold', subscriptionNote(days))
-  text(53, 373.5, 9, 'regular', `Valid until ${formatEatDateTimeComma(end)}.`, SOFT_TEXT)
+  text(53, 373.5, 9, 'regular', expiryNote(m.expiresOn || paymentExpiryKey(m.paidAt, days)), SOFT_TEXT)
 
   // ---- footer
   rect(34.56, 108.26, 543, 0.96, BLUE)

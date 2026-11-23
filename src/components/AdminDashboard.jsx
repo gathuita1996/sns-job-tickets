@@ -501,7 +501,7 @@ export default function AdminDashboard({ extras, currentUser, users, jobs, custo
 
         {tab === 'customers' && (
           <CustomersTab key={customersFocus || 'all'} customers={customers} users={users} userMap={userMap} initialMemberId={customersFocus} onView={setViewingCustomer} onEdit={setEditingCustomer} onPrint={setPrintingCustomer} onDelete={setConfirmDeleteCustomer} onOpenStaff={(id) => setViewingStaffId(id)}
-            receipts={receipts} client={receiptsApi.client} isDirector={Boolean(currentUser.isDirector)} onReceiptsChanged={receiptsApi.onRefresh} notify={receiptsApi.notify} />
+            receipts={receipts} messages={receiptsApi.messages || []} client={receiptsApi.client} isDirector={Boolean(currentUser.isDirector)} onReceiptsChanged={receiptsApi.onRefresh} onMessagesChanged={receiptsApi.onRefreshMessages} notify={receiptsApi.notify} />
         )}
 
 

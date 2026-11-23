@@ -1,20 +1,22 @@
-// Update 48: customer receipts, and "Active / Inactive" worked out from them.
-// Plain logic only (no browser, no database): the M-Pesa message reader, Kenya time, the 30-day subscription rule, the
-// WhatsApp number / message / link, invoice numbers, the PDF, saving and deleting a receipt (against a pretend database),
-// and the SQL files that carry the rules to the real one.
+// Updates 48 and 49: customer receipts, and "Active / Inactive" worked out from them.
+// Plain logic only (no browser, no database): the M-Pesa message reader, Kenya time and Kenya calendar days, the expiry date
+// (30 days from the payment, or from what was left when the customer paid early, and editable), the WhatsApp number /
+// message / link, invoice numbers (SNS/26/1008), the PDF, saving and deleting a receipt (against a pretend database), and
+// the SQL files that carry the rules to the real one. (The same rules are also run against a real PostgreSQL by the
+// maintainer's database tests; those are not part of the shipped app.)
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parseMpesaMessage, MAX_AMOUNT } from '../src/lib/mpesa.js'
-import { eatMonth2, eatToDate, formatEatDate, formatEatDateTime, formatEatDateTimeComma, formatEatTime } from '../src/lib/eat.js'
-import { ENDING_SOON_DAYS, SUBSCRIPTION_DAYS, describeSubscription, endMoment, groupReceipts, subscriptionEnd, subscriptionFor, subscriptionMap, subscriptionOf } from '../src/lib/subscription.js'
+import { addDaysToKey, dayKeyOf, dayNumberOfKey, eatDateKey, eatDayNumber, eatToDate, eatYear2, endOfDayKey, formatDayKey, formatEatDate, formatEatDateTime, formatEatDateTimeComma, formatEatTime } from '../src/lib/eat.js'
+import { ENDING_SOON_DAYS, SUBSCRIPTION_DAYS, describeSubscription, endLabel, expiryKeyOf, groupReceipts, paymentExpiryKey, subscriptionFor, subscriptionMap, subscriptionOf, suggestExpiry } from '../src/lib/subscription.js'
 import { formatWhatsappNumber, whatsappNumber } from '../src/lib/phone.js'
 import { openPendingWindow } from '../src/lib/whatsapp.js'
-import { formatReceiptMoney, receiptFileName, subscriptionNote } from '../src/lib/receiptText.js'
-import { LAST_NUMBER_USED, RECEIPT_BUCKET, ReceiptError, buildWhatsAppMessage, checkReceiptNo, customerDisplayName, deleteReceipt, issueReceipt, linkForReceipt, makeReceiptPdf, messageForReceipt, modelFromReceipt, namesAlike, planReceiptFile, receiptModel, suggestReceiptNo, whatsappUrl } from '../src/lib/receipts.js'
+import { expiryNote, formatReceiptMoney, receiptFileName, subscriptionNote, subscriptionSentence } from '../src/lib/receiptText.js'
+import { LAST_NUMBER_USED, MAX_EXPIRY_DAYS, RECEIPT_BUCKET, RECEIPT_PREFIX, ReceiptError, buildWhatsAppMessage, checkReceiptNo, customerDisplayName, deleteReceipt, ensureReceiptFile, issueReceipt, linkForReceipt, checkExpiry, makeReceiptPdf, messageForReceipt, modelFromReceipt, namesAlike, planReceiptFile, receiptModel, suggestReceiptNo, whatsappUrl } from '../src/lib/receipts.js'
 import { buildReceiptLayout } from '../src/lib/receiptLayout.js'
-import { mapReceipt } from '../src/lib/mappers.js'
+import { mapReceipt, mapReceiptMessage } from '../src/lib/mappers.js'
 
 let n = 0
 const ok = async (name, fn) => { try { await fn(); n++ } catch (e) { console.error('FAIL', name, '\n', e && e.stack ? e.stack : e); process.exitCode = 1 } }
@@ -28,7 +30,8 @@ const MSG = 'UKL41383DB Confirmed. KES 2,000.00 received from VISHWAKARMA VIVEK 
 const PAID = '2026-11-21T14:50:00.000Z'
 const parse = (text, now = NOW) => parseMpesaMessage(text, { now })
 const iso = (t) => new Date(t).toISOString()
-const rec = (id, customerId, paidAtIso, days = 30) => ({ id, customerId, paidAt: paidAtIso, validUntil: new Date(Date.parse(paidAtIso) + days * DAY).toISOString(), daysCovered: days })
+// a receipt as the app holds it: runs through `expiresOn` (the payment date + days unless given), and ends at midnight at the end of that day
+const rec = (id, customerId, paidAtIso, days = 30, expiresOn = paymentExpiryKey(paidAtIso, days)) => ({ id, customerId, paidAt: paidAtIso, expiresOn, validUntil: endOfDayKey(expiresOn).toISOString(), daysCovered: days })
 
 // ======================================================================================================================
 // 1. Reading the M-Pesa message
@@ -143,7 +146,7 @@ await ok('the code is kept in capitals even when the message is typed in small l
 })
 
 // ======================================================================================================================
-// 2. Kenya time
+// 2. Kenya time and Kenya calendar days
 // ======================================================================================================================
 await ok('dates and times are always Kenya time (UTC+3), including across midnight, month ends and the new year', () => {
   assert.equal(formatEatDate(PAID), '21 Nov 2026')
@@ -154,9 +157,15 @@ await ok('dates and times are always Kenya time (UTC+3), including across midnig
   assert.equal(formatEatDateTime('2026-11-30T20:59:59Z'), '30 Nov 2026 11:59 PM')
   assert.equal(formatEatDateTime('2026-12-31T21:30:00Z'), '1 Jan 2027 12:30 AM')
   assert.equal(formatEatDateTime('2026-11-21T09:00:00Z'), '21 Nov 2026 12:00 PM')
-  assert.equal(eatMonth2('2026-11-30T20:59:59Z'), '11')
-  assert.equal(eatMonth2('2026-11-30T21:00:00Z'), '12')
-  assert.equal(eatMonth2('2026-12-31T21:00:00Z'), '01')
+})
+
+await ok('the year on an invoice number is the last two digits of the year in Kenya', () => {
+  assert.equal(eatYear2(PAID), '26')
+  assert.equal(eatYear2('2026-12-31T20:59:59Z'), '26')
+  assert.equal(eatYear2('2026-12-31T21:00:00Z'), '27')                                   // 00:00 on 1 January in Kenya
+  assert.equal(eatYear2('2027-01-01T00:00:00Z'), '27')
+  assert.equal(eatYear2('2099-12-31T21:00:00Z'), '00')
+  assert.equal(eatYear2('2005-06-01T00:00:00Z'), '05')
 })
 
 await ok('a Kenyan wall-clock time becomes the right moment, and a date that does not exist becomes nothing', () => {
@@ -166,18 +175,50 @@ await ok('a Kenyan wall-clock time becomes the right moment, and a date that doe
   for (const bad of [[2026, 2, 29, 1, 1], [2026, 4, 31, 1, 1], [2026, 13, 1, 1, 1], [2026, 0, 1, 1, 1], [2026, 1, 0, 1, 1], [2026, 1, 1, 24, 0], [2026, 1, 1, 1, 60], [2026, 1.5, 1, 1, 1], [NaN, 1, 1, 1, 1]]) assert.equal(eatToDate(...bad), null, bad.join(','))
 })
 
-await ok('the answers do not depend on the time zone of the computer: the same on seven different clocks', () => {
+await ok('a date on Kenya\'s calendar is written "2026-12-21" and counted in whole days, right through month ends, year ends and leap days', () => {
+  assert.equal(dayNumberOfKey('1970-01-01'), 0)
+  assert.equal(dayNumberOfKey('2026-12-21'), 20808)
+  assert.equal(dayKeyOf(20808), '2026-12-21')
+  assert.equal(dayKeyOf(0), '1970-01-01')
+  assert.equal(dayNumberOfKey('2026-12-22') - dayNumberOfKey('2026-12-21'), 1)
+  assert.equal(dayNumberOfKey(' 2026-12-21 '), 20808)                                     // spaces around it do not matter
+  for (const bad of ['', null, undefined, 'soon', '2026-13-01', '2026-02-30', '2026-2-3', '21/12/2026', '2026-12-21T10:00', 20261221, '2026-00-10', '2026-12-00']) assert.equal(dayNumberOfKey(bad), null, String(bad))
+  assert.equal(dayNumberOfKey('2028-02-29') - dayNumberOfKey('2028-02-28'), 1)             // a leap day
+  assert.equal(dayNumberOfKey('2026-02-29'), null)
+  assert.equal(dayNumberOfKey('2027-01-01') - dayNumberOfKey('2026-12-31'), 1)
+  assert.equal(addDaysToKey('2026-12-21', 30), '2027-01-20')
+  assert.equal(addDaysToKey('2026-01-31', 30), '2026-03-02')                              // 30 days, not "one month"
+  assert.equal(addDaysToKey('2026-12-21', -21), '2026-11-30')
+  assert.equal(addDaysToKey('nope', 3), null)
+  assert.equal(formatDayKey('2026-12-21'), '21 Dec 2026')
+  assert.equal(formatDayKey('2027-01-05'), '5 Jan 2027')
+  assert.equal(formatDayKey('junk'), ''); assert.equal(formatDayKey(null), ''); assert.equal(formatDayKey(''), '')
+})
+
+await ok('the Kenya day a moment falls on changes at 21:00 UTC, and a subscription that runs through a day ends at midnight Kenya time', () => {
+  assert.equal(eatDateKey('2026-12-21T20:59:59Z'), '2026-12-21')
+  assert.equal(eatDateKey('2026-12-21T21:00:00Z'), '2026-12-22')
+  assert.equal(eatDateKey(PAID), '2026-11-21')
+  assert.equal(eatDayNumber('2026-12-21T21:00:00Z') - eatDayNumber('2026-12-21T20:59:59Z'), 1)
+  assert.equal(endOfDayKey('2026-12-21').toISOString(), '2026-12-21T21:00:00.000Z')         // 00:00 on 22 December in Kenya
+  assert.equal(endOfDayKey('2026-12-31').toISOString(), '2026-12-31T21:00:00.000Z')
+  assert.equal(endOfDayKey('nope'), null)
+})
+
+await ok('the answers do not depend on the time zone of the computer: the same on eight different clocks', () => {
   const code = `
     import { parseMpesaMessage } from ${JSON.stringify(pathToFileURL(root + 'src/lib/mpesa.js').href)}
-    import { formatEatDateTime, eatMonth2 } from ${JSON.stringify(pathToFileURL(root + 'src/lib/eat.js').href)}
-    import { subscriptionEnd, subscriptionOf, describeSubscription } from ${JSON.stringify(pathToFileURL(root + 'src/lib/subscription.js').href)}
+    import { eatYear2, endOfDayKey, formatEatDateTime } from ${JSON.stringify(pathToFileURL(root + 'src/lib/eat.js').href)}
+    import { describeSubscription, paymentExpiryKey, subscriptionOf, suggestExpiry } from ${JSON.stringify(pathToFileURL(root + 'src/lib/subscription.js').href)}
     const now = new Date('2026-11-23T08:00:00Z')
     const p = parseMpesaMessage(${JSON.stringify(MSG)}, { now }).payment
-    const end = subscriptionEnd(p.paidAt)
-    const s = subscriptionOf([{ id: 1, customerId: 1, paidAt: p.paidAt.toISOString(), validUntil: end.toISOString() }], now)
-    // a payment just before the clocks go back in New York / London (30 days must still be exactly 30 x 24 hours)
-    const across = subscriptionEnd('2026-10-20T12:00:00Z')
-    console.log(JSON.stringify({ paidAt: p.paidAt.toISOString(), shown: formatEatDateTime(p.paidAt), month: eatMonth2(p.paidAt), end: end.toISOString(), line: describeSubscription(s, now), active: s.active, left: s.daysLeft, across: across.toISOString() }))`
+    const expiresOn = paymentExpiryKey(p.paidAt)
+    const receipt = { id: 1, customerId: 1, paidAt: p.paidAt.toISOString(), expiresOn, validUntil: endOfDayKey(expiresOn).toISOString() }
+    const s = subscriptionOf([receipt], now)
+    // paying again late in the Kenya evening (already "tomorrow" in UTC), and 30 days across the time when clocks change in Europe and America
+    const early = suggestExpiry({ paidAt: '2026-12-01T20:30:00Z', receipts: [receipt] })
+    const across = paymentExpiryKey('2026-10-20T12:00:00Z')
+    console.log(JSON.stringify({ paidAt: p.paidAt.toISOString(), shown: formatEatDateTime(p.paidAt), year: eatYear2(p.paidAt), expiresOn, end: receipt.validUntil, line: describeSubscription(s, now), active: s.active, left: s.daysLeft, early, across }))`
   const results = new Map()
   for (const tz of ['UTC', 'Africa/Nairobi', 'America/Los_Angeles', 'America/New_York', 'Europe/London', 'Asia/Kolkata', 'Pacific/Auckland', 'Pacific/Kiritimati']) {
     const out = execFileSync(process.execPath, ['--input-type=module', '-e', code], { env: { ...process.env, TZ: tz }, encoding: 'utf8' })
@@ -186,54 +227,70 @@ await ok('the answers do not depend on the time zone of the computer: the same o
   const first = [...results.values()][0]
   for (const [tz, out] of results) assert.equal(out, first, `time zone ${tz}`)
   const r = JSON.parse(first)
-  assert.deepEqual(r, { paidAt: PAID, shown: '21 Nov 2026 05:50 PM', month: '11', end: '2026-12-21T14:50:00.000Z', line: 'Until 21 Dec 2026 · 28 days left', active: true, left: 28, across: '2026-11-19T12:00:00.000Z' })
+  assert.deepEqual(r, {
+    paidAt: PAID, shown: '21 Nov 2026 05:50 PM', year: '26', expiresOn: '2026-12-21', end: '2026-12-21T21:00:00.000Z', line: 'Until 21 Dec 2026 · 28 days left', active: true, left: 28,
+    early: { key: '2027-01-20', carried: true, previousKey: '2026-12-21', leftDays: 20, paymentKey: '2026-12-31' }, across: '2026-11-19',
+  })
 })
 
 // ======================================================================================================================
-// 3. Active or Inactive: the 30-day rule
+// 3. Active or Inactive: the expiry date
 // ======================================================================================================================
-await ok('the subscription runs for 30 days, exactly 30 x 24 hours, from the moment of payment', () => {
+await ok('a payment buys 30 days: the subscription runs through the date 30 days after the payment date, Kenya time', () => {
   assert.equal(SUBSCRIPTION_DAYS, 30)
-  assert.equal(subscriptionEnd(PAID).toISOString(), '2026-12-21T14:50:00.000Z')
-  assert.equal(formatEatDateTimeComma(subscriptionEnd(PAID)), '21 Dec 2026, 05:50 PM')
-  assert.equal(subscriptionEnd('2026-01-31T10:00:00Z').toISOString(), '2026-03-02T10:00:00.000Z')            // 30 days, not "one month"
-  assert.equal(subscriptionEnd(PAID, 7).toISOString(), '2026-11-28T14:50:00.000Z')
+  assert.equal(paymentExpiryKey(PAID), '2026-12-21')
+  assert.equal(paymentExpiryKey('2026-01-31T10:00:00Z'), '2026-03-02')                    // 30 days, not "one month"
+  assert.equal(paymentExpiryKey(PAID, 7), '2026-11-28')
+  assert.equal(paymentExpiryKey('2026-11-30T21:30:00Z'), '2026-12-31')                    // 00:30 on 1 December in Kenya
+  assert.equal(paymentExpiryKey('2026-11-30T20:30:00Z'), '2026-12-30')                    // 23:30 on 30 November in Kenya
+})
+
+await ok('the expiry date of a receipt is its own date; a receipt without one (from before this update) ends on the day before its end moment', () => {
+  assert.equal(expiryKeyOf({ expiresOn: '2026-12-21', validUntil: '2026-12-21T21:00:00Z' }), '2026-12-21')
+  assert.equal(expiryKeyOf({ expiresOn: '2027-03-01', validUntil: '2026-12-21T21:00:00Z' }), '2027-03-01')         // what was set wins
+  assert.equal(expiryKeyOf({ validUntil: '2026-12-21T21:00:00Z' }), '2026-12-21')                                  // midnight at the end of 21 Dec
+  assert.equal(expiryKeyOf({ validUntil: '2026-12-21T14:50:00Z' }), '2026-12-21')                                  // an update-48 receipt: the exact moment, 30 days on
+  assert.equal(expiryKeyOf({ validUntil: '2026-12-21T21:00:00.001Z' }), '2026-12-22')
+  assert.equal(expiryKeyOf({ expiresOn: 'junk', validUntil: '2026-12-21T21:00:00Z' }), '2026-12-21')
+  assert.equal(expiryKeyOf({ expiresOn: null, validUntil: '2026-12-21T21:00:00Z' }), '2026-12-21')
 })
 
 await ok('someone who has never been sent a receipt is Inactive', () => {
   for (const none of [[], null, undefined]) {
     const s = subscriptionOf(none, NOW)
-    assert.equal(s.active, false); assert.equal(s.never, true); assert.equal(s.validUntil, null); assert.equal(s.receipt, null)
+    assert.equal(s.active, false); assert.equal(s.never, true); assert.equal(s.validUntil, null); assert.equal(s.expiresOn, null); assert.equal(s.receipt, null)
     assert.equal(describeSubscription(s, NOW), 'No receipt sent yet')
-    assert.equal(endMoment(s), '')
+    assert.equal(endLabel(s), '')
   }
 })
 
-await ok('Active up to the last second of the 30 days, Inactive from the very moment they end', () => {
-  const r = rec(1, 7, PAID)
+await ok('Active through the END of the expiry date, Inactive from the very next midnight (Kenya time)', () => {
+  const r = rec(1, 7, PAID)                                                              // runs through 21 Dec
   const at = (t) => subscriptionOf([r], new Date(t))
-  assert.equal(at('2026-11-21T14:50:00.000Z').active, true)              // the moment of payment
-  assert.equal(at('2026-11-21T14:49:59.000Z').active, true)              // (a clock a second behind)
-  assert.equal(at('2026-12-21T14:49:59.999Z').active, true)
-  assert.equal(at('2026-12-21T14:50:00.000Z').active, false)
-  assert.equal(at('2026-12-21T14:50:00.001Z').active, false)
+  assert.equal(at('2026-11-21T14:50:00.000Z').active, true)                              // the moment of payment
+  assert.equal(at('2026-11-21T14:49:59.000Z').active, true)                              // (a clock a little behind)
+  assert.equal(at('2026-12-21T14:50:00.000Z').active, true)                              // the time of day it was paid no longer matters
+  assert.equal(at('2026-12-21T20:59:59.999Z').active, true)                              // 23:59:59 on 21 Dec in Kenya
+  assert.equal(at('2026-12-21T21:00:00.000Z').active, false)                             // 00:00 on 22 Dec
+  assert.equal(at('2026-12-21T21:00:00.001Z').active, false)
   assert.equal(at('2027-06-01T00:00:00.000Z').active, false)
-  assert.equal(at('2026-12-21T14:49:59.999Z').receipt, r)
+  assert.equal(at('2026-12-21T20:59:59.999Z').receipt, r)
+  assert.equal(at('2026-12-21T20:59:59.999Z').expiresOn, '2026-12-21')
+  assert.equal(at('2026-12-22T10:00:00.000Z').expiresOn, '2026-12-21')                    // still says which day it ran through
 })
 
 await ok('the words next to the badge count days on the Kenya calendar, so they agree with the dates beside them', () => {
   const r = rec(1, 7, PAID)
   const say = (t) => { const now = new Date(t); return describeSubscription(subscriptionOf([r], now), now) }
-  assert.equal(say(NOW), 'Until 21 Dec 2026 · 28 days left')                          // 23 Nov to 21 Dec is 28 days
-  assert.equal(say('2026-11-21T14:50:00Z'), 'Until 21 Dec 2026 · 30 days left')      // the day it was paid
+  assert.equal(say(NOW), 'Until 21 Dec 2026 · 28 days left')                              // 23 Nov to 21 Dec is 28 days
+  assert.equal(say('2026-11-21T14:50:00Z'), 'Until 21 Dec 2026 · 30 days left')          // the day it was paid
   assert.equal(say('2026-12-19T10:00:00Z'), 'Until 21 Dec 2026 · 2 days left')
-  assert.equal(say('2026-12-20T20:59:59Z'), 'Until 21 Dec 2026 · 1 day left')        // 23:59:59 on the 20th in Kenya: tomorrow is the last day
-  assert.equal(say('2026-12-20T21:00:00Z'), 'Ends today at 05:50 PM')                // 00:00 on the 21st
-  assert.equal(say('2026-12-21T09:00:00Z'), 'Ends today at 05:50 PM')
-  assert.equal(say('2026-12-21T14:49:59Z'), 'Ends today at 05:50 PM')
-  assert.equal(say('2026-12-21T14:50:00Z'), 'Ended today (21 Dec 2026)')
-  assert.equal(say('2026-12-21T20:59:59Z'), 'Ended today (21 Dec 2026)')
-  assert.equal(say('2026-12-21T21:00:00Z'), 'Ended yesterday (21 Dec 2026)')
+  assert.equal(say('2026-12-20T20:59:59Z'), 'Until 21 Dec 2026 · 1 day left')            // 23:59:59 on the 20th in Kenya: tomorrow is the last day
+  assert.equal(say('2026-12-20T21:00:00Z'), 'Ends today (21 Dec 2026)')                   // 00:00 on the 21st
+  assert.equal(say('2026-12-21T14:50:00Z'), 'Ends today (21 Dec 2026)')
+  assert.equal(say('2026-12-21T20:59:59Z'), 'Ends today (21 Dec 2026)')
+  assert.equal(say('2026-12-21T21:00:00Z'), 'Ended yesterday (21 Dec 2026)')              // 00:00 on the 22nd
+  assert.equal(say('2026-12-22T20:59:59Z'), 'Ended yesterday (21 Dec 2026)')
   assert.equal(say('2026-12-24T08:00:00Z'), 'Ended 3 days ago (21 Dec 2026)')
   assert.equal(say('2027-02-01T08:00:00Z'), 'Ended 42 days ago (21 Dec 2026)')
 })
@@ -245,30 +302,84 @@ await ok('"ending soon" is the last three days, and only while Active', () => {
   assert.equal(s('2026-12-17T10:00:00Z').daysLeft, 4); assert.equal(s('2026-12-17T10:00:00Z').endingSoon, false)
   assert.equal(s('2026-12-18T10:00:00Z').daysLeft, 3); assert.equal(s('2026-12-18T10:00:00Z').endingSoon, true)
   assert.equal(s('2026-12-21T10:00:00Z').daysLeft, 0); assert.equal(s('2026-12-21T10:00:00Z').endingSoon, true)
+  assert.equal(s('2026-12-21T20:59:59Z').active, true); assert.equal(s('2026-12-21T20:59:59Z').endingSoon, true)
   assert.equal(s('2026-12-22T10:00:00Z').active, false); assert.equal(s('2026-12-22T10:00:00Z').endingSoon, false); assert.equal(s('2026-12-22T10:00:00Z').daysLeft, 0)
 })
 
-await ok('paying again early starts 30 new days from the new payment, and an older receipt never shortens a newer one', () => {
-  const first = rec(1, 7, '2026-11-01T07:00:00Z')              // runs to 1 Dec 07:00 UTC
-  const second = rec(2, 7, '2026-11-20T07:00:00Z')             // paid early: runs to 20 Dec 07:00 UTC
+await ok('the tooltip says the subscription runs through the end of that day, Kenya time', () => {
+  assert.equal(endLabel(subscriptionOf([rec(1, 7, PAID)], NOW)), 'Runs through the end of 21 Dec 2026 (Kenya time)')
+})
+
+await ok('paying again before the days run out keeps what was left: the new 30 days start from the old expiry date', () => {
+  const first = rec(1, 7, '2026-11-01T07:00:00Z')                                         // paid 1 Nov, runs through 1 Dec
+  // paying on 20 Nov: 11 days were left, so the 30 new days start from 1 Dec and run through 31 Dec (not 20 Dec)
+  assert.deepEqual(suggestExpiry({ paidAt: '2026-11-20T07:00:00Z', receipts: [first] }), { key: '2026-12-31', carried: true, previousKey: '2026-12-01', leftDays: 11, paymentKey: '2026-12-20' })
+  // paying the next day after the first one: 30 days are left, and all of them are kept
+  assert.deepEqual(suggestExpiry({ paidAt: '2026-11-02T07:00:00Z', receipts: [first] }), { key: '2026-12-31', carried: true, previousKey: '2026-12-01', leftDays: 29, paymentKey: '2026-12-02' })
+  // paying on the very last day: nothing is left to keep, so it is simply 30 days from the payment day
+  assert.deepEqual(suggestExpiry({ paidAt: '2026-12-01T07:00:00Z', receipts: [first] }), { key: '2026-12-31', carried: false, previousKey: '2026-12-01', leftDays: 0, paymentKey: '2026-12-31' })
+  // paying after it ran out starts again from the payment day
+  assert.deepEqual(suggestExpiry({ paidAt: '2026-12-02T07:00:00Z', receipts: [first] }), { key: '2027-01-01', carried: false, previousKey: '2026-12-01', leftDays: 0, paymentKey: '2027-01-01' })
+  assert.deepEqual(suggestExpiry({ paidAt: '2027-03-15T07:00:00Z', receipts: [first] }), { key: '2027-04-14', carried: false, previousKey: '2026-12-01', leftDays: 0, paymentKey: '2027-04-14' })
+  // a customer with no receipt: simply 30 days from the payment day
+  for (const none of [[], null, undefined]) assert.deepEqual(suggestExpiry({ paidAt: PAID, receipts: none }), { key: '2026-12-21', carried: false, previousKey: null, leftDays: 0, paymentKey: '2026-12-21' })
+  assert.deepEqual(suggestExpiry({ paidAt: PAID }), { key: '2026-12-21', carried: false, previousKey: null, leftDays: 0, paymentKey: '2026-12-21' })
+  // a different number of days
+  assert.equal(suggestExpiry({ paidAt: '2026-11-20T07:00:00Z', days: 7, receipts: [first] }).key, '2026-12-08')
+  assert.equal(suggestExpiry({ paidAt: PAID, days: 7 }).key, '2026-11-28')
+})
+
+await ok('the days kept are worked out on the Kenya calendar: a payment late in the Kenya evening or just after midnight counts for its own Kenya day', () => {
+  const first = rec(1, 7, '2026-11-01T07:00:00Z')                                         // through 1 Dec
+  assert.equal(suggestExpiry({ paidAt: '2026-12-01T20:59:59Z', receipts: [first] }).carried, false)            // 23:59:59 on 1 Dec: the last day
+  assert.equal(suggestExpiry({ paidAt: '2026-12-01T20:59:59Z', receipts: [first] }).key, '2026-12-31')
+  assert.equal(suggestExpiry({ paidAt: '2026-12-01T21:00:00Z', receipts: [first] }).key, '2027-01-01')          // 00:00 on 2 Dec: it has run out
+  assert.equal(suggestExpiry({ paidAt: '2026-11-30T21:00:00Z', receipts: [first] }).leftDays, 0)               // 00:00 on 1 Dec
+  assert.equal(suggestExpiry({ paidAt: '2026-11-30T20:59:59Z', receipts: [first] }).leftDays, 1)               // 23:59:59 on 30 Nov
+})
+
+await ok('several payments in a row each keep what was left, the highest expiry counts, and a payment is only judged against earlier ones', () => {
+  const first = rec(1, 7, '2026-11-01T07:00:00Z')                                         // through 1 Dec
+  const second = rec(2, 7, '2026-11-20T07:00:00Z', 30, '2026-12-31')                      // paid early: through 31 Dec
+  // the third payment, on 25 Dec: 6 days left on the second, so it runs through 30 Jan
+  assert.deepEqual(suggestExpiry({ paidAt: '2026-12-25T07:00:00Z', receipts: [first, second] }), { key: '2027-01-30', carried: true, previousKey: '2026-12-31', leftDays: 6, paymentKey: '2027-01-24' })
+  assert.equal(suggestExpiry({ paidAt: '2026-12-25T07:00:00Z', receipts: [second, first] }).key, '2027-01-30')     // the order the rows arrive in makes no difference
+  // an admin set a far date on an earlier receipt (98 days left): all of it is kept
+  const edited = rec(3, 7, '2026-11-10T07:00:00Z', 30, '2027-03-01')
+  assert.deepEqual(suggestExpiry({ paidAt: '2026-11-23T07:00:00Z', receipts: [first, edited] }), { key: '2027-03-31', carried: true, previousKey: '2027-03-01', leftDays: 98, paymentKey: '2026-12-23' })
+  // a receipt for a payment made LATER than this one (entered late, or an older payment sent afterwards) is not counted
+  const later = rec(5, 7, '2026-11-25T07:00:00Z')
+  assert.deepEqual(suggestExpiry({ paidAt: '2026-11-20T07:00:00Z', receipts: [later] }), { key: '2026-12-20', carried: false, previousKey: null, leftDays: 0, paymentKey: '2026-12-20' })
+  // ...nor one for the very same moment
+  assert.equal(suggestExpiry({ paidAt: '2026-11-25T07:00:00Z', receipts: [later] }).carried, false)
+  // receipts from before this update have no expiry date of their own: it is read from when they ended
+  const old = { id: 9, customerId: 7, paidAt: '2026-11-01T07:00:00Z', validUntil: '2026-12-01T07:00:00Z', daysCovered: 30 }
+  assert.deepEqual(suggestExpiry({ paidAt: '2026-11-20T07:00:00Z', receipts: [old] }), { key: '2026-12-31', carried: true, previousKey: '2026-12-01', leftDays: 11, paymentKey: '2026-12-20' })
+  // a receipt row with no usable date at all is ignored rather than breaking the screen
+  assert.equal(suggestExpiry({ paidAt: PAID, receipts: [{ id: 1, paidAt: '2026-11-01T07:00:00Z', expiresOn: 'junk', validUntil: 'junk' }] }).carried, false)
+})
+
+await ok('with receipts for several payments, the one that keeps the customer paid up the longest decides, whatever order the rows arrive in', () => {
+  const first = rec(1, 7, '2026-11-01T07:00:00Z')                                         // through 1 Dec
+  const second = rec(2, 7, '2026-11-20T07:00:00Z', 30, '2026-12-31')                      // paid early, so it keeps the days that were left: through 31 Dec
   const s = subscriptionOf([first, second], new Date('2026-11-25T00:00:00Z'))
-  assert.equal(s.active, true)
-  assert.equal(s.receipt.id, 2)
-  assert.equal(s.validUntil.toISOString(), '2026-12-20T07:00:00.000Z')                // not 1 Dec + 30 days, not stacked
-  // the order the rows arrive in makes no difference
+  assert.equal(s.active, true); assert.equal(s.receipt.id, 2); assert.equal(s.expiresOn, '2026-12-31')
   assert.equal(subscriptionOf([second, first], new Date('2026-11-25T00:00:00Z')).receipt.id, 2)
   // a receipt for an old payment entered late (a higher id) cannot cut the subscription short
   const late = rec(3, 7, '2026-10-01T07:00:00Z')
   assert.equal(subscriptionOf([first, second, late], new Date('2026-12-10T00:00:00Z')).receipt.id, 2)
   assert.equal(subscriptionOf([first, second, late], new Date('2026-12-10T00:00:00Z')).active, true)
-  // after the newest one runs out they are Inactive again
-  assert.equal(subscriptionOf([first, second, late], new Date('2026-12-20T07:00:00Z')).active, false)
+  // after the newest one has run out they are Inactive again, at midnight at the end of 31 December
+  assert.equal(subscriptionOf([first, second, late], new Date('2026-12-31T20:59:59Z')).active, true)
+  assert.equal(subscriptionOf([first, second, late], new Date('2026-12-31T21:00:00Z')).active, false)
 })
 
-await ok('a receipt that covers more than 30 days (for later) is simply honoured through its own end date', () => {
-  const long = rec(1, 7, '2026-11-01T00:00:00Z', 60)
+await ok('a receipt that covers more than 30 days (for later) is simply honoured through its own expiry date', () => {
+  const long = rec(1, 7, '2026-11-01T00:00:00Z', 60)                                      // 1 Nov + 60 days: through 31 Dec
+  assert.equal(long.expiresOn, '2026-12-31')
   assert.equal(subscriptionOf([long], new Date('2026-12-15T00:00:00Z')).active, true)
-  assert.equal(subscriptionOf([long], new Date('2026-12-31T00:00:00Z')).active, false)
+  assert.equal(subscriptionOf([long], new Date('2026-12-31T20:59:59Z')).active, true)
+  assert.equal(subscriptionOf([long], new Date('2026-12-31T21:00:00Z')).active, false)
 })
 
 await ok('receipts are grouped per customer, newest payment first, and receipts with no customer are left out', () => {
@@ -334,24 +445,42 @@ await ok('the number is shown the way people read it', () => {
 // ======================================================================================================================
 // 5. Invoice numbers and who paid
 // ======================================================================================================================
-await ok('the invoice number carries on from the last one used (11/1007), in the month of the payment', () => {
+await ok('the invoice number is SNS, the year of the payment, then the running number, which carries on from the last one used (1007)', () => {
   assert.equal(LAST_NUMBER_USED, 1007)
-  assert.equal(suggestReceiptNo(PAID, []), '11/1008')
-  assert.equal(suggestReceiptNo(PAID, null), '11/1008')
-  assert.equal(suggestReceiptNo(PAID, [{ receiptNo: '11/1008' }]), '11/1009')
-  assert.equal(suggestReceiptNo(PAID, [{ receiptNo: '11/1015' }, { receiptNo: '10/1003' }, { receiptNo: '11/1009' }]), '11/1016')   // the highest running number wins
-  assert.equal(suggestReceiptNo('2026-11-30T21:30:00Z', []), '12/1008')          // 00:30 on 1 December in Kenya
-  assert.equal(suggestReceiptNo('2026-12-31T21:30:00Z', [{ receiptNo: '12/1020' }]), '01/1021')
-  assert.equal(suggestReceiptNo(PAID, [{ receiptNo: 'ABC' }, { receiptNo: '' }, { receiptNo: null }, {}]), '11/1008')           // numbers typed in another style are ignored
-  assert.equal(suggestReceiptNo(PAID, [{ receiptNo: '11/5' }]), '11/1008')                                                      // never goes backwards
+  assert.equal(RECEIPT_PREFIX, 'SNS')
+  assert.equal(suggestReceiptNo(PAID, []), 'SNS/26/1008')
+  assert.equal(suggestReceiptNo(PAID, null), 'SNS/26/1008')
+  assert.equal(suggestReceiptNo(PAID, [{ receiptNo: 'SNS/26/1008' }]), 'SNS/26/1009')
+  assert.equal(suggestReceiptNo(PAID, [{ receiptNo: 'SNS/26/1015' }, { receiptNo: 'SNS/26/1003' }, { receiptNo: 'SNS/26/1009' }]), 'SNS/26/1016')    // the highest running number wins
+  assert.equal(suggestReceiptNo(PAID, [{ receiptNo: 'sns/26/1020' }]), 'SNS/26/1021')                                                              // capitals or not
+  assert.equal(suggestReceiptNo(PAID, [{ receiptNo: ' SNS/26/1020 ' }]), 'SNS/26/1021')
 })
 
-await ok('a typed invoice number is checked before use', () => {
-  assert.deepEqual(checkReceiptNo('11/1008'), { ok: true, value: '11/1008' })
-  assert.deepEqual(checkReceiptNo('  11/1008  '), { ok: true, value: '11/1008' })
+await ok('the running number goes on through the new year: only the year part changes, at midnight on 1 January in Kenya', () => {
+  assert.equal(suggestReceiptNo('2026-12-31T20:59:59Z', [{ receiptNo: 'SNS/26/1020' }]), 'SNS/26/1021')
+  assert.equal(suggestReceiptNo('2026-12-31T21:00:00Z', [{ receiptNo: 'SNS/26/1020' }]), 'SNS/27/1021')           // 00:00 on 1 January 2027 in Kenya
+  assert.equal(suggestReceiptNo('2027-01-05T09:00:00Z', [{ receiptNo: 'SNS/26/1020' }, { receiptNo: 'SNS/27/1021' }]), 'SNS/27/1022')
+  assert.equal(suggestReceiptNo('2028-03-01T09:00:00Z', [{ receiptNo: 'SNS/27/1500' }]), 'SNS/28/1501')
+  assert.equal(suggestReceiptNo(PAID, [{ receiptNo: 'SNS/27/1500' }]), 'SNS/26/1501')                             // a payment from earlier in the year entered late: its own year, the next number
+})
+
+await ok('invoice numbers from before this format (11/1007) still count towards the running number, and other styles are ignored', () => {
+  assert.equal(suggestReceiptNo(PAID, [{ receiptNo: '11/1007' }, { receiptNo: '10/1001' }]), 'SNS/26/1008')
+  assert.equal(suggestReceiptNo(PAID, [{ receiptNo: '11/1012' }]), 'SNS/26/1013')
+  assert.equal(suggestReceiptNo(PAID, [{ receiptNo: '11/1015' }, { receiptNo: '10/1003' }, { receiptNo: 'SNS/26/1009' }]), 'SNS/26/1016')
+  assert.equal(suggestReceiptNo(PAID, [{ receiptNo: 'ABC' }, { receiptNo: '' }, { receiptNo: null }, {}]), 'SNS/26/1008')           // numbers typed in another style are ignored
+  assert.equal(suggestReceiptNo(PAID, [{ receiptNo: 'SNS/26/5' }, { receiptNo: '11/5' }]), 'SNS/26/1008')                           // never goes backwards
+  assert.equal(suggestReceiptNo(PAID, [{ receiptNo: 'SNS/2026/3000' }, { receiptNo: 'XYZ/26/2000' }, { receiptNo: 'SNS-26-4000' }]), 'SNS/26/1008')
+})
+
+await ok('a typed invoice number is checked before use, and kept in capitals', () => {
+  assert.deepEqual(checkReceiptNo('SNS/26/1008'), { ok: true, value: 'SNS/26/1008' })
+  assert.deepEqual(checkReceiptNo('  SNS/26/1008  '), { ok: true, value: 'SNS/26/1008' })
+  assert.deepEqual(checkReceiptNo('sns/26/1008'), { ok: true, value: 'SNS/26/1008' })
+  assert.deepEqual(checkReceiptNo('11/1008'), { ok: true, value: '11/1008' })                  // the old style is still accepted
   assert.deepEqual(checkReceiptNo('SNS-2026.55'), { ok: true, value: 'SNS-2026.55' })
   assert.deepEqual(checkReceiptNo('11/  1008'), { ok: true, value: '11/ 1008' })
-  for (const [bad, pattern] of [['', /Enter the invoice number/], ['   ', /Enter the invoice number/], [null, /Enter the invoice number/], ['11/10#1', /Use only letters, numbers/], ['11/1008;drop', /Use only letters, numbers/], ['x'.repeat(31), /too long/]]) {
+  for (const [bad, pattern] of [['', /Enter the invoice number/], ['   ', /Enter the invoice number/], [null, /Enter the invoice number/], ['SNS/26/10#1', /Use only letters, numbers/], ['SNS/26/1008;drop', /Use only letters, numbers/], ['x'.repeat(31), /too long/]]) {
     const r = checkReceiptNo(bad); assert.equal(r.ok, false, String(bad)); assert.match(r.error, pattern, String(bad))
   }
 })
@@ -381,10 +510,18 @@ await ok('a customer\'s name as it goes on the receipt', () => {
 // ======================================================================================================================
 // 6. The words: amount, file name, the note about 30 days, the WhatsApp message and link
 // ======================================================================================================================
-await ok('the note under the receipt says the subscription runs for 30 days from the date of payment', () => {
-  assert.equal(subscriptionNote(), 'Your internet subscription is valid for 30 days from the date of payment.')
+await ok('the note under the receipt says it is valid for 30 days and when it expires', () => {
+  assert.equal(subscriptionNote(), 'Your internet subscription is valid for 30 days.')
   assert.equal(subscriptionNote(30), subscriptionNote())
-  assert.equal(subscriptionNote(60), 'Your internet subscription is valid for 60 days from the date of payment.')
+  assert.equal(subscriptionNote(60), 'Your internet subscription is valid for 60 days.')
+  assert.equal(subscriptionNote(1), 'Your internet subscription is valid for 1 day.')
+  assert.equal(expiryNote('2026-12-21'), 'It expires on 21 Dec 2026.')
+  assert.equal(expiryNote('2027-01-05'), 'It expires on 5 Jan 2027.')
+  for (const none of ['', null, undefined, 'soon', '2026-02-30']) assert.equal(expiryNote(none), '', String(none))
+  assert.equal(subscriptionSentence(30, '2026-12-21'), 'Your internet subscription is valid for 30 days and expires on 21 Dec 2026.')
+  assert.equal(subscriptionSentence(1, '2026-12-21'), 'Your internet subscription is valid for 1 day and expires on 21 Dec 2026.')
+  assert.equal(subscriptionSentence(30, ''), 'Your internet subscription is valid for 30 days.')       // no date: the part that is certain
+  assert.ok(!/from the date of payment|Valid until/i.test(subscriptionNote() + expiryNote('2026-12-21') + subscriptionSentence(30, '2026-12-21')), 'the old wording is gone')
 })
 
 await ok('amounts and file names are written the way the receipt shows them', () => {
@@ -395,36 +532,42 @@ await ok('amounts and file names are written the way the receipt shows them', ()
   assert.equal(formatReceiptMoney(null), 'Ksh 0.00')
   assert.equal(formatReceiptMoney(999), 'Ksh 999.00')
   assert.equal(formatReceiptMoney(1000), 'Ksh 1,000.00')
-  assert.equal(receiptFileName('11/1008'), 'Receipt-11-1008.pdf')
+  assert.equal(receiptFileName('SNS/26/1008'), 'Receipt-SNS-26-1008.pdf')
+  assert.equal(receiptFileName('11/1008'), 'Receipt-11-1008.pdf')               // an invoice number from before this format
   assert.equal(receiptFileName('SNS 2026/55'), 'Receipt-SNS-2026-55.pdf')
   assert.equal(receiptFileName(''), 'Receipt-receipt.pdf')
   assert.equal(receiptFileName(null), 'Receipt-receipt.pdf')
   assert.equal(receiptFileName('///'), 'Receipt-receipt.pdf')
 })
 
-const LINK = 'https://proj.supabase.co/storage/v1/object/public/customer-receipts/0123456789abcdef0123456789abcdef/Receipt-11-1008.pdf'
-await ok('the WhatsApp message carries every fact, the link, the note and the date the subscription runs to', () => {
-  const m = buildWhatsAppMessage({ firstName: 'Amina', amount: 2000, code: 'UKL41383DB', paidAt: PAID, receiptNo: '11/1008', link: LINK })
+const LINK = 'https://proj.supabase.co/storage/v1/object/public/customer-receipts/0123456789abcdef0123456789abcdef/Receipt-SNS-26-1008.pdf'
+await ok('the WhatsApp message carries every fact, the link, and when the subscription expires', () => {
+  const m = buildWhatsAppMessage({ firstName: 'Amina', amount: 2000, code: 'UKL41383DB', paidAt: PAID, receiptNo: 'SNS/26/1008', expiresOn: '2026-12-21', link: LINK })
   assert.equal(m, [
     'Hello Amina,',
     '',
     'Thank you for your payment of Ksh 2,000.00 (M-Pesa ref UKL41383DB), received on 21 Nov 2026 at 05:50 PM.',
     '',
-    'Your receipt (invoice no. 11/1008):',
+    'Your receipt (invoice no. SNS/26/1008):',
     LINK,
     '',
-    'Your internet subscription is valid for 30 days from the date of payment. Valid until 21 Dec 2026, 05:50 PM.',
+    'Your internet subscription is valid for 30 days and expires on 21 Dec 2026.',
     '',
     'Swahili Net Solution',
     'Fast. Reliable. Always Connected.',
   ].join('\n'))
   assert.match(buildWhatsAppMessage({ firstName: '', amount: 1, code: 'X', paidAt: PAID, receiptNo: '1', link: LINK }), /^Hello there,/)
   assert.match(buildWhatsAppMessage({ firstName: '  ', amount: 1, code: 'X', paidAt: PAID, receiptNo: '1', link: LINK }), /^Hello there,/)
-  assert.match(buildWhatsAppMessage({ firstName: 'Amina', amount: 1, code: 'X', paidAt: PAID, receiptNo: '1', days: 60, link: LINK }), /valid for 60 days from the date of payment\. Valid until 20 Jan 2027, 05:50 PM\./)
+  // paid before the days ran out: the date it really expires on is the one in the message
+  assert.match(buildWhatsAppMessage({ firstName: 'Amina', amount: 2000, code: 'UKL41383DB', paidAt: PAID, receiptNo: 'SNS/26/1008', expiresOn: '2027-01-15', link: LINK }), /valid for 30 days and expires on 15 Jan 2027\.$/m)
+  // with no date given it is worked out from the payment, as before
+  assert.equal(buildWhatsAppMessage({ firstName: 'Amina', amount: 2000, code: 'UKL41383DB', paidAt: PAID, receiptNo: 'SNS/26/1008', link: LINK }), m)
+  assert.match(buildWhatsAppMessage({ firstName: 'Amina', amount: 1, code: 'X', paidAt: PAID, receiptNo: '1', days: 60, link: LINK }), /valid for 60 days and expires on 20 Jan 2027\./)
+  assert.ok(!/from the date of payment|Valid until/i.test(m), 'the old wording is gone')
 })
 
 await ok('the link opens WhatsApp on the customer\'s number with the whole message, nothing lost in the encoding', () => {
-  const m = buildWhatsAppMessage({ firstName: 'Amina', amount: 2000, code: 'UKL41383DB', paidAt: PAID, receiptNo: '11/1008', link: LINK })
+  const m = buildWhatsAppMessage({ firstName: 'Amina', amount: 2000, code: 'UKL41383DB', paidAt: PAID, receiptNo: 'SNS/26/1008', expiresOn: '2026-12-21', link: LINK })
   const url = whatsappUrl('254712345678', m)
   assert.ok(url.startsWith('https://wa.me/254712345678?text='))
   assert.equal(decodeURIComponent(url.slice(url.indexOf('?text=') + 6)), m)
@@ -437,19 +580,32 @@ await ok('the link opens WhatsApp on the customer\'s number with the whole messa
 // ======================================================================================================================
 // 7. The receipt PDF
 // ======================================================================================================================
-const model = receiptModel({ customerName: 'Amina Hassan', paidAt: PAID, amount: 2000, code: 'UKL41383DB', receiptNo: '11/1008' })
+const model = receiptModel({ customerName: 'Amina Hassan', paidAt: PAID, amount: 2000, code: 'UKL41383DB', receiptNo: 'SNS/26/1008' })
 const asText = (bytes) => Buffer.from(bytes).toString('latin1')
 const texts = (m) => buildReceiptLayout(m).filter((i) => i.kind === 'text').map((i) => i.text)
 
 await ok('the receipt page shows the customer, the invoice number, the code, the amount, the exact date and time, and the note', () => {
   const all = texts(model).join('\n')
-  for (const want of ['Amina Hassan', '11/1008', 'UKL41383DB', 'Ksh 2,000.00', '21 Nov 2026 05:50 PM', 'Your internet subscription is valid for 30 days from the date of payment.', 'Valid until 21 Dec 2026, 05:50 PM.']) assert.ok(all.includes(want), `missing: ${want}\n${all}`)
+  for (const want of ['Amina Hassan', 'SNS/26/1008', 'UKL41383DB', 'Ksh 2,000.00', '21 Nov 2026 05:50 PM', 'Your internet subscription is valid for 30 days.', 'It expires on 21 Dec 2026.']) assert.ok(all.includes(want), `missing: ${want}\n${all}`)
+  assert.ok(!/from the date of payment|Valid until/i.test(all), 'the old wording is gone')
+})
+
+await ok('the date the receipt says it expires on is the expiry date of the receipt, which can be later than 30 days when the customer paid early', () => {
+  assert.equal(model.expiresOn, '2026-12-21')                                                        // none given: the payment date + 30 days
+  const early = receiptModel({ customerName: 'Amina Hassan', paidAt: PAID, amount: 2000, code: 'UKL41383DB', receiptNo: 'SNS/26/1008', expiresOn: '2027-01-15' })
+  const all = texts(early).join('\n')
+  assert.ok(all.includes('Your internet subscription is valid for 30 days.') && all.includes('It expires on 15 Jan 2027.'))
+  assert.ok(!all.includes('21 Dec 2026'))
+  // a receipt row from before this update has no expiry date: the page shows the payment date + its days
+  const legacy = modelFromReceipt({ customerName: 'Amina Hassan', paidAt: PAID, amount: 2000, mpesaCode: 'UKL41383DB', receiptNo: 'SNS/26/1008', daysCovered: 30 })
+  assert.ok(texts(legacy).join('\n').includes('It expires on 21 Dec 2026.'))
+  assert.ok(texts(modelFromReceipt({ customerName: 'A', paidAt: PAID, amount: 2000, mpesaCode: 'X1', receiptNo: '1', daysCovered: 30, expiresOn: '2027-02-02' })).join('\n').includes('It expires on 2 Feb 2027.'))
 })
 
 await ok('a different payment gives a different page (the date and time on the receipt are the ones from the message)', () => {
-  const other = receiptModel({ customerName: 'Baraka Otieno', paidAt: '2026-12-02T06:05:00Z', amount: 3500.5, code: 'ABC1234567', receiptNo: '12/1009' })
+  const other = receiptModel({ customerName: 'Baraka Otieno', paidAt: '2026-12-02T06:05:00Z', amount: 3500.5, code: 'ABC1234567', receiptNo: 'SNS/26/1009' })
   const all = texts(other).join('\n')
-  for (const want of ['Baraka Otieno', '12/1009', 'ABC1234567', 'Ksh 3,500.50', '2 Dec 2026 09:05 AM', 'Valid until 1 Jan 2027, 09:05 AM.']) assert.ok(all.includes(want), `missing: ${want}`)
+  for (const want of ['Baraka Otieno', 'SNS/26/1009', 'ABC1234567', 'Ksh 3,500.50', '2 Dec 2026 09:05 AM', 'It expires on 1 Jan 2027.']) assert.ok(all.includes(want), `missing: ${want}`)
   assert.ok(!all.includes('21 Nov 2026'))
   assert.ok(!all.includes('UKL41383DB'))
 })
@@ -469,14 +625,14 @@ await ok('the PDF is a real, well-formed file: header, every object where the ta
   entries.slice(1).forEach((e, i) => { const label = `${i + 1} 0 obj\n`; assert.equal(t.slice(Number(e[1]), Number(e[1]) + label.length), label, `object ${i + 1}`) })
   assert.match(t.slice(xrefAt), new RegExp(`trailer\\n<< /Size ${count} /Root 1 0 R /Info 9 0 R >>`))
   for (const m of t.matchAll(/\/Length (\d+) >>\nstream\n/g)) { const from = m.index + m[0].length; assert.equal(t.slice(from + Number(m[1]), from + Number(m[1]) + 10), '\nendstream', `stream at ${m.index}`) }
-  assert.match(t, /\/Title \(Receipt 11\/1008\)/)
+  assert.match(t, /\/Title \(Receipt SNS\/26\/1008\)/)
   assert.match(t, /\/Subject \(Payment UKL41383DB\)/)
   assert.match(t, /\/CreationDate \(D:20261123110000\+03'00'\)/)                  // 11:00 in Kenya, whatever the computer's clock says
 })
 
 await ok('the words are in the PDF as real text (so it can be searched and read aloud), not a picture of text', async () => {
   const t = asText(await makeReceiptPdf(model, { createdAt: NOW }))
-  for (const want of ['(Amina Hassan) Tj', '(UKL41383DB) Tj', '(Ksh 2,000.00) Tj', '(Your internet subscription is valid for 30 days from the date of payment.) Tj']) assert.ok(t.includes(want), want)
+  for (const want of ['(Amina Hassan) Tj', '(UKL41383DB) Tj', '(Ksh 2,000.00) Tj', '(Your internet subscription is valid for 30 days.) Tj', '(It expires on 21 Dec 2026.) Tj']) assert.ok(t.includes(want), want)
   assert.ok(t.includes('(21 Nov 2026 05:50 PM) Tj'))
 })
 
@@ -484,13 +640,15 @@ await ok('the same receipt always makes the same file, and a receipt made again 
   const a = await makeReceiptPdf(model, { createdAt: NOW })
   const b = await makeReceiptPdf(model, { createdAt: NOW })
   assert.equal(Buffer.compare(Buffer.from(a), Buffer.from(b)), 0)
-  const row = { customerName: 'Amina Hassan', paidAt: PAID, amount: 2000, mpesaCode: 'UKL41383DB', receiptNo: '11/1008', daysCovered: 30 }
+  const row = { customerName: 'Amina Hassan', paidAt: PAID, amount: 2000, mpesaCode: 'UKL41383DB', receiptNo: 'SNS/26/1008', daysCovered: 30, expiresOn: '2026-12-21' }
   const c = await makeReceiptPdf(modelFromReceipt(row), { createdAt: NOW })
   assert.equal(Buffer.compare(Buffer.from(a), Buffer.from(c)), 0)
+  const noDate = await makeReceiptPdf(modelFromReceipt({ ...row, expiresOn: undefined }), { createdAt: NOW })               // a row with no expiry date of its own
+  assert.equal(Buffer.compare(Buffer.from(a), Buffer.from(noDate)), 0)
 })
 
 await ok('awkward characters in a name cannot break the PDF', async () => {
-  const odd = receiptModel({ customerName: 'Amina (Hassan) \\ O\'Neil ñ é', paidAt: PAID, amount: 2000, code: 'UKL41383DB', receiptNo: '11/1008' })
+  const odd = receiptModel({ customerName: 'Amina (Hassan) \\ O\'Neil ñ é', paidAt: PAID, amount: 2000, code: 'UKL41383DB', receiptNo: 'SNS/26/1008' })
   const t = asText(await makeReceiptPdf(odd, { createdAt: NOW }))
   assert.ok(t.includes('\\(Hassan\\)') && t.includes('\\\\'))
   assert.ok(/\/Length \d+ >>\nstream\n/.test(t) && t.endsWith('%%EOF\n'))
@@ -515,7 +673,8 @@ function pretendClient({ uploadError = null, insertError = null, insertNothing =
         log.push({ op: 'insert', table, row })
         if (insertError) return { data: null, error: insertError }
         if (insertNothing) return { data: null, error: null }
-        return { data: { id: 5, ...row, valid_until: new Date(Date.parse(row.paid_at) + row.days_covered * DAY).toISOString(), sent_by: 'u-admin', sent_at: NOW.toISOString() }, error: null }
+        // the database works out the end moment from the expiry date: midnight at the end of that day in Kenya
+        return { data: { id: 5, ...row, valid_until: endOfDayKey(row.expires_on).toISOString(), sent_by: 'u-admin', sent_at: NOW.toISOString() }, error: null }
       } }) }),
       delete: () => ({ eq: (col, val) => ({ select: async () => { log.push({ op: 'delete', table, col, val }); return deleteResult } }) }),
     }),
@@ -527,8 +686,8 @@ const ops = (client) => client.log.map((l) => l.op)
 
 await ok('a file is planned before anything is sent, with a long random name that cannot be guessed', () => {
   const client = pretendClient()
-  const a = planReceiptFile(client, '11/1008'), b = planReceiptFile(client, '11/1008')
-  assert.match(a.path, /^[0-9a-f]{32}\/Receipt-11-1008\.pdf$/)
+  const a = planReceiptFile(client, 'SNS/26/1008'), b = planReceiptFile(client, 'SNS/26/1008')
+  assert.match(a.path, /^[0-9a-f]{32}\/Receipt-SNS-26-1008\.pdf$/)
   assert.notEqual(a.path, b.path)
   assert.equal(a.link, `https://proj.supabase.co/storage/v1/object/public/${RECEIPT_BUCKET}/${a.path}`)
   assert.equal(RECEIPT_BUCKET, 'customer-receipts')
@@ -537,8 +696,8 @@ await ok('a file is planned before anything is sent, with a long random name tha
 
 await ok('sending a receipt: the PDF is kept first, then the row is recorded, with exactly what was read from the message', async () => {
   const client = pretendClient()
-  const file = planReceiptFile(client, '11/1008')
-  const out = await issueReceipt({ client, customer: amina, payment, receiptNo: '11/1008', file, now: NOW })
+  const file = planReceiptFile(client, 'SNS/26/1008')
+  const out = await issueReceipt({ client, customer: amina, payment, receiptNo: 'SNS/26/1008', file, now: NOW })
   assert.deepEqual(ops(client), ['upload', 'insert'])
   const up = client.log[0], ins = client.log[1]
   assert.equal(up.bucket, 'customer-receipts'); assert.equal(up.path, file.path)
@@ -546,28 +705,71 @@ await ok('sending a receipt: the PDF is kept first, then the row is recorded, wi
   assert.equal(asText(new Uint8Array(await up.blob.arrayBuffer())).slice(0, 8), '%PDF-1.4')
   assert.equal(ins.table, 'customer_receipts')
   assert.deepEqual(ins.row, {
-    customer_id: 1, customer_name: 'Amina Hassan', customer_contact: '0712 345 678', receipt_no: '11/1008', mpesa_code: 'UKL41383DB', amount: 2000,
-    paid_at: PAID, days_covered: 30, payer_name: 'VISHWAKARMA VIVEK ADYAPRASAD', account_ref: '899118', mpesa_message: payment.message, file_path: file.path, sent_via: 'whatsapp',
+    customer_id: 1, customer_name: 'Amina Hassan', customer_contact: '0712 345 678', receipt_no: 'SNS/26/1008', mpesa_code: 'UKL41383DB', amount: 2000,
+    paid_at: PAID, days_covered: 30, expires_on: '2026-12-21', payer_name: 'VISHWAKARMA VIVEK ADYAPRASAD', account_ref: '899118', mpesa_message: payment.message, file_path: file.path, sent_via: 'whatsapp',
   })
   assert.ok(!('valid_until' in ins.row) && !('sent_by' in ins.row) && !('sent_at' in ins.row), 'the database decides these')
   assert.equal(out.link, file.link)
   assert.equal(out.pdf.length, up.blob.size)
-  assert.equal(out.receipt.receiptNo, '11/1008')
-  assert.equal(out.receipt.validUntil, '2026-12-21T14:50:00.000Z')
+  assert.equal(out.receipt.receiptNo, 'SNS/26/1008')
+  assert.equal(out.receipt.expiresOn, '2026-12-21')
+  assert.equal(out.receipt.validUntil, '2026-12-21T21:00:00.000Z')                                   // midnight at the end of 21 December, Kenya time
   assert.equal(subscriptionOf([out.receipt], NOW).active, true)                        // and that is what makes the customer Active
+})
+
+await ok('an admin can choose the expiry date: the row, the receipt page and the customer\'s status all carry it', async () => {
+  const client = pretendClient()
+  const out = await issueReceipt({ client, customer: amina, payment, receiptNo: 'SNS/26/1008', expiresOn: '2027-01-15', now: NOW })
+  assert.equal(client.log[1].row.expires_on, '2027-01-15')
+  assert.equal(out.receipt.expiresOn, '2027-01-15')
+  assert.equal(out.receipt.validUntil, '2027-01-15T21:00:00.000Z')
+  const pdf = asText(new Uint8Array(await client.log[0].blob.arrayBuffer()))
+  assert.ok(pdf.includes('(It expires on 15 Jan 2027.) Tj') && pdf.includes('(Your internet subscription is valid for 30 days.) Tj'))
+  assert.ok(!pdf.includes('21 Dec 2026'))
+  assert.equal(subscriptionOf([out.receipt], new Date('2027-01-15T20:59:59Z')).active, true)
+  assert.equal(subscriptionOf([out.receipt], new Date('2027-01-15T21:00:00Z')).active, false)
+  // the shortest and the longest the database allows
+  await issueReceipt({ client: pretendClient(), customer: amina, payment, receiptNo: 'SNS/26/1008', expiresOn: '2026-11-22', now: NOW })
+  await issueReceipt({ client: pretendClient(), customer: amina, payment, receiptNo: 'SNS/26/1008', expiresOn: dayKeyOf(dayNumberOfKey('2026-11-21') + MAX_EXPIRY_DAYS), now: NOW })
+})
+
+await ok('an expiry date that cannot be right is refused before anything is made or uploaded', async () => {
+  assert.equal(MAX_EXPIRY_DAYS, 1830)
+  for (const [bad, pattern] of [['2026-11-21', /must be after the payment date \(21 Nov 2026\)/], ['2026-11-20', /must be after the payment date/], ['2026-02-30', /not a real date/], ['soon', /not a real date/],
+                                [dayKeyOf(dayNumberOfKey('2026-11-21') + MAX_EXPIRY_DAYS + 1), /too far away/], ['2099-01-01', /too far away/], ['1999-01-01', /must be after/]]) {
+    const client = pretendClient()
+    await assert.rejects(() => issueReceipt({ client, customer: amina, payment, receiptNo: 'SNS/26/1008', expiresOn: bad, now: NOW }), (e) => e instanceof ReceiptError && e.code === 'bad_expiry' && pattern.test(e.message), bad)
+    assert.deepEqual(client.log, [], bad)                                                // no PDF kept, nothing recorded
+  }
+})
+
+await ok('the expiry date typed on the screen is checked against the payment date, and says how many days it is', () => {
+  assert.deepEqual(checkExpiry(PAID, '2026-12-21'), { ok: true, value: '2026-12-21', days: 30 })
+  assert.deepEqual(checkExpiry(PAID, ' 2027-01-20 '), { ok: true, value: '2027-01-20', days: 60 })       // spaces around it do not matter
+  assert.deepEqual(checkExpiry(PAID, '2026-11-22'), { ok: true, value: '2026-11-22', days: 1 })
+  assert.deepEqual(checkExpiry('2026-11-21T20:59:59Z', '2026-11-22'), { ok: true, value: '2026-11-22', days: 1 })                // 23:59 on 21 Nov in Kenya
+  assert.equal(checkExpiry('2026-11-21T21:00:00Z', '2026-11-22').ok, false)                                                     // already 22 Nov in Kenya: that is the payment day
+  assert.equal(checkExpiry(PAID, '2026-11-21').ok, false)
+  assert.equal(checkExpiry(PAID, '2026-11-21').error, 'The expiry date must be after the payment date (21 Nov 2026).')
+  assert.equal(checkExpiry(PAID, '').error, 'Choose the date the subscription expires.')
+  assert.equal(checkExpiry(PAID, null).error, 'Choose the date the subscription expires.')
+  assert.equal(checkExpiry(PAID, '31/12/2026').error, 'That is not a real date.')
+  assert.equal(checkExpiry(PAID, '2026-12-21T10:00').ok, false)
+  assert.equal(checkExpiry(PAID, dayKeyOf(dayNumberOfKey('2026-11-21') + 1830)).ok, true)
+  assert.equal(checkExpiry(PAID, dayKeyOf(dayNumberOfKey('2026-11-21') + 1831)).error, 'That date is too far away. Please check the year.')
 })
 
 await ok('a file is planned for you when none is given', async () => {
   const client = pretendClient()
-  const out = await issueReceipt({ client, customer: amina, payment, receiptNo: '11/1008', now: NOW })
-  assert.match(client.log[0].path, /^[0-9a-f]{32}\/Receipt-11-1008\.pdf$/)
+  const out = await issueReceipt({ client, customer: amina, payment, receiptNo: 'SNS/26/1008', now: NOW })
+  assert.match(client.log[0].path, /^[0-9a-f]{32}\/Receipt-SNS-26-1008\.pdf$/)
   assert.equal(client.log[1].row.file_path, client.log[0].path)
   assert.ok(out.link.endsWith(client.log[0].path))
 })
 
 await ok('if the PDF cannot be kept, nothing is recorded, so nobody becomes Active without a receipt having gone out', async () => {
   const client = pretendClient({ uploadError: { message: 'Network request failed' } })
-  await assert.rejects(() => issueReceipt({ client, customer: amina, payment, receiptNo: '11/1008', now: NOW }), (e) => e instanceof ReceiptError && e.code === 'upload_failed' && /could not be uploaded, so it was not sent/.test(e.message))
+  await assert.rejects(() => issueReceipt({ client, customer: amina, payment, receiptNo: 'SNS/26/1008', now: NOW }), (e) => e instanceof ReceiptError && e.code === 'upload_failed' && /could not be uploaded, so it was not sent/.test(e.message))
   assert.deepEqual(ops(client), ['upload'])
 })
 
@@ -578,12 +780,16 @@ await ok('if recording fails, the kept PDF is removed again, and the reason is e
     [{ code: '42501', message: 'new row violates row-level security policy for table "customer_receipts"' }, 'not_allowed', /Only an admin can send receipts/],
     [{ message: 'permission denied for table customer_receipts' }, 'not_allowed', /Only an admin/],
     [{ code: 'P0001', message: 'The payment time is in the future' }, 'future', /in the future/],
+    [{ code: 'P0001', message: 'The expiry date must be after the payment date' }, 'bad_expiry', /must be after the payment date/],
+    [{ code: 'P0001', message: 'The expiry date is too far after the payment date' }, 'bad_expiry', /too far away/],
+    [{ code: '23514', message: 'new row for relation "customer_receipts" violates check constraint "customer_receipts_expiry_after_payment"' }, 'bad_expiry', /must be after the payment date/],
+    [{ code: '23514', message: 'new row for relation "customer_receipts" violates check constraint "customer_receipts_expiry_not_far"' }, 'bad_expiry', /too far away/],
     [{ code: '08006', message: 'connection failure' }, 'save_failed', /could not be saved, so it was not sent/],
     [null, 'save_failed', /could not be saved/],
   ]
   for (const [error, code, pattern] of cases) {
     const client = pretendClient(error ? { insertError: error } : { insertNothing: true })
-    await assert.rejects(() => issueReceipt({ client, customer: amina, payment, receiptNo: '11/1008', now: NOW }), (e) => e instanceof ReceiptError && e.code === code && pattern.test(e.message), code)
+    await assert.rejects(() => issueReceipt({ client, customer: amina, payment, receiptNo: 'SNS/26/1008', now: NOW }), (e) => e instanceof ReceiptError && e.code === code && pattern.test(e.message), code)
     assert.deepEqual(ops(client), ['upload', 'insert', 'remove'], code)
     assert.deepEqual(client.log[2].paths, [client.log[0].path], code)               // the very file that was kept
   }
@@ -591,26 +797,34 @@ await ok('if recording fails, the kept PDF is removed again, and the reason is e
 
 await ok('if even the clean-up fails, the real reason is still the one reported', async () => {
   const client = pretendClient({ insertError: { code: '23505', message: 'duplicate key value violates unique constraint "customer_receipts_mpesa_code_key"' }, removeThrows: true })
-  await assert.rejects(() => issueReceipt({ client, customer: amina, payment, receiptNo: '11/1008', now: NOW }), (e) => e.code === 'duplicate_payment')
+  await assert.rejects(() => issueReceipt({ client, customer: amina, payment, receiptNo: 'SNS/26/1008', now: NOW }), (e) => e.code === 'duplicate_payment')
 })
 
 await ok('a customer with no contact, and a payment with no payer or account, are recorded with blanks (null), not the word "undefined"', async () => {
   const client = pretendClient()
   const bare = { code: 'QWE1234567', amount: 750, paidAt: new Date(PAID), payerName: '', account: '', message: '' }
-  await issueReceipt({ client, customer: { id: 9, firstName: 'Bob', lastName: '-', contact: '' }, payment: bare, receiptNo: '11/1009', now: NOW })
+  await issueReceipt({ client, customer: { id: 9, firstName: 'Bob', lastName: '-', contact: '' }, payment: bare, receiptNo: 'SNS/26/1009', now: NOW })
   const row = client.log[1].row
   assert.equal(row.customer_name, 'Bob'); assert.equal(row.customer_contact, null); assert.equal(row.payer_name, null); assert.equal(row.account_ref, null); assert.equal(row.mpesa_message, null)
 })
 
 await ok('a receipt sent before is opened from its kept copy; one with no copy (restored from a backup) is made again and kept', async () => {
-  const stored = { id: 1, customerName: 'Amina Hassan', paidAt: PAID, amount: 2000, mpesaCode: 'UKL41383DB', receiptNo: '11/1008', daysCovered: 30, sentAt: NOW.toISOString() }
+  const stored = { id: 1, customerName: 'Amina Hassan', paidAt: PAID, amount: 2000, mpesaCode: 'UKL41383DB', receiptNo: 'SNS/26/1008', daysCovered: 30, sentAt: NOW.toISOString() }
   const c1 = pretendClient()
-  assert.equal(await linkForReceipt(c1, { ...stored, filePath: 'tok/Receipt-11-1008.pdf' }), 'https://proj.supabase.co/storage/v1/object/public/customer-receipts/tok/Receipt-11-1008.pdf')
+  assert.equal(await linkForReceipt(c1, { ...stored, filePath: 'tok/Receipt-SNS-26-1008.pdf' }), 'https://proj.supabase.co/storage/v1/object/public/customer-receipts/tok/Receipt-SNS-26-1008.pdf')
   assert.deepEqual(c1.log, [])
   const c2 = pretendClient()
   const link = await linkForReceipt(c2, { ...stored, filePath: null })
   assert.deepEqual(ops(c2), ['upload'])
-  assert.ok(link.endsWith(c2.log[0].path)); assert.match(c2.log[0].path, /^[0-9a-f]{32}\/Receipt-11-1008\.pdf$/)
+  assert.ok(link.endsWith(c2.log[0].path)); assert.match(c2.log[0].path, /^[0-9a-f]{32}\/Receipt-SNS-26-1008\.pdf$/)
+  // the same, when the place it is kept is wanted too (the server needs it to fetch the PDF)
+  const c3 = pretendClient()
+  assert.deepEqual(await ensureReceiptFile(c3, { ...stored, filePath: 'tok/Receipt-SNS-26-1008.pdf' }), { path: 'tok/Receipt-SNS-26-1008.pdf', link: 'https://proj.supabase.co/storage/v1/object/public/customer-receipts/tok/Receipt-SNS-26-1008.pdf' })
+  assert.deepEqual(c3.log, [])
+  const c4 = pretendClient()
+  const made = await ensureReceiptFile(c4, { ...stored, filePath: null })
+  assert.deepEqual(ops(c4), ['upload']); assert.equal(made.path, c4.log[0].path); assert.ok(made.link.endsWith(made.path)); assert.match(made.path, /^[0-9a-f]{32}\/Receipt-SNS-26-1008\.pdf$/)
+  assert.equal(String.fromCharCode(...new Uint8Array(await c4.log[0].blob.arrayBuffer()).slice(0, 4)), '%PDF'); assert.equal(c4.log[0].opts.contentType, 'application/pdf')
 })
 
 await ok('sending an old receipt again uses that receipt\'s own facts and its own number of days', () => {
@@ -618,24 +832,49 @@ await ok('sending an old receipt again uses that receipt\'s own facts and its ow
   const m = messageForReceipt({ firstName: 'Baraka' }, r, LINK)
   assert.match(m, /^Hello Baraka,/)
   assert.ok(m.includes('Ksh 1,500.00 (M-Pesa ref OLD1234567), received on 1 Oct 2026 at 10:00 AM.'))
-  assert.ok(m.includes('invoice no. 10/1002') && m.includes(LINK) && m.includes('Valid until 31 Oct 2026, 10:00 AM.'))
+  assert.ok(m.includes('invoice no. 10/1002') && m.includes(LINK) && m.includes('Your internet subscription is valid for 30 days and expires on 31 Oct 2026.'))
   assert.match(messageForReceipt(null, r, LINK), /^Hello there,/)
+  // a receipt that keeps the days left from an earlier payment is sent again with its own expiry date
+  assert.ok(messageForReceipt({ firstName: 'Baraka' }, { ...r, expiresOn: '2026-12-01' }, LINK).includes('valid for 30 days and expires on 1 Dec 2026.'))
 })
 
 await ok('a row from the database becomes what the app holds', () => {
-  const r = mapReceipt({ id: 5, customer_id: 1, customer_name: 'Amina Hassan', customer_contact: null, receipt_no: '11/1008', mpesa_code: 'UKL41383DB', amount: '2000.00', paid_at: PAID, valid_until: '2026-12-21T14:50:00+00:00', days_covered: 30, payer_name: null, account_ref: null, mpesa_message: null, file_path: null, sent_via: null, sent_by: null, sent_at: PAID })
-  assert.deepEqual(r, { id: 5, customerId: 1, customerName: 'Amina Hassan', customerContact: '', receiptNo: '11/1008', mpesaCode: 'UKL41383DB', amount: 2000, paidAt: PAID, validUntil: '2026-12-21T14:50:00+00:00', daysCovered: 30, payerName: '', accountRef: '', mpesaMessage: '', filePath: null, sentVia: 'whatsapp', sentBy: null, sentAt: PAID })
+  const r = mapReceipt({ id: 5, customer_id: 1, customer_name: 'Amina Hassan', customer_contact: null, receipt_no: 'SNS/26/1008', mpesa_code: 'UKL41383DB', amount: '2000.00', paid_at: PAID, valid_until: '2026-12-21T21:00:00+00:00', expires_on: '2026-12-21', days_covered: 30, payer_name: null, account_ref: null, mpesa_message: null, file_path: null, sent_via: null, sent_by: null, sent_at: PAID })
+  assert.deepEqual(r, { id: 5, customerId: 1, customerName: 'Amina Hassan', customerContact: '', receiptNo: 'SNS/26/1008', mpesaCode: 'UKL41383DB', amount: 2000, paidAt: PAID, validUntil: '2026-12-21T21:00:00+00:00', expiresOn: '2026-12-21', daysCovered: 30, payerName: '', accountRef: '', mpesaMessage: '', filePath: null, sentVia: 'whatsapp', sentBy: null, sentAt: PAID })
   assert.equal(mapReceipt({ id: 6, customer_id: null, amount: 'x', days_covered: null, receipt_no: 'a', mpesa_code: 'b' }).customerId, null)    // a customer who was deleted
+  // a row with no expiry date of its own (a copy of the data from before this update) gets it from when it ended
+  assert.equal(mapReceipt({ id: 8, receipt_no: 'a', mpesa_code: 'b', valid_until: '2026-12-21T14:50:00+00:00' }).expiresOn, '2026-12-21')
+  assert.equal(mapReceipt({ id: 8, receipt_no: 'a', mpesa_code: 'b', valid_until: '2026-12-21T21:00:00+00:00' }).expiresOn, '2026-12-21')
+  assert.equal(mapReceipt({ id: 8, receipt_no: 'a', mpesa_code: 'b', valid_until: '2026-12-21T21:00:00.001+00:00' }).expiresOn, '2026-12-22')
+  assert.equal(mapReceipt({ id: 8, receipt_no: 'a', mpesa_code: 'b' }).expiresOn, null)
+  assert.equal(mapReceipt({ id: 8, receipt_no: 'a', mpesa_code: 'b', expires_on: '2026-12-21T00:00:00' }).expiresOn, '2026-12-21')                  // a date that arrives with a time on it
   assert.equal(subscriptionOf([r], NOW).active, true)                                  // the database's timestamp text works as it is  // and a row with everything filled in keeps every piece of it
-  const full = mapReceipt({ id: 7, customer_id: 2, customer_name: 'Baraka Otieno', customer_contact: '0722000111', receipt_no: '10/1002', mpesa_code: 'OLD1234567', amount: 1500, paid_at: '2026-10-01T07:00:00+00:00', valid_until: '2026-10-31T07:00:00+00:00', days_covered: 45, payer_name: 'BARAKA OTIENO', account_ref: '899118', mpesa_message: 'OLD1234567 Confirmed.', file_path: 'tok/Receipt-10-1002.pdf', sent_via: 'email', sent_by: 'u-admin', sent_at: '2026-10-01T07:05:00+00:00' })
-  assert.deepEqual(full, { id: 7, customerId: 2, customerName: 'Baraka Otieno', customerContact: '0722000111', receiptNo: '10/1002', mpesaCode: 'OLD1234567', amount: 1500, paidAt: '2026-10-01T07:00:00+00:00', validUntil: '2026-10-31T07:00:00+00:00', daysCovered: 45, payerName: 'BARAKA OTIENO', accountRef: '899118', mpesaMessage: 'OLD1234567 Confirmed.', filePath: 'tok/Receipt-10-1002.pdf', sentVia: 'email', sentBy: 'u-admin', sentAt: '2026-10-01T07:05:00+00:00' })
+  const full = mapReceipt({ id: 7, customer_id: 2, customer_name: 'Baraka Otieno', customer_contact: '0722000111', receipt_no: '10/1002', mpesa_code: 'OLD1234567', amount: 1500, paid_at: '2026-10-01T07:00:00+00:00', valid_until: '2026-10-31T21:00:00+00:00', expires_on: '2026-10-31', days_covered: 45, payer_name: 'BARAKA OTIENO', account_ref: '899118', mpesa_message: 'OLD1234567 Confirmed.', file_path: 'tok/Receipt-10-1002.pdf', sent_via: 'email', sent_by: 'u-admin', sent_at: '2026-10-01T07:05:00+00:00' })
+  assert.deepEqual(full, { id: 7, customerId: 2, customerName: 'Baraka Otieno', customerContact: '0722000111', receiptNo: '10/1002', mpesaCode: 'OLD1234567', amount: 1500, paidAt: '2026-10-01T07:00:00+00:00', validUntil: '2026-10-31T21:00:00+00:00', expiresOn: '2026-10-31', daysCovered: 45, payerName: 'BARAKA OTIENO', accountRef: '899118', mpesaMessage: 'OLD1234567 Confirmed.', filePath: 'tok/Receipt-10-1002.pdf', sentVia: 'email', sentBy: 'u-admin', sentAt: '2026-10-01T07:05:00+00:00' })
+})
+
+await ok('a row of the message log becomes what the app holds, with blanks as blanks', () => {
+  const row = { id: 'a1', receipt_id: 5, channel: 'whatsapp', recipient: '254712345678', template: 'sns_payment_receipt', wa_message_id: 'wamid.X', status: 'delivered', error_code: null, error_text: null, created_by: 'u-admin',
+    created_at: '2026-11-23T08:00:00+00:00', updated_at: '2026-11-23T08:00:05+00:00', sent_at: '2026-11-23T08:00:02+00:00', delivered_at: '2026-11-23T08:00:05+00:00', read_at: null, failed_at: null }
+  assert.deepEqual(mapReceiptMessage(row), { id: 'a1', receiptId: 5, channel: 'whatsapp', recipient: '254712345678', template: 'sns_payment_receipt', waMessageId: 'wamid.X', status: 'delivered', errorCode: null, errorText: '', createdBy: 'u-admin',
+    createdAt: '2026-11-23T08:00:00+00:00', updatedAt: '2026-11-23T08:00:05+00:00', sentAt: '2026-11-23T08:00:02+00:00', deliveredAt: '2026-11-23T08:00:05+00:00', readAt: null, failedAt: null })
+  const failed = mapReceiptMessage({ id: 'b2', receipt_id: 5, recipient: '254712345678', status: 'failed', error_code: '131026', error_text: 'The number cannot receive the message.', failed_at: '2026-11-23T08:00:09+00:00' })
+  assert.equal(failed.errorCode, 131026); assert.equal(failed.errorText, 'The number cannot receive the message.'); assert.equal(failed.channel, 'whatsapp'); assert.equal(failed.status, 'failed'); assert.equal(failed.waMessageId, null)
+  assert.equal(mapReceiptMessage({ id: 'c3', receipt_id: 5, recipient: 'x' }).status, 'queued')                          // nothing known yet: still on its way
+  // every moment of a message that went all the way (sent, delivered, read) comes through
+  const seen = mapReceiptMessage({ id: 'd4', receipt_id: 7, channel: 'whatsapp', recipient: '254712345678', template: 'sns_payment_receipt', wa_message_id: 'wamid.Y', status: 'read', error_code: null, error_text: null, created_by: 'u-admin',
+    created_at: '2026-11-23T08:00:00+00:00', updated_at: '2026-11-23T08:05:00+00:00', sent_at: '2026-11-23T08:00:02+00:00', delivered_at: '2026-11-23T08:00:05+00:00', read_at: '2026-11-23T08:05:00+00:00', failed_at: null })
+  assert.deepEqual([seen.sentAt, seen.deliveredAt, seen.readAt, seen.failedAt, seen.updatedAt], ['2026-11-23T08:00:02+00:00', '2026-11-23T08:00:05+00:00', '2026-11-23T08:05:00+00:00', null, '2026-11-23T08:05:00+00:00'])
+  assert.equal(seen.status, 'read'); assert.equal(seen.receiptId, 7); assert.equal(seen.waMessageId, 'wamid.Y')
+  assert.equal(failed.failedAt, '2026-11-23T08:00:09+00:00'); assert.equal(failed.readAt, null); assert.equal(failed.deliveredAt, null)
+  assert.strictEqual(mapReceiptMessage({ id: 'e5', receipt_id: 5, recipient: 'x', error_code: 0 }).errorCode, 0)           // a code of 0 is still a code
 })
 
 await ok('deleting a receipt: the row goes, then its kept PDF; a person who is not the Director deletes nothing and is told so', async () => {
-  const receipt = { id: 5, receiptNo: '11/1008', filePath: 'tok/Receipt-11-1008.pdf' }
+  const receipt = { id: 5, receiptNo: 'SNS/26/1008', filePath: 'tok/Receipt-SNS-26-1008.pdf' }
   const done = pretendClient()
   assert.deepEqual(await deleteReceipt(done, receipt), { ok: true })
-  assert.deepEqual(done.log, [{ op: 'delete', table: 'customer_receipts', col: 'id', val: 5 }, { op: 'remove', bucket: 'customer-receipts', paths: ['tok/Receipt-11-1008.pdf'] }])
+  assert.deepEqual(done.log, [{ op: 'delete', table: 'customer_receipts', col: 'id', val: 5 }, { op: 'remove', bucket: 'customer-receipts', paths: ['tok/Receipt-SNS-26-1008.pdf'] }])
   const blocked = pretendClient({ deleteResult: { data: [], error: null } })              // the database matched no rows: not the Director
   assert.deepEqual(await deleteReceipt(blocked, receipt), { ok: false, error: 'Only the Director can delete a receipt.' })
   assert.deepEqual(ops(blocked), ['delete'])                                              // and the PDF is left alone
@@ -689,13 +928,15 @@ await ok('when the browser blocks the tab, or the tab was closed, nothing breaks
 // 10. The SQL: the same rules in the real database
 // ======================================================================================================================
 const mig = read('supabase/update-48-migration.sql')
+const mig49 = read('supabase/update-49-migration.sql')
 const rebuild = read('supabase/job-card-rebuild.sql')
 const schema = read('supabase/schema.sql')
 const section = (text, from, to) => { const a = text.indexOf(from); assert.ok(a >= 0, `missing: ${from}`); const b = to ? text.indexOf(to, a + from.length) : text.length; return text.slice(a, b < 0 ? text.length : b) }
 
-await ok('the full set-up scripts end with this update, and still carry the one before it', () => {
+await ok('the full set-up scripts end with this update, and still carry the ones before it', () => {
   assert.equal(rebuild, schema)
-  assert.ok(rebuild.endsWith(mig), 'the full script ends with update 48')
+  assert.ok(rebuild.endsWith(mig49), 'the full script ends with update 49')
+  assert.ok(rebuild.includes(mig), 'and carries update 48')
   assert.ok(rebuild.includes(read('supabase/update-47-migration.sql')), 'and carries update 47')
   assert.ok(rebuild.indexOf('create table if not exists public.customer_receipts') > rebuild.indexOf('public.customers'))
 })
@@ -711,13 +952,32 @@ await ok('the receipts table keeps what a receipt needs and refuses nonsense', (
   assert.match(mig, /create unique index if not exists customer_receipts_receipt_no_key on public\.customer_receipts \(receipt_no\)/)
 })
 
-await ok('the database itself works out when the subscription ends (exactly 30 x 24 hours) and refuses a payment from the future', () => {
-  const f = section(mig, 'create or replace function public.customer_receipts_rules()', '$$;')
-  assert.match(f, /new\.valid_until := new\.paid_at \+ make_interval\(hours => new\.days_covered \* 24\)/)
+await ok('the database itself works out when the subscription ends: midnight at the end of the expiry date in Kenya, and refuses a payment from the future', () => {
+  const f = section(mig49, 'create or replace function public.customer_receipts_rules()', '$$;')
+  assert.match(f, /paid_day := \(\(new\.paid_at at time zone 'UTC'\) \+ interval '3 hours'\)::date/)                       // the payment day is the Kenya day
+  assert.match(f, /new\.expires_on := paid_day \+ new\.days_covered/)                                                        // no date given: payment day + days
+  assert.match(f, /new\.expires_on <= paid_day[\s\S]*The expiry date must be after the payment date/)
+  assert.match(f, /new\.expires_on > paid_day \+ 1830[\s\S]*The expiry date is too far after the payment date/)
+  assert.match(f, /new\.valid_until := \(\(new\.expires_on \+ 1\)::timestamp - interval '3 hours'\) at time zone 'UTC'/)    // whatever the screen sent for valid_until is replaced
   assert.match(f, /new\.paid_at > now\(\) \+ interval '30 minutes'/)
   assert.match(f, /The payment time is in the future/)
   assert.match(f, /upper\(btrim\(new\.mpesa_code\)\)/)
-  assert.match(mig, /create trigger trg_customer_receipts_rules before insert on public\.customer_receipts/)
+  assert.match(f, /upper\(btrim\(new\.receipt_no\)\)/)                                                                      // SNS/26/1008, however it was typed
+  assert.match(mig49, /create trigger trg_customer_receipts_rules before insert on public\.customer_receipts/)
+})
+
+await ok('every receipt must carry an expiry date, and the table itself refuses a date that does not fit (a second line of defence behind the trigger)', () => {
+  assert.match(mig49, /add column if not exists expires_on date/)
+  assert.match(mig49, /alter column expires_on set not null/)
+  assert.match(mig49, /customer_receipts_expiry_after_payment[\s\S]*check \(expires_on > \(\(paid_at at time zone 'UTC'\) \+ interval '3 hours'\)::date\)/)
+  assert.match(mig49, /customer_receipts_expiry_not_far[\s\S]*check \(expires_on <= \(\(paid_at at time zone 'UTC'\) \+ interval '3 hours'\)::date \+ 1830\)/)
+  assert.match(mig49, /customer_receipts_valid_until_matches[\s\S]*check \(valid_until = \(\(expires_on \+ 1\)::timestamp - interval '3 hours'\) at time zone 'UTC'\)/)
+  // receipts sent under update 48 are moved onto the Kenya date they ended on, before the constraints are added
+  const backfill = mig49.indexOf("set expires_on = ((valid_until at time zone 'UTC') + interval '3 hours')::date")
+  assert.ok(backfill > 0 && backfill < mig49.indexOf('add constraint customer_receipts_expiry_after_payment'), 'old receipts are filled in first')
+  assert.ok(mig49.indexOf('set not null') > backfill)
+  assert.ok(mig49.indexOf("update public.customer_receipts\n   set valid_until") > 0 && mig49.indexOf("update public.customer_receipts\n   set valid_until") < mig49.indexOf('add constraint customer_receipts_valid_until_matches'))
+  assert.ok(RECEIPT_PREFIX === 'SNS' && MAX_EXPIRY_DAYS === 1830 && /\+ 1830/.test(mig49), 'the app and the database agree on the longest expiry')
 })
 
 await ok('only admins can send and read receipts, only the Director can delete one, nobody can change one, and the public has no access to the table', () => {
@@ -740,14 +1000,44 @@ await ok('the PDF copies live in their own folder: PDF only, 1 MB at most, admin
   assert.ok(!/create policy "customer_receipts_files_(update|all)/.test(mig))
 })
 
-await ok('the script can be run twice without harm, and live updates reach the screen', () => {
+await ok('the scripts can be run twice without harm, and live updates reach the screen', () => {
   assert.match(mig, /create table if not exists public\.customer_receipts/)
-  for (const m of mig.matchAll(/create policy "(\w+)"/g)) assert.ok(new RegExp(`drop policy if exists "${m[1]}" on`).test(mig), `drop policy if exists ${m[1]}`)
-  for (const m of mig.matchAll(/create (?:unique )?index (?!if not exists)(\w+)/g)) assert.fail(`index ${m[1]} without "if not exists"`)
+  for (const [name, text] of [['update 48', mig], ['update 49', mig49]]) {
+    for (const m of text.matchAll(/create policy "(\w+)"/g)) assert.ok(new RegExp(`drop policy if exists "${m[1]}" on`).test(text), `${name}: drop policy if exists ${m[1]}`)
+    for (const m of text.matchAll(/create (?:unique )?index (?!if not exists)(\w+)/g)) assert.fail(`${name}: index ${m[1]} without "if not exists"`)
+    assert.match(text, /notify pgrst, 'reload schema'/, name)
+  }
   assert.match(mig, /drop trigger if exists trg_customer_receipts_rules on public\.customer_receipts/)
+  assert.match(mig49, /drop trigger if exists trg_customer_receipts_rules on public\.customer_receipts/)
   assert.match(mig, /alter publication supabase_realtime add table public\.customer_receipts/)
   assert.match(mig, /pg_publication_tables[\s\S]*tablename = 'customer_receipts'/)
-  assert.match(mig, /notify pgrst, 'reload schema'/)
+  assert.match(mig49, /alter publication supabase_realtime add table public\.receipt_messages/)
+  assert.match(mig49, /pg_publication_tables[\s\S]*tablename = 'receipt_messages'/)
+  assert.match(mig49, /add column if not exists expires_on/)
+  assert.match(mig49, /create table if not exists public\.receipt_messages/)
+  assert.match(mig49, /not exists \(select 1 from pg_constraint where conname = 'customer_receipts_expiry_after_payment'/)
+  assert.match(mig49, /create or replace function public\.begin_receipt_message/)
+})
+
+await ok('the message log: admins can read it, nobody signed in can change it, and only the server key can start, finish or move a message on', () => {
+  assert.match(mig49, /alter table public\.receipt_messages enable row level security/)
+  assert.match(mig49, /create policy "receipt_messages_select_admin" on public\.receipt_messages for select using \(public\.is_admin\(\)\)/)
+  assert.equal((mig49.match(/create policy "receipt_messages_/g) || []).length, 1, 'one policy: reading, for admins')
+  assert.match(mig49, /revoke all on public\.receipt_messages from anon/)
+  assert.match(mig49, /revoke insert, update, delete, truncate on public\.receipt_messages from authenticated/)
+  assert.match(mig49, /status in \('queued', 'accepted', 'sent', 'delivered', 'read', 'failed'\)/)
+  assert.match(mig49, /create unique index if not exists receipt_messages_wamid_key on public\.receipt_messages \(wa_message_id\) where wa_message_id is not null/)
+  assert.match(mig49, /receipt_id\s+bigint not null references public\.customer_receipts\(id\) on delete cascade/)
+  for (const fn of ['begin_receipt_message\\(bigint, text, uuid, text, text\\)', 'finish_receipt_message\\(uuid, text, integer, text\\)', 'record_whatsapp_status\\(text, text, timestamptz, integer, text\\)']) {
+    assert.match(mig49, new RegExp(`revoke all on function public\\.${fn} from public, anon, authenticated`), fn)
+    assert.match(mig49, new RegExp(`grant execute on function public\\.${fn} to service_role`), fn)
+  }
+  const rate = section(mig49, 'create or replace function public.begin_receipt_message', '$$;')
+  assert.match(rate, /pg_advisory_xact_lock\(p_receipt_id\)/)                       // one start at a time per receipt, so a double press cannot send twice
+  assert.match(rate, /interval '60 seconds'[\s\S]*'busy'/)
+  assert.match(rate, />= 300[\s\S]*'rate'/)
+  const news = section(mig49, 'create or replace function public.record_whatsapp_status', '$$;')
+  assert.match(news, /rank_new <= rank_cur then return 'ignored'/)                   // news only ever moves a message forward
 })
 
 // ======================================================================================================================
