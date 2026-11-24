@@ -233,19 +233,23 @@ src/
     mappers.js             DB row <-> app object field mapping
     helpers.js             Formatting, constants
     profileComplete.js     What a "complete profile" means, who is held to it, and who has not finished (updates 50, 51)
+    faultReport.js         Which job types ask for the reported fault and how it was solved, and what the form shows (update 52)
+    theme.js               The three colour modes (Light, Dark, Custom) and how the choice is remembered (update 52)
   components/
     Auth.jsx                Login / signup / forgot / reset password
     Header.jsx, shared.jsx  Layout & reusable UI pieces
     ProfileBanner.jsx       The "Please update your profile" notice on a member's dashboard (update 50)
+    ThemeMenu.jsx           The colour-mode menu in the header (update 52)
     JobForm.jsx, JobsTable.jsx, PrintViews.jsx
     TeamList.jsx            The admin's staff list, with the "Profile incomplete" badge (update 51)
     MemberDashboard.jsx, AdminDashboard.jsx
 netlify/
-  functions/                The two Netlify Functions behind automatic WhatsApp sending (update 49)
+  functions/                The Netlify Functions: two behind automatic WhatsApp sending (update 49) and the scheduled 5:31 pm late-payment email (update 52)
   lib/                      What they do, written so that it can be tested without Netlify
 supabase/
   schema.sql                Run this once in the Supabase SQL Editor
 WHATSAPP-SETUP.md           Step-by-step guide to automatic WhatsApp sending (optional)
+EMAIL-ALERT-SETUP.md        Step-by-step guide to the 5:31 pm late-payment email (optional)
 ```
 
 ## Update 35
@@ -453,3 +457,34 @@ Automatic sending runs as two Netlify Functions (the new `netlify/` folder, set 
 - **The staff list is read again when you open it.** Until now the Staff tab showed what had been loaded when the admin signed in, so a member who finished their profile an hour ago would still carry the badge. Now the staff and their bank details are read again each time the **Staff** tab is opened, and again when you come back to the app while that tab is showing (for example after switching to another app on a phone). To see the latest at any moment, open another tab and come back to Staff.
 - **One rule everywhere.** The badge, the notice on the member's page, the member's own banner and the database all use the same list (`REQUIRED_PROFILE_FIELDS` in `src/lib/profileComplete.js`), so they cannot disagree about who is complete. If the bank details could not be read (a poor connection), the four bank fields are left out of the check and the staff list says so ("The bank details have not loaded, so only the rest of each profile was checked.") instead of marking everyone.
 - **Not changed, on purpose.** The words "Please update your profile to file this job." and everything else from update 50: only filing a new job is held back, admins and the Director are not, an admin can still assign a job to a member who has not finished, and nobody's existing jobs or profile are touched. To make something required again (or optional), change the list in `src/lib/profileComplete.js` and the same list in `profile_missing_fields()` in the database (same keys, same order), then run `npm test`; the test compares the two.
+
+## Update 52
+
+**To apply:** (1) run `supabase/update-52-migration.sql` in the Supabase SQL editor **before** you deploy (safe to run again; apply the earlier updates first), (2) deploy the code. A fresh install needs only `job-card-rebuild.sql`, which now contains updates 40 to 52. The migration adds two empty columns to the jobs table and one rule; it changes no job and nobody's profile. Until it has run, a job of the new kind cannot be saved (the two new boxes have nowhere to go), so run it first. (3) **Optional:** to have the Director emailed at 5:31 pm about late payments, follow `EMAIL-ALERT-SETUP.md` (about 15 minutes). Until you do, no email is sent and nothing else is affected.
+
+- **A job card now says what the customer reported and how it was solved.** For every job type **except New Installation and Site Survey** (Network Troubleshooting, Router / Equipment Repair, Routine Maintenance, Fibre / Cable Repair, Equipment Upgrade and Other) the **Job details** box is gone, and two boxes take its place: **Reported fault** ("Briefly, what the customer reported.") and **How it was solved** ("What was done to fix it. If it is not fixed yet, say what has been done so far."). **Both are required.** Pressing **File job card** with one empty files nothing and says under the box: "Please describe the reported fault" or "Please describe how it was solved." A box that holds only spaces or line breaks counts as empty. **New Installation and Site Survey keep Job details**, exactly as before, and it is required there as before. Choosing the job type switches the boxes at once; before a type is chosen none of them is shown.
+- **What is kept when the type is changed.** Only the boxes that belong to the chosen type are saved. If a job's type is changed from a repair to a New Installation, the fault report is cleared (it no longer applies) and Job details is asked for; from a New Installation to a repair, the old Job details stay exactly as they were, shown in a grey card (**Job details (as first written)**) above the two new boxes, which must then be filled in. A job that an **admin handed over** keeps the admin's guidance: the member sees it in the card **Job details from your admin**, and writes the fault and how it was solved when they do the job.
+- **Who is held to it.** Members, when they file a job and when they change one of the kinds above. **Admins and the Director are not**: the admin's form for handing a job over is unchanged (the guidance box, whatever the type) and never asks for a resolution. Backup and restore, and an admin's own changes, are not held to it either.
+- **The database enforces it for a new job, not only the screen.** A new job of one of those types with either box empty, filed by a member from an out-of-date copy of the app or by anything else that talks to the database, is refused with **"Please describe the reported fault and how it was solved."** (the app then shows the same sentence above the buttons and keeps what was typed). Editing, completing or deleting a job a member already has is **never** blocked by it. To change the wording, change `FAULT_REPORT_MESSAGE` in `src/lib/faultReport.js` **and** the same words in the migration (`raise exception`), then run `npm test`: a test fails if the two differ. To change which job types keep Job details, change `JOB_TYPES_WITH_DETAILS` in the same file **and** the list in `job_fault_report_missing()` in the migration; the test compares them too.
+- **Where you read it.** In the job's form when it is opened, and on the printed job card (**Reported fault** and **How it was solved** lines in place of Job Details; a job that has both old details and a fault report shows both). The Excel backup includes the two new columns and restores them.
+- **Two cards are gone from the members' portal: Retrieved routers and Jobs I raised.** A member no longer sees them, and a member can no longer record a retrieved router from their dashboard. **Admins keep Retrieved Routers** (Stock tab → Retrieved Routers, where an admin can still record one, choosing who retrieved it). The jobs a member raised are still all in **All my jobs**.
+- **A third colour mode: Custom mode.** The button at the top right (next to the log-out button) used to switch between light and dark. It now opens a small menu with three modes: **Light mode**, **Dark mode** and **Custom mode**. Custom mode is the look of the sign-in page's dark navy panel (the picture you sent): a deep navy background (`#16232E`) with the same two curves in the bottom-right corner (navy `#152940` and charcoal `#343339`) behind every page, white headings, soft grey text, and the app's blues and oranges brightened so they stay easy to read on navy. The sign-in page itself is drawn exactly as in your picture in Custom mode. The mode you choose is remembered on that browser and phone (each person picks their own) and is applied before the page appears, so it never flashes the wrong colours. Before anyone has chosen, a device set to dark mode starts in Dark mode, otherwise in Light mode (as before). **Printing and PDFs are always light and plain** in every mode (previously Dark mode printed dark pages). The curves sit behind the content and never block a tap, and they are part of the screen only.
+- **The 5:31 pm late-payment email to the Director.** Every **Monday to Saturday at 5:31 pm Nairobi time**, one minute after the 5:30 pm closing hour, a Netlify scheduled function (`netlify/functions/late-payments-alert.mjs`) looks for payments that are still unpaid and, **only if there are some**, sends the Director one short email (through Resend, a free email service). Unpaid means the same as in the app: **transport** not yet marked paid (the Transport tab's "unpaid") and **expenses / purchases** that show **Mark as Paid** (a purchase with its receipt waiting for payment, an approved service not yet paid), over all days; money paid in advance, requests waiting for approval and rejected ones are not counted. It does not run on Sundays or on a public holiday the Director added under Staff → Leave → Policy & holidays, and a passing failure is tried again (up to three times) without ever sending the email twice. The email, word for word:
+
+  ```
+  Subject: Late payments: KSh 4,700 unpaid after closing
+
+  Hello Naibei,
+
+  These payments are still unpaid after the 5:30 pm closing time:
+
+  - Transport: KSh 1,200 (2 staff members)
+  - Expenses / purchases: KSh 3,500 (1 request)
+
+  Open Job Cards to pay: https://snsjobcard.netlify.app
+
+  Swahili Net Solution
+  ```
+
+  It goes to the email address on the Director's account unless `ALERT_EMAIL_TO` says otherwise. **Setup, the three or four Netlify settings, how to test it with Netlify's "Run now" (the email is then marked [Test] if it is before 5:30 pm) and what each message in the function log means are in `EMAIL-ALERT-SETUP.md`.** Like the WhatsApp functions it needs the site deployed from GitHub (Part 3, Option A) and `SUPABASE_SERVICE_ROLE_KEY` in Netlify. **About "exactly 5:31":** Netlify reads schedules in UTC (`31 14 * * 1-6` is 17:31 in Nairobi all year, because Kenya has no daylight saving), starts the function in that minute and does not promise the exact second; the email then takes a few seconds to arrive. The first email may include older amounts that were paid in cash but never marked as paid in the app: mark them as paid once and they stop appearing.
+- **Not changed, on purpose.** Nobody's existing job is touched (the two new columns are empty for every job that exists today, and the old Job details stay where they are). Customers, receipts, WhatsApp sending, leave and stock work as before. The Transport tab, the Expenses screen and the Director's approval steps are unchanged; the email only reads them.

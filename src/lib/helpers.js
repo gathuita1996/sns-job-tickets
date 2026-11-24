@@ -140,6 +140,8 @@ export function defaultJobForm() {
     status: '',
     priority: 'Normal',
     notes: '',
+    reportedFault: '',      // Update 52: asked instead of "Job details" for every job type except New Installation and Site Survey
+    resolution: '',
   }
 }
 

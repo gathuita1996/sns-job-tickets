@@ -1,11 +1,10 @@
 import { useMemo, useState } from 'react'
-import { AlertCircle, ArrowLeft, Plane, Router as RouterIcon, Calendar, CheckCircle2, ClipboardCheck, Clipboard, Clock, Pencil, Plus, Receipt, Send, Trash2, UserPlus, Users, Wallet } from 'lucide-react'
+import { AlertCircle, ArrowLeft, Plane, Calendar, CheckCircle2, ClipboardCheck, Clipboard, Clock, Pencil, Plus, Receipt, Trash2, UserPlus, Users, Wallet } from 'lucide-react'
 import Header from './Header'
 import ProfileBanner from './ProfileBanner'
 import JobFormModal from './JobForm'
 import JobsTable from './JobsTable'
 import CustomerFormModal from './CustomerForm'
-import RetrievedRouters from './RetrievedRouters'
 import ExpenseFormModal from './ExpenseForm'
 import ExpensesList from './ExpensesList'
 import { JobPrintView } from './PrintViews'
@@ -17,11 +16,10 @@ import { jobFilingGate } from '../lib/profileComplete'
 import { MapPin } from 'lucide-react'
 
 
-export default function MemberDashboard({ extras, currentUser, jobs, raisedJobs, customers, customerIdsWithJobs, expenses, memberNames, places, visits, onAddPlace, onRecordVisit, onDeleteVisit, onLogout, onAddJob, onUpdateJob, onDeleteJob, onAddCustomer, onUpdateCustomer, onDeleteCustomer, onUpdateProfile, onAddExpense, onAttachReceipt, onDeleteExpense, onViewReceipt, commissionRate }) {
+export default function MemberDashboard({ extras, currentUser, jobs, customers, customerIdsWithJobs, expenses, memberNames, places, visits, onAddPlace, onRecordVisit, onDeleteVisit, onLogout, onAddJob, onUpdateJob, onDeleteJob, onAddCustomer, onUpdateCustomer, onDeleteCustomer, onUpdateProfile, onAddExpense, onAttachReceipt, onDeleteExpense, onViewReceipt, commissionRate }) {
   const [profileRequest, setProfileRequest] = useState(null)
-  const routerApi = (extras && extras.routers) || { rows: [] }
   const leaveSummary = extras && extras.leave && extras.leave.summary
-  const [view, setView] = useState('home') // 'home' | 'all' | 'pending' | 'today' | 'assigned' | 'raised' | 'customers' | 'routers' | 'expenses'
+  const [view, setView] = useState('home') // 'home' | 'all' | 'pending' | 'today' | 'assigned' | 'customers' | 'visits' | 'expenses'
   const [periodGranularity, setPeriodGranularity] = useState('day')
   const [periodAnchor, setPeriodAnchor] = useState(() => new Date())
   const [showForm, setShowForm] = useState(false)
@@ -47,7 +45,6 @@ export default function MemberDashboard({ extras, currentUser, jobs, raisedJobs,
   const isSales = currentUser.department === 'sales'
   const visitStats = useMemo(() => (isSales ? analyzePlaces({ places: places || [], visits: visits || [], customers, today: toDateInputValue(new Date()) }) : []), [isSales, places, visits, customers])
   const revisitCount = visitStats.filter((s) => s.needRevisit).length
-  const isTechnical = currentUser.department === 'technical'
   // Asking for a purchase (the Expenses feature) is for a Team Lead and for everyone in the Technical department; other
   // members do not get it. "Log a service" is never offered here -- it is an admin job (see AdminDashboard and the
   // database). Admins get the purchase form through AdminDashboard instead, not this component.
@@ -85,14 +82,13 @@ export default function MemberDashboard({ extras, currentUser, jobs, raisedJobs,
     if (view === 'pending') base = pendingJobs
     else if (view === 'today') base = todayJobs
     else if (view === 'assigned') base = assignedJobs
-    else if (view === 'raised') base = raisedJobs || []
     return base.filter((j) => {
       const q = search.toLowerCase()
       const matchesSearch = !q || [j.location, j.requestedBy, j.jobId].some((f) => (f || '').toLowerCase().includes(q))
       const matchesStatus = statusFilter === 'all' || j.status === statusFilter
       return matchesSearch && matchesStatus
     }).sort((a, b) => new Date(b.visitDate) - new Date(a.visitDate))
-  }, [view, jobs, pendingJobs, todayJobs, assignedJobs, raisedJobs, search, statusFilter])
+  }, [view, jobs, pendingJobs, todayJobs, assignedJobs, search, statusFilter])
 
   const sortedMyCustomers = useMemo(() => [...myCustomers].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)), [myCustomers])
   // JobForm expects allMembers as a plain array (same shape admin already
@@ -102,7 +98,7 @@ export default function MemberDashboard({ extras, currentUser, jobs, raisedJobs,
 
   if (printing) return <JobPrintView job={printing} filedByUser={currentUser} coTechnicianNames={(printing.coTechnicians || []).map((id) => memberNames?.[id]?.fullName).filter(Boolean)} onBack={() => setPrinting(null)} />
 
-  const viewTitles = { all: 'All my jobs', pending: 'Pending jobs', today: "Today's jobs", assigned: 'Jobs assigned to me', raised: 'Jobs I raised', customers: 'My customers', routers: 'Retrieved routers' }
+  const viewTitles = { all: 'All my jobs', pending: 'Pending jobs', today: "Today's jobs", assigned: 'Jobs assigned to me', customers: 'My customers' }
 
   function openNewJob() { setEditingJob(null); setShowForm(true) }
 
@@ -141,16 +137,12 @@ export default function MemberDashboard({ extras, currentUser, jobs, raisedJobs,
               <NavCard icon={Clock} label="Pending jobs" description={`${pendingJobs.length} waiting`} onClick={() => setView('pending')} badge={stats.overdue} />
               <NavCard icon={Calendar} label="Jobs today" description={`${todayJobs.length} filed today`} onClick={() => setView('today')} />
               <NavCard icon={ClipboardCheck} label="Assigned to me" description={`${assignedJobs.length} from admin`} onClick={() => setView('assigned')} />
-              <NavCard icon={Send} label="Jobs I raised" description={`${(raisedJobs || []).length} handed off — updates automatically`} onClick={() => setView('raised')} />
               <NavCard icon={UserPlus} label="Record new customer" description={COMMISSION_DEPARTMENTS.includes(currentUser.department) ? `Earn KSh ${commissionRate} commission` : 'Log a lead for follow-up'} onClick={() => setShowCustomerForm(true)} />
               {isSales && (
                 <NavCard icon={Users} label="My customers" description={`${myCustomers.length} recorded`} onClick={() => setView('customers')} />
               )}
               {isSales && (
                 <NavCard icon={MapPin} label="Field visits" description={`${(visits || []).filter((v) => v.visitedBy === currentUser.id).length} visits recorded · where to go next`} onClick={() => setView('visits')} badge={revisitCount} />
-              )}
-              {isTechnical && (
-                <NavCard icon={RouterIcon} label="Retrieved routers" description={`${routerApi.rows.length} recorded`} onClick={() => setView('routers')} />
               )}
               {!(leaveSummary && leaveSummary.eligible === false) && (
                 <NavCard icon={Plane} label="My leave" description={leaveSummary ? `${leaveSummary.remaining} days left` : 'Apply for leave'} onClick={() => setProfileRequest({ tab: 'leave', n: Date.now() })} />
@@ -230,14 +222,6 @@ export default function MemberDashboard({ extras, currentUser, jobs, raisedJobs,
             </div>
             <FieldVisits places={places || []} visits={visits || []} customers={customers} nameOf={(id) => (id === currentUser.id ? currentUser.fullName : (memberNames && memberNames[id] && memberNames[id].fullName) || '')} currentUser={currentUser} isAdmin={false} onAddPlace={onAddPlace} onRecordVisit={onRecordVisit} onDeleteVisit={onDeleteVisit} onSetPlaceActive={() => {}} />
           </>
-        ) : view === 'routers' ? (
-          <>
-            <div className="flex items-center gap-3" style={{ marginBottom: '1rem' }}>
-              <button onClick={() => setView('home')} className="sns-btn-secondary" style={{ padding: '0.5rem' }} title="Back to dashboard"><ArrowLeft size={16} /></button>
-              <h2 className="sns-display" style={{ fontSize: '1.1rem', fontWeight: 700 }}>Retrieved routers</h2>
-            </div>
-            <RetrievedRouters rows={routerApi.rows} deviceItems={routerApi.deviceItems || []} customers={customers} members={[currentUser]} userMap={{ [currentUser.id]: currentUser }} isAdmin={false} currentUser={currentUser} onAdd={routerApi.onAdd} onUpdate={routerApi.onUpdate} onSetStatus={routerApi.onSetStatus} onDelete={routerApi.onDelete} />
-          </>
         ) : view === 'expenses' ? (
           <>
             <div className="flex items-center justify-between" style={{ marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
@@ -272,14 +256,12 @@ export default function MemberDashboard({ extras, currentUser, jobs, raisedJobs,
             </div>
             {view === 'assigned' && filtered.length === 0 ? (
               <EmptyState message="No jobs have been assigned to you yet." />
-            ) : view === 'raised' && filtered.length === 0 ? (
-              <EmptyState message="Nothing you've raised has been handed off to someone else yet." />
             ) : (
               <JobsTable
                 jobs={filtered}
                 onView={(j) => setPrinting(j)}
-                onEdit={view === 'raised' ? undefined : (j) => { setEditingJob(j); setShowForm(true) }}
-                onDelete={view === 'raised' ? undefined : (j) => setConfirmDelete(j)}
+                onEdit={(j) => { setEditingJob(j); setShowForm(true) }}
+                onDelete={(j) => setConfirmDelete(j)}
                 restrictEditing
               />
             )}
@@ -302,8 +284,8 @@ export default function MemberDashboard({ extras, currentUser, jobs, raisedJobs,
             else {
               const result = await onAddJob(data)
               // The database refused the job because the profile is not complete: keep the form open (what was typed stays) so it
-              // can show why. Any other outcome closes the form as before.
-              if (result && result.profileIncomplete) return result
+              // can show why (the same for a job refused because the reported fault or how it was solved was empty). Any other outcome closes the form as before.
+              if (result && (result.profileIncomplete || result.faultReport)) return result
             }
             setShowForm(false); setEditingJob(null)
           }}

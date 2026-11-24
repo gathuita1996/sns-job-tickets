@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { Plus, Trash2, X } from 'lucide-react'
-import { FormField } from './shared'
+import { FormField, ErrorBanner } from './shared'
 import GpsCapture from './GpsCapture'
 import { JOB_TYPES, SITE_SURVEY, LOCATIONS, TRANSPORT_LOCATIONS, STATUS_OPTIONS, PRIORITY_OPTIONS, defaultJobForm, isOverdue, resolveOtherField, toDateInputValue, formatDate, formatKSh } from '../lib/helpers'
-import { PROFILE_REQUIRED_MESSAGE, describeMissing } from '../lib/profileComplete'
+import { PROFILE_REQUIRED_MESSAGE, describeMissing, isBlank } from '../lib/profileComplete'
+import { FAULT_REPORT_FIELDS, FAULT_REPORT_MESSAGE, jobDetailLines, jobDetailsPlan, missingFaultReport } from '../lib/faultReport'
 
 // assignableMembers is only passed when an admin opens this form (to assign
 // or reassign a job to a Technical or Sales & Marketing member) -- its
@@ -22,6 +23,11 @@ import { PROFILE_REQUIRED_MESSAGE, describeMissing } from '../lib/profileComplet
 // (Update 50): while the profile is not complete the job is not filed -- the form stays open, with what was typed, and shows
 // "Please update your profile to file this job." plus a button that opens the profile. onSave may return { profileIncomplete: true }
 // when the database refused the job for that reason (the screen's own check was out of date); the same message is shown.
+// Update 52: what the form asks about the work done depends on the job type (jobDetailsPlan in lib/faultReport.js). New Installation and
+// Site Survey keep the "Job details" box. Every other type asks, instead, for the reported fault and how it was solved (both required).
+// Details an older job already has (or an admin's guidance) stay visible, read-only. The admin's own form (assignableMembers) is the
+// admin's guidance box, as before. onSave may also return { faultReport: true } when the database refused a new job because either
+// box was empty; the form then stays open and says so.
 export default function JobFormModal({ initialJob, assignableMembers, allMembers, availableCustomers, allCustomers, filerDepartment, currentUserId, reassignOnly, profileGate, onOpenProfile, onClose, onSave }) {
   const adminMode = Boolean(assignableMembers)
   const isNewAdminAssignment = adminMode && !initialJob
@@ -49,13 +55,19 @@ export default function JobFormModal({ initialJob, assignableMembers, allMembers
     transportFrom: fromResolved.selected, transportFromOther: fromResolved.other,
     transportStops: stopsResolved || [{ selected: '', other: '' }],
     transportAmount: initialJob.transportAmount, status: initialJob.status,
-    priority: initialJob.priority || 'Normal', notes: initialJob.notes || '', overdueReason: initialJob.overdueReason || '',
+    priority: initialJob.priority || 'Normal', notes: initialJob.notes || '', reportedFault: initialJob.reportedFault || '', resolution: initialJob.resolution || '',
+    overdueReason: initialJob.overdueReason || '',
     assignedTo: initialJob.memberId || '', raisedBy: initialJob.raisedBy || '', customerId: initialJob.customerId || null,
     coTechnicians: initialJob.coTechnicians || [],
     gps: initialJob.gpsLat != null ? { lat: initialJob.gpsLat, lng: initialJob.gpsLng, accuracy: initialJob.gpsAccuracy, recordedAt: initialJob.gpsRecordedAt } : null,
   } : { ...defaultJobForm(), status: adminMode ? 'Pending' : '', assignedTo: '', raisedBy: '', customerId: null, coTechnicians: [], gps: null })
   const [errors, setErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
+  const [faultNotice, setFaultNotice] = useState(false)       // the database refused a new job because the two fault boxes were empty
+
+  // What the form asks about the work done, for the job type chosen right now.
+  const hasEarlierDetails = Boolean(initialJob) && !isBlank(initialJob.notes)
+  const plan = jobDetailsPlan({ jobType: form.jobType, adminMode, hasNotes: hasEarlierDetails })
 
   // Only filing a NEW job by a member is held back for an incomplete profile; changing a job that already exists never is.
   //   profileNotice: null | 'form' (our own check stopped it; shows while the profile is still incomplete) | 'database' (the database refused it)
@@ -165,7 +177,12 @@ export default function JobFormModal({ initialJob, assignableMembers, allMembers
       if (form.transportAmount === '' || isNaN(Number(form.transportAmount)) || Number(form.transportAmount) < 0) e.transportAmount = 'Enter a valid amount'
     }
     if (!form.status) e.status = 'Please select a status'
-    if (!form.notes.trim()) e.notes = 'Job details are required'
+    if (plan.notesRequired && !form.notes.trim()) e.notes = 'Job details are required'
+    if (plan.faultRequired) {
+      // Looked at as it will be saved (the spaces around it trimmed off), so whatever passes here is never empty in the database.
+      const missing = missingFaultReport(form.jobType, { reportedFault: form.reportedFault.trim(), resolution: form.resolution.trim() })
+      for (const f of FAULT_REPORT_FIELDS) if (missing.includes(f.key)) e[f.field] = f.error
+    }
     if (adminMode && !form.assignedTo) e.assignedTo = 'Please choose who this job goes to'
     if (editingOverdue) {
       if (!form.overdueReason.trim()) e.overdueReason = 'Please explain why this job is overdue'
@@ -179,12 +196,19 @@ export default function JobFormModal({ initialJob, assignableMembers, allMembers
   async function handleSubmit(ev) {
     ev.preventDefault()
     setProfileNotice(null)
+    setFaultNotice(false)
     // Asked first: the profile has to be complete whatever else is on the form, and the member keeps everything typed so far.
     if (holdsForProfile && profileGate && profileGate.blocked) { setProfileNotice('form'); return }
     if (!validate()) return
     setSubmitting(true)
     const result = await onSave({
       ...form,
+      // What is said about the work done goes with the job type. "Job details" is only sent when the form has a box for it, so
+      // details an older job has are never wiped by a form that does not show them. The two fault boxes are sent when shown,
+      // cleared (null) for a type that keeps "Job details", and left alone (not sent) on the admin's form.
+      notes: plan.notes === 'editor' ? form.notes : undefined,
+      reportedFault: plan.fault ? form.reportedFault : (plan.kind === 'guidance' ? undefined : null),
+      resolution: plan.fault ? form.resolution : (plan.kind === 'guidance' ? undefined : null),
       location: form.location === 'Other' ? form.locationOther.trim() : form.location,
       transportFrom: form.transportFrom === 'Other' ? form.transportFromOther.trim() : form.transportFrom,
       transportTo: form.transportStops.map((stop) => (stop.selected === 'Other' ? stop.other.trim() : stop.selected)),
@@ -193,6 +217,7 @@ export default function JobFormModal({ initialJob, assignableMembers, allMembers
     })
     setSubmitting(false)
     if (result && result.profileIncomplete) setProfileNotice('database')
+    if (result && result.faultReport) setFaultNotice(true)
   }
 
   const jobTypeCls = `sns-input${form.jobType === '' ? ' sns-select-placeholder' : ''}`
@@ -216,7 +241,9 @@ export default function JobFormModal({ initialJob, assignableMembers, allMembers
               <div className="sns-card" style={{ padding: '0.9rem 1.1rem', background: 'var(--paper)' }}>
                 <p style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: '0.3rem' }}>{initialJob.jobId} — {initialJob.jobType === 'Other' && initialJob.jobTypeOther ? initialJob.jobTypeOther : initialJob.jobType}</p>
                 <p className="sns-text-soft" style={{ fontSize: '0.82rem' }}>{initialJob.location} · {formatDate(initialJob.visitDate)} · {formatKSh(initialJob.transportAmount)}</p>
-                {initialJob.notes && <p className="sns-text-soft" style={{ fontSize: '0.82rem', marginTop: '0.4rem' }}>{initialJob.notes}</p>}
+                {jobDetailLines(initialJob).filter((line) => line.value !== '—').map((line) => (
+                  <p key={line.key} className="sns-text-soft" style={{ fontSize: '0.82rem', marginTop: '0.4rem' }}>{line.key === 'notes' ? line.value : <><strong>{line.label}:</strong> {line.value}</>}</p>
+                ))}
               </div>
               <FormField label="Reassign to" error={errors.assignedTo} hint="Technical and Sales & Marketing members can be assigned a job (e.g. site visits).">
                 <select className={assigneeCls} value={form.assignedTo} onChange={(e) => update('assignedTo', e.target.value)}>
@@ -400,9 +427,30 @@ export default function JobFormModal({ initialJob, assignableMembers, allMembers
             </FormField>
           )}
 
-          <FormField label={adminMode ? 'Job details (guidance for the assigned member)' : 'Job details'} error={errors.notes} hint={adminMode ? 'Include everything they need to handle this in the field — what was reported, by whom, and any relevant history.' : undefined}>
-            <textarea className="sns-input" rows={adminMode ? 4 : 3} value={form.notes} onChange={(e) => update('notes', e.target.value)} placeholder={adminMode ? 'What was reported, and what do they need to know?' : 'Describe the issue and the work carried out…'} />
-          </FormField>
+          {plan.notes === 'editor' && (
+            <FormField label={adminMode ? 'Job details (guidance for the assigned member)' : 'Job details'} error={errors.notes} htmlFor="job-notes" hint={adminMode ? 'Include everything they need to handle this in the field — what was reported, by whom, and any relevant history.' : undefined}>
+              <textarea id="job-notes" className="sns-input" rows={adminMode ? 4 : 3} value={form.notes} onChange={(e) => update('notes', e.target.value)} placeholder={adminMode ? 'What was reported, and what do they need to know?' : 'Describe the issue and the work carried out…'} />
+            </FormField>
+          )}
+
+          {plan.notes === 'readonly' && (
+            <div className="sns-card" data-testid="earlier-details" style={{ padding: '0.8rem 1rem', background: 'var(--paper)' }}>
+              <p className="sns-eyebrow sns-text-faint" style={{ marginBottom: '0.25rem' }}>{initialJob.assignedBy ? 'Job details from your admin' : 'Job details (as first written)'}</p>
+              <p style={{ fontSize: '0.85rem', whiteSpace: 'pre-wrap' }}>{initialJob.notes}</p>
+            </div>
+          )}
+
+          {plan.fault && (
+            <>
+              <FormField label="Reported fault" error={errors.reportedFault} htmlFor="job-reported-fault" hint="Briefly, what the customer reported.">
+                <textarea id="job-reported-fault" className="sns-input" rows={3} value={form.reportedFault} onChange={(e) => update('reportedFault', e.target.value)} placeholder="e.g. No internet — the router is on but will not connect" />
+              </FormField>
+              <FormField label="How it was solved" error={errors.resolution} htmlFor="job-resolution" hint="What was done to fix it. If it is not fixed yet, say what has been done so far.">
+                <textarea id="job-resolution" className="sns-input" rows={3} value={form.resolution} onChange={(e) => update('resolution', e.target.value)} placeholder="e.g. Replaced the damaged patch cord and restarted the router" />
+              </FormField>
+            </>
+          )}
+          {faultNotice && <div role="alert"><ErrorBanner message={FAULT_REPORT_MESSAGE} /></div>}
 
           {editingOverdue && (
             <FormField label="Why was this overdue?" error={errors.overdueReason}>

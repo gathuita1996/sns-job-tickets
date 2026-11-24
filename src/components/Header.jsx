@@ -1,20 +1,19 @@
 import { useEffect, useState } from 'react'
-import { LogOut, Moon, Sun } from 'lucide-react'
+import { LogOut } from 'lucide-react'
 import ProfileFormModal from './ProfileForm'
+import ThemeMenu from './ThemeMenu'
 import Avatar from './Avatar'
 import logoIcon from '../assets/logo-icon.png'
+import { applyTheme, initialTheme, saveTheme } from '../lib/theme'
 
-// Self-contained: reads the saved preference (or the system default on first visit), and keeps localStorage + the
-// document's data-theme attribute in sync whenever it changes.
+// Self-contained: starts in the saved mode (or the device's default on the first visit), and keeps the browser's storage + the
+// document's data-theme attribute in sync whenever it changes. Update 52: three modes (light, dark, custom), chosen from a menu
+// (ThemeMenu); the list of modes and how they are saved is in lib/theme.js.
 function useTheme() {
-  const [theme, setTheme] = useState(() => {
-    const stored = localStorage.getItem('sns-theme')
-    if (stored === 'dark' || stored === 'light') return stored
-    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-  })
+  const [theme, setTheme] = useState(() => initialTheme())
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme)
-    localStorage.setItem('sns-theme', theme)
+    applyTheme(theme)
+    saveTheme(theme)
   }, [theme])
   return [theme, setTheme]
 }
@@ -52,9 +51,7 @@ export default function Header({ currentUser, onLogout, onUpdateProfile, subtitl
           <button onClick={open} title={settings ? 'My profile & settings' : 'My profile'} aria-label="My profile" className="sm:hidden" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
             <Avatar name={currentUser.fullName} url={currentUser.avatarUrl} size={32} />
           </button>
-          <button onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))} title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'} className="sns-btn-secondary" style={{ padding: '0.5rem' }}>
-            {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-          </button>
+          <ThemeMenu theme={theme} onChange={setTheme} />
           <button onClick={onLogout} title="Log out" className="sns-btn-secondary" style={{ padding: '0.5rem' }}><LogOut size={16} /></button>
         </div>
       </div>

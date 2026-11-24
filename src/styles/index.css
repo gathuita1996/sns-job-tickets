@@ -25,6 +25,21 @@
   --paper: #10161D; --card: #1A222B; --line: #2B3542; --line-soft: #222A34;
 }
 
+/* Update 52 -- Custom mode: the look of the sign-in page's brand panel for the whole app (deep navy, with soft curves in the bottom
+   corner; the curves are drawn further down, in the update 52 section). It is a dark mode, so it sets the same names dark mode does.
+   A few colours are a little different from the picture's, for reading: the small grey text is lighter than the picture's caption
+   (#737B82 is only 3.7:1 on this navy), and the blue and the reds are picked so that white on the blue buttons and the red text on
+   the cards all pass 4.5:1. A test checks this block (every name is set, and the reading contrast). */
+[data-theme="custom"] {
+  --ink: #FFFFFF; --ink-soft: #AEB2B6; --ink-faint: #8F9AA5;
+  --signal: #3A76C6; --signal-deep: #7DB1EC; --signal-pale: #1F3855;
+  --stamp: #F5904A; --stamp-deep: #FBB27D; --stamp-pale: #3A2A18;
+  --confirmed: #34C874; --confirmed-pale: #163825;
+  --danger: #E5705F; --danger-pale: #3D211C;
+  --overdue: #EC6F5E; --overdue-pale: #3D1E1A;
+  --paper: #16232E; --card: #1C2D3C; --line: #304457; --line-soft: #243648;
+}
+
 /* Smooth, not jarring, when the toggle is used. */
 .sns-shell, .sns-card, .sns-input, .sns-btn-primary, .sns-btn-secondary { transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease; }
 
@@ -189,3 +204,48 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 /* ---- update 43 ---------------------------------------------------------------------------------------------------- */
 /* A staff member's customers stay closed under their name until it is clicked; a printout shows them all. */
 @media print { .sns-group-row { display: table-row !important; } }
+
+/* ---- update 52 ---------------------------------------------------------------------------------------------------- */
+/* The mode menu in the header: Light mode, Dark mode, Custom mode. */
+.sns-theme-menu { position: absolute; right: 0; top: calc(100% + 0.4rem); z-index: 40; min-width: 11.5rem; padding: 0.3rem; box-shadow: 0 14px 30px -12px rgba(0,0,0,0.35); }
+.sns-theme-option { display: flex; align-items: center; gap: 0.6rem; width: 100%; padding: 0.55rem 0.7rem; border: none; border-radius: 8px; background: transparent; color: var(--ink); font: inherit; font-size: 0.85rem; font-weight: 500; text-align: left; cursor: pointer; }
+.sns-theme-option:hover, .sns-theme-option:focus-visible { background: var(--signal-pale); }
+.sns-theme-option.active { font-weight: 700; }
+.sns-theme-option .sns-theme-check { margin-left: auto; color: var(--signal-deep); }
+
+/* Custom mode, on a screen: the page is the navy and the two curves sit in the bottom right corner, as on the sign-in page. They are
+   fixed to the window and behind everything (z-index -1 under the page's own layers), so cards and tables are drawn on top and
+   stay easy to read. The curve colours are the ones in the picture (#152940 and #343339), drawn with the sign-in page's own shapes. */
+@media screen {
+  html[data-theme="custom"] { background: var(--paper); color-scheme: dark; }
+  html[data-theme="custom"] .sns-shell { background: transparent; }
+  html[data-theme="custom"] body::before {
+    content: ''; position: fixed; right: 0; bottom: 0; z-index: -1; pointer-events: none;
+    width: clamp(300px, 55vh, 720px); height: clamp(300px, 55vh, 720px);
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400'%3E%3Cpath d='M400,120 C300,180 340,300 250,400 L400,400 Z' fill='%23152940'/%3E%3Cpath d='M400,220 C330,260 360,330 300,400 L400,400 Z' fill='%23343339'/%3E%3C/svg%3E") no-repeat right bottom / 100% 100%;
+  }
+  /* The ordinary hover colours are light in a dark mode, which would wash white text out; on this navy the buttons go a shade darker. */
+  [data-theme="custom"] .sns-btn-primary:hover:not(:disabled) { background: #2F65AE; }
+  [data-theme="custom"] .sns-btn-danger { color: #16232E; }
+  [data-theme="custom"] .sns-btn-danger:hover:not(:disabled) { background: #F08878; }
+}
+
+/* The sign-in page's own two curves (the left panel): the other modes keep the brand colours they have always used; Custom mode draws
+   them exactly as in the picture, the same colours and shapes as the curves behind the rest of the app. */
+[data-theme="custom"] .sns-auth-curves { opacity: 1 !important; }
+[data-theme="custom"] .sns-auth-curve-a { fill: #152940; opacity: 1; }
+[data-theme="custom"] .sns-auth-curve-b { fill: #343339; opacity: 1; }
+
+/* Printing always uses the light colours, whichever mode is on the screen (a dark page would print as pale text on white). */
+@media print {
+  :root[data-theme="dark"], :root[data-theme="custom"] {
+    --ink: #16232E; --ink-soft: #4C5F72; --ink-faint: #8494A3;
+    --signal: #1A4C93; --signal-deep: #123870; --signal-pale: #E7EFFA;
+    --stamp: #F0781E; --stamp-deep: #D1620F; --stamp-pale: #FDF1E4;
+    --confirmed: #1DA851; --confirmed-pale: #E6F7EC;
+    --danger: #B3432F; --danger-pale: #FBEAE6;
+    --overdue: #C0392B; --overdue-pale: #FBE4E1;
+    --paper: #F7F9FC; --card: #FFFFFF; --line: #E1E7F0; --line-soft: #EEF2F8;
+  }
+  .sns-theme-menu { display: none !important; }
+}

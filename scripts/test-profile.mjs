@@ -202,7 +202,8 @@ await ok('a refusal from the database is recognised by its hint or by its words,
 // 3. The SQL: the same rule in the real database
 // ======================================================================================================================
 const mig50 = read('supabase/update-50-migration.sql')                       // as delivered with update 50 (it still asked for 13)
-const mig51 = read('supabase/update-51-migration.sql')                       // the rule as it is now
+const mig51 = read('supabase/update-51-migration.sql')                       // the profile rule as it is now
+const mig52 = read('supabase/update-52-migration.sql')                       // the next update (the reported-fault guard); here it is only checked to come after
 const code51 = mig51.split('\n').filter((l) => !l.trim().startsWith('--')).join('\n')
 const rebuild = read('supabase/job-card-rebuild.sql')
 const schema = read('supabase/schema.sql')
@@ -272,12 +273,13 @@ await ok('it is safe to run again and changes nobody\'s profile: only functions,
   assert.match(code51, /create trigger trg_require_complete_profile before insert on public\.jobs/)
 })
 
-await ok('the full set-up scripts are one file that ends with this update and still carries the ones before it', () => {
+await ok('the full set-up scripts are one file that carries this update once, after update 50 and before the later update 52', () => {
   assert.equal(rebuild, schema)
-  assert.ok(rebuild.endsWith(mig51), 'the full script ends with update 51')
-  assert.equal(rebuild.split(mig51).length - 1, 1, 'and carries it once')
+  assert.ok(rebuild.endsWith(mig52), 'the full script now ends with update 52 (the reported-fault guard), which only adds to this update')
+  assert.equal(rebuild.split(mig51).length - 1, 1, 'it carries update 51 once')
   assert.equal(rebuild.split(mig50).length - 1, 1, 'and carries update 50 once, before it')
-  assert.ok(rebuild.indexOf(mig50) < rebuild.indexOf(mig51), 'so the last word on the list is update 51\'s')
+  assert.ok(rebuild.indexOf(mig50) < rebuild.indexOf(mig51), 'in the order they were made')
+  assert.ok(rebuild.indexOf(mig51) < rebuild.indexOf(mig52), 'with update 52 after update 51, so the profile rule and its trigger are not changed by it')
   assert.ok(rebuild.includes(read('supabase/update-49-migration.sql')), 'and carries update 49')
   assert.ok(rebuild.includes(read('supabase/update-48-migration.sql')), 'and carries update 48')
   assert.ok(rebuild.indexOf('create or replace function public.require_complete_profile') > rebuild.indexOf('create table if not exists public.staff_bank_details'), 'after the tables it reads')
@@ -304,14 +306,14 @@ await ok('the member\'s dashboard shows the banner first and lets the job form a
   assert.ok(dash.indexOf('<ProfileBanner') < dash.indexOf('stats.overdue > 0 &&'), 'above the overdue notice')
   assert.match(dash, /openProfile = \(\) => setProfileRequest\(\{ tab: 'profile', n: Date\.now\(\) \}\)/)
   assert.match(dash, /profileGate=\{profileGate\}\s+onOpenProfile=\{openProfile\}/)
-  assert.match(dash, /if \(result && result\.profileIncomplete\) return result/)
+  assert.match(dash, /if \(result && \(result\.profileIncomplete \|\| result\.faultReport\)\) return result/)   // since update 52 the same hand-back also carries the fault-report refusal
 })
 
 await ok('the job form holds back only a NEW job filed by a member, asks first, and keeps what was typed', () => {
   const form = read('src/components/JobForm.jsx')
   assert.match(form, /const holdsForProfile = !initialJob && !adminMode/)
   assert.ok(form.indexOf("if (holdsForProfile && profileGate && profileGate.blocked) { setProfileNotice('form'); return }") < form.indexOf('if (!validate()) return'), 'the profile is asked before the other fields')
-  assert.match(form, /import \{ PROFILE_REQUIRED_MESSAGE, describeMissing \} from '\.\.\/lib\/profileComplete'/)
+  assert.match(form, /import \{ PROFILE_REQUIRED_MESSAGE, describeMissing, isBlank \} from '\.\.\/lib\/profileComplete'/)   // isBlank: since update 52 the form also uses it for the fault boxes
   assert.match(form, /<p className="sns-profile-notice-title">\{PROFILE_REQUIRED_MESSAGE\}<\/p>/)
   assert.match(form, /Everything you typed here is kept\./)
   assert.match(form, /if \(result && result\.profileIncomplete\) setProfileNotice\('database'\)/)

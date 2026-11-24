@@ -1,11 +1,12 @@
-// Update 49: the two Netlify Functions exactly as Netlify will build and run them, and the setup guide matching the code.
+// Update 49 and 52: the Netlify Functions (two for WhatsApp sending, one scheduled email) exactly as Netlify will build and run them,
+// and the setup guides matching the code.
 //   * each file in netlify/functions is bundled with esbuild (what Netlify does at deploy time), so a missing import or a
 //     piece of browser-only code fails HERE and not on the live site;
 //   * the bundle is then loaded as a separate program and called with real Request objects, with pretend versions of
 //     WhatsApp and the database behind fetch, to show that the settings are read from the environment and that the whole
 //     path works from the front door;
-//   * netlify.toml, .env.example and WHATSAPP-SETUP.md are compared with the code, so the instructions cannot drift from
-//     what the server really asks for.
+//   * netlify.toml, .env.example, WHATSAPP-SETUP.md and EMAIL-ALERT-SETUP.md are compared with the code, so the instructions
+//     cannot drift from what the server really asks for.
 import assert from 'node:assert/strict'
 import { createHmac } from 'node:crypto'
 import { readFileSync, readdirSync } from 'node:fs'
@@ -23,7 +24,7 @@ try { ({ build } = await import('esbuild')) } catch (e) { console.error('FAIL es
 // ---- bundle every function, the way Netlify does ------------------------------------------------------------------------
 const files = readdirSync(here('netlify/functions')).filter((f) => f.endsWith('.mjs')).sort()
 const bundles = {}
-await ok('there are exactly the two WhatsApp functions', () => assert.deepEqual(files, ['whatsapp-send.mjs', 'whatsapp-webhook.mjs']))
+await ok('there are exactly the three functions: the 5:31 pm email and the two WhatsApp ones', () => assert.deepEqual(files, ['late-payments-alert.mjs', 'whatsapp-send.mjs', 'whatsapp-webhook.mjs']))
 for (const file of files) {
   await ok(`${file} bundles, and stays small (it does not pull in the app)`, async () => {
     const out = await build({ entryPoints: [here(`netlify/functions/${file}`)], bundle: true, platform: 'node', format: 'esm', target: 'node20', write: false, logLevel: 'silent' })
@@ -38,12 +39,14 @@ for (const file of files) {
 const load = (file) => import(`data:text/javascript;base64,${Buffer.from(bundles[file]).toString('base64')}`)
 const send = await load('whatsapp-send.mjs')
 const hook = await load('whatsapp-webhook.mjs')
+const alert = await load('late-payments-alert.mjs')
 
 // ---- pretend WhatsApp and database, behind fetch ---------------------------------------------------------------------------
 const ENV = {
   VITE_SUPABASE_URL: 'https://proj.supabase.co', VITE_SUPABASE_ANON_KEY: 'anon-key-123', SUPABASE_SERVICE_ROLE_KEY: 'service-key-SECRET',
   WHATSAPP_ACCESS_TOKEN: 'EAAG-token-SECRET', WHATSAPP_PHONE_NUMBER_ID: '1055555555', WHATSAPP_BUSINESS_ACCOUNT_ID: '2066666666',
   WHATSAPP_APP_SECRET: 'app-secret-SECRET', WHATSAPP_VERIFY_TOKEN: 'verify-me-SECRET',
+  RESEND_API_KEY: 're_resend-key-SECRET', ALERT_APP_URL: 'https://snsjobcard.netlify.app',
 }
 Object.assign(process.env, ENV)
 const SITE = 'https://sns.example.netlify.app'
@@ -51,6 +54,9 @@ const FILE = '0123456789abcdef0123456789abcdef/Receipt-SNS-26-1008.pdf'
 const PDF = new Uint8Array([...Buffer.from('%PDF-1.4\n'), ...Buffer.alloc(600, 32)])
 const RECEIPT = { id: 5, customer_id: 1, customer_name: 'Amina Hassan', customer_contact: '0700 000 000', receipt_no: 'SNS/26/1008', mpesa_code: 'UKL41383DB', amount: 2000, paid_at: '2026-11-21T14:50:00+00:00', expires_on: '2026-12-21', days_covered: 30 }
 const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } })
+// what is unpaid, for the 5:31 pm email: two people owed transport (1,200 in all) and one purchase waiting for payment (3,500)
+let ALERT_JOBS = [{ id: 1, member_id: 'm1', transport_amount: 500, transport_paid_at: null }, { id: 2, member_id: 'm1', transport_amount: 200, transport_paid_at: null }, { id: 3, member_id: 'm2', transport_amount: 500, transport_paid_at: null }]
+let ALERT_EXPENSES = [{ id: 1, entry_type: 'purchase', status: 'Purchased', amount: 3500, paid_at: null }]
 
 let calls = []
 globalThis.fetch = async (url, init = {}) => {
@@ -69,6 +75,11 @@ globalThis.fetch = async (url, init = {}) => {
   if (u === 'https://graph.facebook.com/v24.0/1055555555/messages') return json({ messaging_product: 'whatsapp', messages: [{ id: 'wamid.TESTID' }] })
   if (u.startsWith('https://graph.facebook.com/v24.0/1055555555?')) return json({ display_phone_number: '+254 700 000 000', verified_name: 'Swahili Net Solution', quality_rating: 'GREEN' })
   if (u.startsWith('https://graph.facebook.com/v24.0/2066666666/message_templates')) return json({ data: [{ name: 'sns_payment_receipt', status: 'APPROVED', language: 'en', category: 'UTILITY' }] })
+  if (u.startsWith('https://proj.supabase.co/rest/v1/non_working_days?')) return json([])
+  if (u.startsWith('https://proj.supabase.co/rest/v1/jobs?select=id,member_id,transport_amount')) return json(ALERT_JOBS)
+  if (u.startsWith('https://proj.supabase.co/rest/v1/expenses?select=id,entry_type,status,amount')) return json(ALERT_EXPENSES)
+  if (u.startsWith('https://proj.supabase.co/rest/v1/profiles?select=full_name,email')) return json([{ full_name: 'Naibei Gathuita', email: 'naibei@example.com' }])
+  if (u === 'https://api.resend.com/emails') return json({ id: 'RESEND-1' })
   return json({ message: `unexpected request: ${u}` }, 500)
 }
 const request = (path, { method = 'GET', body, headers = {} } = {}) => new Request(`${SITE}${path}`, { method, headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...headers }, body: body == null ? undefined : (typeof body === 'string' ? body : JSON.stringify(body)) })
@@ -156,6 +167,60 @@ await ok('webhook: signed news moves the message on in the log', async () => {
   assert.ok(rpc.headers.apikey === ENV.SUPABASE_SERVICE_ROLE_KEY, 'the log is written with the service key, which only the server holds')
 })
 
+// ---- the 5:31 pm late-payment email, from the front door ----------------------------------------------------------------------
+// the function writes one line to Netlify's log; catch it here so the test output stays clean, and so it can be checked for secrets
+const captureLog = async (fn) => {
+  const lines = [], saved = console.log
+  console.log = (...args) => lines.push(args.join(' '))
+  try { return { value: await fn(), lines } } finally { console.log = saved }
+}
+await ok('late payments: Netlify reads the schedule from the built function: 14:31 UTC, which is 5:31 pm in Nairobi, Monday to Saturday', async () => {
+  const mod = await load('late-payments-alert.mjs')
+  assert.deepEqual(mod.config, { schedule: '31 14 * * 1-6' })
+  assert.equal(typeof mod.default, 'function')
+})
+await ok('late payments: when it runs, the Director is emailed through Resend with what is unpaid, and the answer holds no secret', async () => {
+  calls = []
+  const { value: res, lines } = await captureLog(() => alert.default())
+  assert.equal(res.status, 200)
+  assert.equal(lines.length, 1); assert.match(lines[0], /^late-payments-alert: email sent to 1 address: KSh 4,700 unpaid/)
+  for (const secret of [ENV.SUPABASE_SERVICE_ROLE_KEY, ENV.RESEND_API_KEY]) assert.ok(!lines[0].includes(secret), 'the log line holds no secret')
+  const text = await res.text()
+  const body = JSON.parse(text)
+  assert.equal(body.ok, true); assert.equal(body.sent, true); assert.equal(body.totalCents, 470000); assert.equal(body.id, 'RESEND-1')
+  const mail = calls.filter((c) => c.url === 'https://api.resend.com/emails')
+  assert.equal(mail.length, 1)
+  const payload = JSON.parse(mail[0].body)
+  assert.deepEqual(payload.to, ['naibei@example.com'])
+  assert.match(payload.subject, /Late payments: KSh 4,700 unpaid after closing$/)
+  assert.match(payload.text, /Hello Naibei,\n\nThese payments are still unpaid after the 5:30 pm closing time:\n\n- Transport: KSh 1,200 \(2 staff members\)\n- Expenses \/ purchases: KSh 3,500 \(1 request\)\n\nOpen Job Cards to pay: https:\/\/snsjobcard\.netlify\.app\n/)
+  assert.equal(mail[0].headers.Authorization, `Bearer ${ENV.RESEND_API_KEY}`)
+  const database = calls.filter((c) => c.url.startsWith('https://proj.supabase.co/rest/v1/'))
+  assert.ok(database.length >= 4 && database.every((c) => c.headers.apikey === ENV.SUPABASE_SERVICE_ROLE_KEY), 'what is unpaid is read with the server key')
+  assert.ok(!calls.some((c) => c.url.startsWith('https://graph.facebook.com')), 'the email never touches WhatsApp')
+  for (const secret of [ENV.SUPABASE_SERVICE_ROLE_KEY, ENV.RESEND_API_KEY, ENV.WHATSAPP_ACCESS_TOKEN]) assert.ok(!text.includes(secret), secret)
+})
+await ok('late payments: with everything paid no email is sent', async () => {
+  const saved = [ALERT_JOBS, ALERT_EXPENSES]
+  ALERT_JOBS = []; ALERT_EXPENSES = []
+  try {
+    calls = []
+    const { value: res, lines } = await captureLog(() => alert.default())
+    assert.deepEqual(await res.json(), { ok: true, sent: false, reason: 'nothing_unpaid' })
+    assert.deepEqual(lines, ['late-payments-alert: nothing is unpaid, so no email.'])
+    assert.ok(!calls.some((c) => c.url === 'https://api.resend.com/emails'))
+  } finally { [ALERT_JOBS, ALERT_EXPENSES] = saved }
+})
+await ok('late payments: without its Resend key it stops and says which setting to add (the function fails, so Netlify logs it)', async () => {
+  const saved = process.env.RESEND_API_KEY
+  delete process.env.RESEND_API_KEY
+  try {
+    calls = []
+    await assert.rejects(() => alert.default(), /Add RESEND_API_KEY under Netlify/)
+    assert.equal(calls.length, 0)
+  } finally { process.env.RESEND_API_KEY = saved }
+})
+
 // ---- the files around the code ---------------------------------------------------------------------------------------------------
 await ok('netlify.toml builds the functions from netlify/functions and still has the single-page redirect', () => {
   const toml = read('netlify.toml')
@@ -173,8 +238,17 @@ await ok('every setting the server reads is in .env.example and explained in WHA
     assert.ok(guide.includes(name), `${name} is not in WHATSAPP-SETUP.md`)
   }
 })
+const alertNames = [...new Set([...read('netlify/lib/alertConfig.mjs').matchAll(/env\.([A-Z][A-Z0-9_]+)/g)].map((m) => m[1]))].sort()
+await ok('every setting the late-payment email reads is in .env.example and explained in EMAIL-ALERT-SETUP.md (except Netlify\'s own URL)', () => {
+  assert.ok(alertNames.includes('RESEND_API_KEY') && alertNames.includes('SUPABASE_SERVICE_ROLE_KEY') && alertNames.length >= 8, alertNames.join(', '))
+  const example = read('.env.example'); const guide = read('EMAIL-ALERT-SETUP.md')
+  for (const name of alertNames.filter((x) => x !== 'URL')) {
+    assert.ok(new RegExp(`^#?\\s*${name}=`, 'm').test(example), `${name} is not in .env.example`)
+    assert.ok(guide.includes(name), `${name} is not in EMAIL-ALERT-SETUP.md`)
+  }
+})
 await ok('the secrets are never given a VITE_ name (that would put them in the page everyone downloads)', () => {
-  for (const name of readNames) assert.ok(!(/^VITE_/.test(name) && /SERVICE|TOKEN|SECRET/.test(name)), name)
+  for (const name of [...readNames, ...alertNames]) assert.ok(!(/^VITE_/.test(name) && /SERVICE|TOKEN|SECRET|KEY/.test(name) && !/ANON/.test(name)), name)
   const example = read('.env.example')
   assert.ok(!/^\s*VITE_[A-Z_]*(SERVICE|SECRET|TOKEN)/m.test(example))
   assert.ok(!/^[A-Z_]+=\S*(EAAG|sb_secret_|eyJ)/m.test(example), 'no real-looking value in the example file')

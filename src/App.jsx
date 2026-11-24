@@ -8,6 +8,7 @@ import LeavePanel from './components/LeavePanel'
 import ContractCard from './components/ContractCard'
 import { COMMISSION_DEPARTMENTS } from './lib/helpers'
 import { isProfileIncompleteError } from './lib/profileComplete'
+import { FAULT_REPORT_MESSAGE, isFaultReportError } from './lib/faultReport'
 import { LoadingScreen, Toast } from './components/shared'
 import { LoginView, SignupView, ForgotPasswordView, ResetPasswordView } from './components/Auth'
 import MemberDashboard from './components/MemberDashboard'
@@ -374,7 +375,7 @@ export default function App() {
   // A member whose profile is not complete cannot file a job (Update 50). The screens check first and the database has the last word, so a
   // refusal for that reason (a screen that is out of date, or a profile that changed since it was loaded) is handled here: the profile
   // is read again so the banner is right, and the form is told, so it stays open with what was typed and shows the message.
-  // Returns { ok: true }, { ok: false, profileIncomplete: true } or { ok: false }.
+  // Returns { ok: true }, { ok: false, profileIncomplete: true }, { ok: false, faultReport: true } or { ok: false }.
   async function handleAddJob(formData) {
     const { error } = await supabase.from('jobs').insert({ ...jobToDbFields(formData), member_id: currentUserRef.current.id })
     if (error) {
@@ -382,6 +383,12 @@ export default function App() {
         await reloadSelf()
         await refreshBank()
         return { ok: false, profileIncomplete: true }
+      }
+      // Update 52: the database refuses a new job from a member when the reported fault or how it was solved is empty (the form asks for
+      // both first, so this is only a form that is out of date). The form stays open, with what was typed, and says so.
+      if (isFaultReportError(error)) {
+        showToast(FAULT_REPORT_MESSAGE, 'error')
+        return { ok: false, faultReport: true }
       }
       showToast('Failed to save job card.', 'error')
       return { ok: false }
@@ -1111,6 +1118,6 @@ export default function App() {
     {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     {currentUser.role === 'admin'
       ? <AdminDashboard extras={extras} currentUser={currentUser} users={allUsers} jobs={jobs} customers={customers} expenses={expenses} stockItems={stockItems} stockIn={stockIn} stockOut={stockOut} places={places} visits={visits} onAddPlace={handleAddPlace} onRecordVisit={handleRecordVisit} onDeleteVisit={handleDeleteVisit} onSetPlaceActive={handleSetPlaceActive} onAssignEmployeeNumbers={handleAssignEmployeeNumbers} onDataChanged={handleDataChanged} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAssignJob={handleAssignJob} onPromote={handlePromote} onUpdateDepartment={handleUpdateDepartment} onUpdateProfile={handleUpdateProfile} accessCode={accessCode} onUpdateAccessCode={handleUpdateAccessCode} commissionRate={commissionRate} onUpdateCommissionRate={handleUpdateCommissionRate} onMarkCommissionPaid={handleMarkCommissionPaid} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onMarkTransportPaid={handleMarkTransportPaid} onAddExpense={handleAddExpense} onAddService={handleAddService} onAttachReceipt={handleAttachReceipt} onApproveExpense={handleApproveExpense} onRejectExpense={handleRejectExpense} onMarkExpensePaid={handleMarkExpensePaid} onDeleteExpense={handleDeleteExpense} onViewReceipt={getReceiptUrl} onToggleTeamLead={handleToggleTeamLead} onSetDirector={handleSetDirector} onAddStockItem={handleAddStockItem} onUpdateStockItem={handleUpdateStockItem} onDeleteStockItem={handleDeleteStockItem} onAddStockIn={handleAddStockIn} onAddStockInBatch={handleAddStockInBatch} onAddStockOut={handleAddStockOut} />
-      : <MemberDashboard extras={extras} currentUser={currentUser} jobs={jobs.filter((j) => j.memberId === currentUser.id)} raisedJobs={jobs.filter((j) => j.raisedBy === currentUser.id && j.memberId !== currentUser.id)} customers={customers} customerIdsWithJobs={customerIdsWithJobs} expenses={expenses.filter((e) => e.submittedBy === currentUser.id)} memberNames={memberNames} places={places} visits={visits} onAddPlace={handleAddPlace} onRecordVisit={handleRecordVisit} onDeleteVisit={handleDeleteVisit} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAddCustomer={handleAddCustomer} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onUpdateProfile={handleUpdateProfile} onAddExpense={handleAddExpense} onAttachReceipt={handleAttachReceipt} onDeleteExpense={handleDeleteExpense} onViewReceipt={getReceiptUrl} commissionRate={commissionRate} />}
+      : <MemberDashboard extras={extras} currentUser={currentUser} jobs={jobs.filter((j) => j.memberId === currentUser.id)} customers={customers} customerIdsWithJobs={customerIdsWithJobs} expenses={expenses.filter((e) => e.submittedBy === currentUser.id)} memberNames={memberNames} places={places} visits={visits} onAddPlace={handleAddPlace} onRecordVisit={handleRecordVisit} onDeleteVisit={handleDeleteVisit} onLogout={handleLogout} onAddJob={handleAddJob} onUpdateJob={handleUpdateJob} onDeleteJob={handleDeleteJob} onAddCustomer={handleAddCustomer} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onUpdateProfile={handleUpdateProfile} onAddExpense={handleAddExpense} onAttachReceipt={handleAttachReceipt} onDeleteExpense={handleDeleteExpense} onViewReceipt={getReceiptUrl} commissionRate={commissionRate} />}
   </>)
 }

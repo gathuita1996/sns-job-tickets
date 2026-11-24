@@ -74,6 +74,8 @@ export function mapJob(row) {
     status: row.status,
     priority: row.priority || 'Normal',
     notes: row.notes || '',
+    reportedFault: row.reported_fault || '',      // Update 52: what the customer reported, and how it was solved
+    resolution: row.resolution || '',
     overdueReason: row.overdue_reason || '',
     memberId: row.member_id,
     assignedBy: row.assigned_by || null,
@@ -90,6 +92,12 @@ export function mapJob(row) {
   }
 }
 
+// Text as it is saved: the spaces around it trimmed off, and nothing at all (null) when there is nothing else.
+const cleanText = (value) => {
+  const s = String(value == null ? '' : value).trim()
+  return s === '' ? null : s
+}
+
 export function jobToDbFields(data) {
   return {
     job_type: data.jobType,
@@ -103,7 +111,16 @@ export function jobToDbFields(data) {
     transport_amount: data.transportAmount,
     status: data.status,
     priority: data.priority || 'Normal',
-    notes: data.notes || null,
+    // The job's text (Update 52). Like the GPS below, a field is only touched when the caller says something about it:
+    //   * "Job details" (notes) is saved when it is given. A job that asks for the reported fault and how it was solved leaves
+    //     it out, so details written earlier (an older job, or an admin's guidance) stay exactly as they are;
+    //   * the two fault fields are saved when either is given (text, or null to clear). A job that keeps "Job details" passes
+    //     null for both, so a job whose type was changed does not keep a fault report that no longer applies.
+    ...(data.notes !== undefined ? { notes: data.notes || null } : {}),
+    ...(data.reportedFault !== undefined || data.resolution !== undefined ? {
+      reported_fault: cleanText(data.reportedFault),
+      resolution: cleanText(data.resolution),
+    } : {}),
     overdue_reason: data.overdueReason || null,
     customer_id: data.customerId || null,
     co_technicians: data.coTechnicians && data.coTechnicians.length ? data.coTechnicians : null,
