@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react'
-import { ArrowLeft, Award, Clipboard, CreditCard, Mail, Pencil, Phone, Plane, Shield, Star, Users, Wallet } from 'lucide-react'
+import { ArrowLeft, Award, Clipboard, CreditCard, Mail, Pencil, Phone, Plane, Shield, Star, UserCog, Users, Wallet } from 'lucide-react'
 import Avatar from './Avatar'
 import ContractCard from './ContractCard'
 import ContractModal from './ContractModal'
 import { ConfirmDialog, EmptyState, StatCard, StatusBadge } from './shared'
 import { LEAVE_STATUS_BADGE, LEAVE_STATUS_LABEL, dayCount, formatLeaveRange, leaveYearLabel } from '../lib/leave'
 import { DEPARTMENTS, departmentLabel, formatDate, formatKSh, isInPeriod, isOverdue } from '../lib/helpers'
+import { describeMissing, missingProfileFields } from '../lib/profileComplete'
 
 const Row = ({ label, children }) => (
   <div className="flex items-start justify-between gap-4" style={{ fontSize: '0.86rem', padding: '0.45rem 0' }}>
@@ -23,7 +24,9 @@ const Section = ({ title, action, children }) => (
 )
 
 // One page with everything about one staff member, for the admins.
-export default function StaffDetail({ member, bank, jobs, customers, expenses, visits, routers, leaveRequests, leaveAdjustments, leaveRow, policy, userMap, commissionRate, onBack, onEdit, onOpenCustomers, onPromote, onToggleTeamLead, onSetDirector, onUpdateDepartment, contract, contractHistory = [], canEditContract = false, onSaveContract, policyDays = 21 }) {
+//   bankKnown (Update 51): whether the bank details have been read. A member whose profile is not complete gets a notice saying what
+//   is still missing; while the bank details are not known they are left out of that check instead of being reported as empty.
+export default function StaffDetail({ member, bank, bankKnown = false, jobs, customers, expenses, visits, routers, leaveRequests, leaveAdjustments, leaveRow, policy, userMap, commissionRate, onBack, onEdit, onOpenCustomers, onPromote, onToggleTeamLead, onSetDirector, onUpdateDepartment, contract, contractHistory = [], canEditContract = false, onSaveContract, policyDays = 21 }) {
   const [editingContract, setEditingContract] = useState(false)
   const [confirm, setConfirm] = useState(null)        // null | 'promote' | 'director'
   const currentDirector = Object.values(userMap || {}).find((u) => u.isDirector)
@@ -37,6 +40,8 @@ export default function StaffDetail({ member, bank, jobs, customers, expenses, v
   const myVisits = (visits || []).filter((v) => v.visitedBy === member.id)
   const myRouters = (routers || []).filter((r) => r.recordedBy === member.id || r.retrievedBy === member.id)
   const age = member.dateOfBirth ? Math.floor((Date.now() - new Date(member.dateOfBirth).getTime()) / 31557600000) : null
+  const missingFields = missingProfileFields(member, bank, { bankKnown })       // nothing for an admin
+  const firstName = String(member.fullName || '').split(' ')[0]
 
   return (
     <div>
@@ -64,6 +69,16 @@ export default function StaffDetail({ member, bank, jobs, customers, expenses, v
           <p className="sns-text-faint" style={{ fontSize: '0.78rem', marginTop: '0.3rem' }}>Username {member.username} · joined {formatDate(member.createdAt)}</p>
         </div>
       </div>
+
+      {missingFields.length > 0 && (
+        <section className="sns-profile-banner" aria-label="This profile is not complete">
+          <UserCog size={20} className="sns-profile-banner-icon" aria-hidden="true" />
+          <div className="sns-profile-banner-text">
+            <p className="sns-profile-banner-title">Profile incomplete</p>
+            <p>{firstName} cannot file a job until these are filled in: {describeMissing(missingFields, missingFields.length)}. {firstName} can do this from My profile.</p>
+          </div>
+        </section>
+      )}
 
       <Section title="Role & access">
         <div className="flex items-center gap-3" style={{ flexWrap: 'wrap' }}>

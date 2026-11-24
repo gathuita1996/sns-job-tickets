@@ -32,6 +32,7 @@ import { JOB_TYPES, PRIORITY_OPTIONS, CHART_COLORS, COMMISSION_DEPARTMENTS, depa
 
 export default function AdminDashboard({ extras, currentUser, users, jobs, customers, expenses, stockItems, stockIn, stockOut, places, visits, onAddPlace, onRecordVisit, onDeleteVisit, onSetPlaceActive, onDataChanged, onLogout, onAddJob, onUpdateJob, onDeleteJob, onAssignJob, onPromote, onUpdateDepartment, onUpdateProfile, accessCode, onUpdateAccessCode, commissionRate, onUpdateCommissionRate, onMarkCommissionPaid, onUpdateCustomer, onAssignEmployeeNumbers, onDeleteCustomer, onMarkTransportPaid, onAddExpense, onAddService, onApproveExpense, onRejectExpense, onAttachReceipt, onMarkExpensePaid, onDeleteExpense, onViewReceipt, onToggleTeamLead, onSetDirector, onAddStockItem, onUpdateStockItem, onDeleteStockItem, onAddStockIn, onAddStockInBatch, onAddStockOut }) {
   const backupDays = daysSince(extras && extras.lastBackup && extras.lastBackup.at)
+  const bankKnown = Boolean(extras && extras.bankDetails) && extras.bankKnown === true      // Update 51: have everyone's bank details been read? (for the "Profile incomplete" check)
   const [viewingStaffId, setViewingStaffId] = useState(null)
   const [profileRequest, setProfileRequest] = useState(null)
   const [staffView, setStaffView] = useState('list')     // 'list' | 'leave'   (Leave lives on the Staff page)
@@ -44,6 +45,17 @@ export default function AdminDashboard({ extras, currentUser, users, jobs, custo
   const waitingExpenses = (expenses || []).filter((e) => e.status === 'Requested').length
   const awayIds = useMemo(() => awayNowIds(leaveRequests), [leaveRequests])
   const [tab, setTab] = useState('overview')
+  // Update 51: the staff list says who has not finished their profile, so it must not show what was true when the admin signed in.
+  // The staff and their bank details are read again each time the Staff tab is opened, and when the app comes back to the front
+  // while that tab is showing.
+  const refreshStaff = extras && extras.onRefreshStaff
+  useEffect(() => {
+    if (tab !== 'team' || !refreshStaff) return undefined
+    refreshStaff()
+    const cameBack = () => { if (document.visibilityState === 'visible') refreshStaff() }
+    document.addEventListener('visibilitychange', cameBack)
+    return () => document.removeEventListener('visibilitychange', cameBack)
+  }, [tab])      // eslint-disable-line react-hooks/exhaustive-deps
   const [periodGranularity, setPeriodGranularity] = useState('day')
   const [periodAnchor, setPeriodAnchor] = useState(() => new Date())
   const [search, setSearch] = useState('')
@@ -209,7 +221,7 @@ export default function AdminDashboard({ extras, currentUser, users, jobs, custo
       <div className="sns-shell">
         {headerNode}
         <main className="max-w-6xl mx-auto px-4 sm:px-6" style={{ paddingTop: '1.5rem', paddingBottom: '3rem' }}>
-          <StaffDetail member={viewingStaff} bank={extras && extras.bankDetails && extras.bankDetails[viewingStaff.id]} jobs={jobs} customers={customers} expenses={expenses} visits={visits}
+          <StaffDetail member={viewingStaff} bank={extras && extras.bankDetails && extras.bankDetails[viewingStaff.id]} bankKnown={bankKnown} jobs={jobs} customers={customers} expenses={expenses} visits={visits}
             routers={extras && extras.routers && extras.routers.rows} leaveRequests={leaveRequests} leaveAdjustments={(extras && extras.leave && extras.leave.adjustments) || []}
             leaveRow={((extras && extras.leave && extras.leave.overview) || []).find((o) => o.member_id === viewingStaff.id)} policy={(extras && extras.leave && extras.leave.policy) || {}}
             userMap={userMap} commissionRate={commissionRate} onBack={() => setViewingStaffId(null)} onEdit={setEditingMember}
@@ -385,7 +397,7 @@ export default function AdminDashboard({ extras, currentUser, users, jobs, custo
                   onSavePolicy={extras.leave.onSavePolicy} onAddHoliday={extras.leave.onAddHoliday} onRemoveHoliday={extras.leave.onRemoveHoliday} onAddKenyanHolidays={extras.leave.onAddKenyanHolidays} />
               </div>
             ) : (
-              <TeamList users={users} jobs={jobs} onViewMember={(m) => setViewingStaffId(m.id)} awayIds={awayIds} contracts={extras && extras.contracts && extras.contracts.byMember} />
+              <TeamList users={users} jobs={jobs} onViewMember={(m) => setViewingStaffId(m.id)} awayIds={awayIds} contracts={extras && extras.contracts && extras.contracts.byMember} bankDetails={extras && extras.bankDetails} bankKnown={bankKnown} />
             )}
           </div>
         )}

@@ -1,9 +1,10 @@
 // Update 50: a member must complete their profile before they can file a job.
 //
 // This is the ONE list of what "complete" means for the screens. The database has the same list in public.profile_missing_fields()
-// (supabase/update-50-migration.sql) and a test fails if the two ever differ.
+// (supabase/update-51-migration.sql, which replaced the one in update 50) and a test fails if the two ever differ.
 //   * Members are held to it. Admins (the Director too) are not.
-//   * Title is not on the list (only admins show one) and neither is the employee number (the admin gives it, a member cannot set it).
+//   * Three things are not on the list: the title (only admins show one), the employee number (the admin gives it, a member cannot
+//     set it) and, since Update 51, the SHA number.
 //
 // To require one more thing, or to stop requiring one: change the list below AND the function in the migration (same keys, same
 // order), then run `npm test`.
@@ -23,7 +24,6 @@ export const REQUIRED_PROFILE_FIELDS = [
   { key: 'date_of_birth',  label: 'Date of birth',      where: 'profile', field: 'dateOfBirth' },
   { key: 'id_number',      label: 'National ID number', where: 'profile', field: 'idNumber' },
   { key: 'kra_pin',        label: 'KRA PIN',            where: 'profile', field: 'kraPin' },
-  { key: 'sha_number',     label: 'SHA number',         where: 'profile', field: 'shaNumber' },
   { key: 'avatar',         label: 'Profile picture',    where: 'profile', field: 'avatarUrl' },
   { key: 'bank_name',      label: 'Bank name',          where: 'bank',    field: 'bankName' },
   { key: 'account_number', label: 'Account number',     where: 'bank',    field: 'accountNumber' },
@@ -50,13 +50,25 @@ export function missingProfileFields(profile, bank, options) {
 
 export const isProfileComplete = (profile, bank, options) => missingProfileFields(profile, bank, options).length === 0
 
+// Update 51: who still has to finish their profile (the admin's Staff list). users are the profiles the app holds; bankByMember is
+// { memberId: bank details }; options is the same as above (bankKnown). Returns a Map from a member's id to what that member is
+// missing, with an entry ONLY for members who are not complete. An admin is never in it.
+export function incompleteProfiles(users, bankByMember, options) {
+  const out = new Map()
+  for (const u of users || []) {
+    const missing = missingProfileFields(u, (bankByMember || {})[u.id], options)
+    if (missing.length > 0) out.set(u.id, missing)
+  }
+  return out
+}
+
 // What the screens ask before a job is filed: { blocked, missing, message }
 export function jobFilingGate(profile, bank, options) {
   const missing = missingProfileFields(profile, bank, options)
   return { blocked: missing.length > 0, missing, message: PROFILE_REQUIRED_MESSAGE }
 }
 
-// "National ID number, KRA PIN, SHA number and 7 more": a short sentence about what is missing (all of it when it is four or fewer).
+// "National ID number, KRA PIN, Profile picture and 6 more": a short sentence about what is missing (all of it when it is four or fewer).
 export function describeMissing(missing, max = 4) {
   const names = (missing || []).map((m) => m.label)
   if (names.length === 0) return ''

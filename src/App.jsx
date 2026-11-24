@@ -1085,7 +1085,8 @@ export default function App() {
   }
 
   const extras = {
-    lastBackup, bankDetails, onBackupRecorded: handleBackupRecorded,
+    lastBackup, bankDetails, bankKnown: bankLoaded, onBackupRecorded: handleBackupRecorded,
+    onRefreshStaff: () => Promise.all([refreshUsers(), refreshBank()]),      // update 51: the Staff tab reads the staff and their bank details again
     header: {
       bank: bankDetails[currentUser.id], bankKnown: bankLoaded, onUploadAvatar: handleUploadAvatar, onRemoveAvatar: handleRemoveAvatar,
       contract: <ContractCard contract={contracts[currentUser.id]} history={contractHistory.filter((h) => h.memberId === currentUser.id)} policyDays={leavePolicy.annual_days} heading />,

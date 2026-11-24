@@ -67,6 +67,8 @@ body { margin: 0; }
 .sns-badge-priority-normal { background: var(--signal-pale); color: var(--signal-deep); }
 .sns-badge-priority-high { background: var(--stamp-pale); color: var(--stamp-deep); }
 .sns-badge-priority-urgent { background: var(--overdue-pale); color: var(--overdue); }
+.sns-badge-profile { background: var(--stamp-pale); color: var(--ink); border: 1px solid var(--stamp); }   /* ink text: the amber text the other badges use is only 3.4:1 on this background, too faint for a badge this small */
+.sns-badge-profile svg { color: var(--stamp-deep); }
 .sns-select-placeholder { font-style: italic; color: var(--ink-faint) !important; }
 .sns-select-placeholder option { font-style: normal; color: var(--ink); }
 .sns-period-toggle { display: inline-flex; background: var(--signal-pale); border-radius: 8px; padding: 3px; gap: 2px; }

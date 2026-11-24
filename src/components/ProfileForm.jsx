@@ -59,8 +59,8 @@ function startingForm(profile, bank) {
 }
 
 function ProfileFields({ profile, bank, contract, canEditNumber, isSelf, onClose, onSave, onUploadAvatar, onRemoveAvatar }) {
-  // Update 50: a member filling in their OWN profile must fill in every field (Title is the one they may leave out; the employee
-  // number is given by the admin). An admin, and an admin editing someone else's profile, are not held to it.
+  // Update 50: a member filling in their OWN profile must fill in every field (they may leave out the Title and, since Update 51,
+  // the SHA number; the employee number is given by the admin). An admin, and an admin editing someone else's profile, are not held to it.
   const requireAll = Boolean(isSelf) && profile.role !== 'admin'
   const formRef = useRef(null)
   const [form, setForm] = useState(() => startingForm(profile, bank))
@@ -121,7 +121,7 @@ function ProfileFields({ profile, bank, contract, canEditNumber, isSelf, onClose
 
   return (
     <form ref={formRef} onSubmit={handleSubmit} style={{ padding: '1.4rem' }} className="space-y-4">
-      {requireAll && <p className="sns-text-soft" style={{ fontSize: '0.82rem' }}>All fields are required, except Title. Your employee number is given to you by the admin.</p>}
+      {requireAll && <p className="sns-text-soft" style={{ fontSize: '0.82rem' }}>All fields are required, except Title and SHA number. Your employee number is given to you by the admin.</p>}
       <AvatarPicker profile={profile} canUpload={isSelf} onUpload={onUploadAvatar} onRemove={onRemoveAvatar} problem={pictureProblem} />
       <FormField label="Full name" error={errors.fullName}>
         <input className="sns-input" value={form.fullName} onChange={(e) => update('fullName', e.target.value)} />
@@ -163,7 +163,7 @@ function ProfileFields({ profile, bank, contract, canEditNumber, isSelf, onClose
       </div>
       <FormField label="National ID number" error={errors.idNumber}><input className="sns-input" value={form.idNumber} onChange={(e) => update('idNumber', e.target.value)} placeholder="e.g. 12345678" /></FormField>
       <FormField label="KRA PIN" error={errors.kraPin}><input className="sns-input" value={form.kraPin} onChange={(e) => update('kraPin', e.target.value)} placeholder="e.g. A012345678Z" /></FormField>
-      <FormField label="SHA number" error={errors.shaNumber}><input className="sns-input" value={form.shaNumber} onChange={(e) => update('shaNumber', e.target.value)} /></FormField>
+      <FormField label={requireAll ? 'SHA number (optional)' : 'SHA number'} error={errors.shaNumber}><input className="sns-input" value={form.shaNumber} onChange={(e) => update('shaNumber', e.target.value)} /></FormField>
 
       <div className="sns-border-t" style={{ paddingTop: '1rem' }}>
         <h4 className="sns-display" style={{ fontWeight: 700, fontSize: '0.92rem', marginBottom: '0.2rem' }}>Bank details</h4>

@@ -11,7 +11,7 @@ export default function ProfileBanner({ missing, onOpen }) {
       <UserCog size={20} className="sns-profile-banner-icon" aria-hidden="true" />
       <div className="sns-profile-banner-text">
         <p className="sns-profile-banner-title">Please update your profile</p>
-        <p>You cannot file a job until every field in your profile is filled in. Still missing: {describeMissing(missing)}.</p>
+        <p>You cannot file a job until your profile is complete. Still missing: {describeMissing(missing)}.</p>
       </div>
       <button type="button" className="sns-btn-primary sns-profile-banner-btn" onClick={onOpen}>Update profile</button>
     </section>
