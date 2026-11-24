@@ -7,6 +7,7 @@ import { currentLeaveYear } from './lib/leave'
 import LeavePanel from './components/LeavePanel'
 import ContractCard from './components/ContractCard'
 import { COMMISSION_DEPARTMENTS } from './lib/helpers'
+import { isProfileIncompleteError } from './lib/profileComplete'
 import { LoadingScreen, Toast } from './components/shared'
 import { LoginView, SignupView, ForgotPasswordView, ResetPasswordView } from './components/Auth'
 import MemberDashboard from './components/MemberDashboard'
@@ -23,6 +24,7 @@ export default function App() {
   const [receiptMessages, setReceiptMessages] = useState([])
   const [lastBackup, setLastBackup] = useState({ at: null, by: null })
   const [bankDetails, setBankDetails] = useState({})
+  const [bankLoaded, setBankLoaded] = useState(false)     // true once the bank details have been read (the profile check needs them)
   const [leaveRequests, setLeaveRequests] = useState([])
   const [leaveAdjustments, setLeaveAdjustments] = useState([])
   const [leaveOverview, setLeaveOverview] = useState([])
@@ -248,6 +250,8 @@ export default function App() {
         setAllUsers([])
         setReceipts([])
         setReceiptMessages([])
+        setBankDetails({})
+        setBankLoaded(false)
         setAuthView('login')
         setBooting(false)
         return
@@ -367,11 +371,24 @@ export default function App() {
     if (data?.user) await loadProfileAndData(data.user.id)
   }
 
+  // A member whose profile is not complete cannot file a job (Update 50). The screens check first and the database has the last word, so a
+  // refusal for that reason (a screen that is out of date, or a profile that changed since it was loaded) is handled here: the profile
+  // is read again so the banner is right, and the form is told, so it stays open with what was typed and shows the message.
+  // Returns { ok: true }, { ok: false, profileIncomplete: true } or { ok: false }.
   async function handleAddJob(formData) {
     const { error } = await supabase.from('jobs').insert({ ...jobToDbFields(formData), member_id: currentUserRef.current.id })
-    if (error) { showToast('Failed to save job card.', 'error'); return }
+    if (error) {
+      if (isProfileIncompleteError(error)) {
+        await reloadSelf()
+        await refreshBank()
+        return { ok: false, profileIncomplete: true }
+      }
+      showToast('Failed to save job card.', 'error')
+      return { ok: false }
+    }
     showToast('Job card filed successfully.')
     await refreshJobs()
+    return { ok: true }
   }
 
   // Admin creating a brand-new job and handing it to a Technical or Sales &
@@ -409,6 +426,8 @@ export default function App() {
     // A desired service date turns into a real, tracked job automatically —
     // not just a note that relies on someone remembering to act on it.
     if (formData.desiredDate) {
+      // This job is filed for the member, so like any job they file it needs a complete profile (Update 50). The database says no
+      // when it is not; the customer is still recorded, and the member is told why the follow-up job is missing.
       const { error: jobError } = await supabase.from('jobs').insert({
         job_type: 'New Installation',
         location: formData.location,
@@ -426,6 +445,11 @@ export default function App() {
         customer_id: inserted.id,
       })
       if (!jobError) message += ` A follow-up job was scheduled for ${formData.desiredDate}.`
+      else if (isProfileIncompleteError(jobError)) {
+        message += ' The follow-up job was not scheduled because your profile is not complete. Update your profile, then file the job yourself.'
+        await reloadSelf()
+        await refreshBank()
+      }
       await refreshJobs()
     }
 
@@ -619,12 +643,20 @@ export default function App() {
     if (!error) setDeviceItems((data || []).map(mapDeviceItem))
   }
 
-  async function refreshBank() {
+  // The bank details of everyone this person may see, as { memberId: details }; null when they could not be read.
+  async function fetchBank() {
     const { data, error } = await supabase.from('staff_bank_details').select('*')
-    if (error) return
+    if (error) return null
     const map = {}
     ;(data || []).forEach((row) => { map[row.member_id] = mapBank(row) })
+    return map
+  }
+
+  async function refreshBank() {
+    const map = await fetchBank()
+    if (!map) return
     setBankDetails(map)
+    setBankLoaded(true)
   }
 
   async function refreshLeave(profile = currentUserRef.current) {
@@ -943,6 +975,8 @@ export default function App() {
     await refreshUsers()
   }
 
+  // Returns false when something could not be saved, so the profile window can stay open with what was typed: since Update 50 a member
+  // fills in a longer form, and a username that is already taken should not cost them everything they entered.
   async function handleUpdateProfile(profileId, updates, bank) {
     const { error } = await supabase.from('profiles').update(updates).eq('id', profileId)
     if (error) {
@@ -950,22 +984,35 @@ export default function App() {
       showToast(error.code === '23505' && text.includes('employee_number') ? 'That employee number is already used by someone else.'
         : error.code === '23505' && text.includes('username') ? 'That username is already taken.'
         : 'Failed to update profile.', 'error')
-      return
+      return false
+    }
+    // After a save the profile and the bank details are both read again and then shown TOGETHER (one render), so the "update your
+    // profile" banner goes (or changes) in one step instead of flashing a half-saved view: the new profile with the old bank details.
+    async function readBack() {
+      const bankMap = await fetchBank()
+      let updated = null
+      if (profileId === currentUserRef.current.id) {
+        const { data } = await supabase.from('profiles').select('*').eq('id', profileId).single()
+        if (data) updated = mapProfile(data)
+      }
+      if (bankMap) { setBankDetails(bankMap); setBankLoaded(true) }
+      if (updated) { currentUserRef.current = updated; setCurrentUser(updated) }
+      if (currentUserRef.current.role === 'admin') await refreshUsers()
     }
     if (bank) {
       const empty = Object.values(bank).every((v) => !String(v || '').trim())
       if (!(empty && !bankDetails[profileId])) {
         const { error: bankError } = await supabase.from('staff_bank_details').upsert(bankToDbFields(profileId, bank), { onConflict: 'member_id' })
-        if (bankError) { showToast(bankError.code === '23514' ? 'The account number does not look right.' : 'Profile saved, but the bank details could not be saved.', 'error'); await refreshBank(); return }
+        if (bankError) {
+          showToast(bankError.code === '23514' ? 'The account number does not look right.' : 'Profile saved, but the bank details could not be saved.', 'error')
+          await readBack()          // the rest of the profile was saved
+          return false
+        }
       }
     }
     showToast('Profile updated.')
-    if (profileId === currentUserRef.current.id) {
-      const { data } = await supabase.from('profiles').select('*').eq('id', profileId).single()
-      if (data) { const updated = mapProfile(data); currentUserRef.current = updated; setCurrentUser(updated) }
-    }
-    if (currentUserRef.current.role === 'admin') await refreshUsers()
-    await refreshBank()
+    await readBack()
+    return true
   }
 
   async function handleDeleteJob(id) {
@@ -1040,7 +1087,7 @@ export default function App() {
   const extras = {
     lastBackup, bankDetails, onBackupRecorded: handleBackupRecorded,
     header: {
-      bank: bankDetails[currentUser.id], onUploadAvatar: handleUploadAvatar, onRemoveAvatar: handleRemoveAvatar,
+      bank: bankDetails[currentUser.id], bankKnown: bankLoaded, onUploadAvatar: handleUploadAvatar, onRemoveAvatar: handleRemoveAvatar,
       contract: <ContractCard contract={contracts[currentUser.id]} history={contractHistory.filter((h) => h.memberId === currentUser.id)} policyDays={leavePolicy.annual_days} heading />,
       leave: leaveSummary && leaveSummary.eligible === false ? undefined : (
         <LeavePanel userId={currentUser.id} isDirector={currentUser.isDirector}

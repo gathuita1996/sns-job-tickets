@@ -192,7 +192,7 @@ export default function AdminDashboard({ extras, currentUser, users, jobs, custo
           profile={editingMember} canEditNumber isSelf={false} bank={extras && extras.bankDetails && extras.bankDetails[editingMember.id]}
           onRemoveAvatar={extras && extras.header && extras.header.onRemoveAvatar}
           onClose={() => setEditingMember(null)}
-          onSave={async (updates, bank) => { await onUpdateProfile(editingMember.id, updates, bank); setEditingMember(null) }}
+          onSave={async (updates, bank) => { const saved = await onUpdateProfile(editingMember.id, updates, bank); if (saved !== false) setEditingMember(null) }}
         />
   ) : null
   const viewingStaff = viewingStaffId ? userMapForHeader[viewingStaffId] : null

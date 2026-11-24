@@ -27,7 +27,11 @@ export default function Header({ currentUser, onLogout, onUpdateProfile, subtitl
   useEffect(() => { if (profileRequest && profileRequest.n) setOpenTab(profileRequest.tab || 'profile') }, [profileRequest && profileRequest.n]) // eslint-disable-line react-hooks/exhaustive-deps
   const open = () => setOpenTab('profile')
 
+  // The profile window is a sibling of the header, not inside it: the header is its own layer (z-index 30), and a window inside it
+  // would sit UNDER the job form (z-index 50) when "Update my profile" is pressed in that form. At 55 it opens above the job form
+  // (what was typed there stays) and still under the toasts and confirmations (60).
   return (
+    <>
     <header className="no-print sns-border-b sns-bg-card" style={{ position: 'sticky', top: 0, zIndex: 30 }}>
       <div className="max-w-6xl mx-auto px-4 sm:px-6 flex items-center justify-between" style={{ paddingTop: '0.85rem', paddingBottom: '0.85rem' }}>
         <div className="flex items-center gap-3">
@@ -54,15 +58,16 @@ export default function Header({ currentUser, onLogout, onUpdateProfile, subtitl
           <button onClick={onLogout} title="Log out" className="sns-btn-secondary" style={{ padding: '0.5rem' }}><LogOut size={16} /></button>
         </div>
       </div>
-      {openTab && (
-        <ProfileFormModal
-          profile={currentUser} isSelf canEditNumber={false} settings={settings} leave={profileExtras.leave} leaveBadge={profileExtras.leaveBadge} data={profileExtras.data} contract={profileExtras.contract}
-          initialTab={openTab} bank={profileExtras.bank}
-          onUploadAvatar={profileExtras.onUploadAvatar} onRemoveAvatar={profileExtras.onRemoveAvatar}
-          onClose={() => setOpenTab(null)}
-          onSave={async (updates, bank) => { await onUpdateProfile(currentUser.id, updates, bank); setOpenTab(null) }}
-        />
-      )}
     </header>
+    {openTab && (
+      <ProfileFormModal
+        profile={currentUser} isSelf canEditNumber={false} settings={settings} leave={profileExtras.leave} leaveBadge={profileExtras.leaveBadge} data={profileExtras.data} contract={profileExtras.contract}
+        initialTab={openTab} bank={profileExtras.bank} layer={55}
+        onUploadAvatar={profileExtras.onUploadAvatar} onRemoveAvatar={profileExtras.onRemoveAvatar}
+        onClose={() => setOpenTab(null)}
+        onSave={async (updates, bank) => { const saved = await onUpdateProfile(currentUser.id, updates, bank); if (saved !== false) setOpenTab(null) }}
+      />
+    )}
+    </>
   )
 }

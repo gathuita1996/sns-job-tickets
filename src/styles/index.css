@@ -76,6 +76,23 @@ body { margin: 0; }
 .sns-nav-card:hover { transform: translateY(-3px); box-shadow: 0 14px 28px -16px rgba(20,40,60,0.25); border-color: var(--signal); }
 .sns-nav-card .sns-nav-icon { width: 40px; height: 40px; border-radius: 10px; background: var(--signal-pale); color: var(--signal-deep); display: flex; align-items: center; justify-content: center; }
 .sns-alert-banner { display: flex; align-items: center; gap: 0.7rem; background: var(--overdue-pale); color: var(--overdue); border: 1px solid rgba(192,57,43,0.25); border-radius: 12px; padding: 0.85rem 1.1rem; font-size: 0.85rem; font-weight: 600; }
+/* Update 50: a member whose profile is not complete. The banner on the dashboard is amber (something to do, not an error; red is
+   for overdue jobs). The notice inside the job form is red, because there it is the reason the job was not filed. The text stays
+   in the ordinary ink colour so it is easy to read on both backgrounds, in light and dark mode. */
+.sns-profile-banner { display: flex; align-items: center; gap: 0.85rem; background: var(--stamp-pale); color: var(--ink); border: 1px solid var(--stamp); border-radius: 12px; padding: 0.85rem 1.1rem; margin-bottom: 1.25rem; font-size: 0.85rem; }
+.sns-profile-banner-icon { flex-shrink: 0; color: var(--stamp-deep); }
+.sns-profile-banner-text { flex: 1; min-width: 0; }
+.sns-profile-banner-text p { overflow-wrap: anywhere; }
+.sns-profile-banner-title { font-weight: 700; font-size: 0.92rem; margin-bottom: 0.15rem; }
+.sns-profile-banner-btn { flex-shrink: 0; white-space: nowrap; }
+@media (max-width: 40rem) {
+  .sns-profile-banner { flex-wrap: wrap; }
+  .sns-profile-banner-text { flex-basis: calc(100% - 2.2rem); }
+  .sns-profile-banner-btn { width: 100%; }
+}
+.sns-profile-notice { background: var(--overdue-pale); color: var(--ink); border: 1px solid rgba(192,57,43,0.35); border-left: 4px solid var(--overdue); border-radius: 10px; padding: 0.8rem 1rem; font-size: 0.85rem; }
+.sns-profile-notice p { overflow-wrap: anywhere; }
+.sns-profile-notice-title { font-weight: 700; color: var(--overdue); margin-bottom: 0.25rem; }
 .sns-chip-id { font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 0.8rem; color: var(--signal-deep); background: var(--signal-pale); padding: 0.15rem 0.5rem; border-radius: 6px; display: inline-block; }
 .sns-icon-btn { padding: 0.4rem; border-radius: 7px; border: none; background: transparent; cursor: pointer; color: var(--ink-faint); transition: background 0.15s, color 0.15s; display: inline-flex; }
 .sns-icon-btn:hover { background: var(--line-soft); color: var(--ink); }

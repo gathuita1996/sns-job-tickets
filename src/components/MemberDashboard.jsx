@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { AlertCircle, ArrowLeft, Plane, Router as RouterIcon, Calendar, CheckCircle2, ClipboardCheck, Clipboard, Clock, Pencil, Plus, Receipt, Send, Trash2, UserPlus, Users, Wallet } from 'lucide-react'
 import Header from './Header'
+import ProfileBanner from './ProfileBanner'
 import JobFormModal from './JobForm'
 import JobsTable from './JobsTable'
 import CustomerFormModal from './CustomerForm'
@@ -12,6 +13,7 @@ import { ConfirmDialog, EmptyState, NavCard, PeriodSelector, SearchInput, StatCa
 import { formatKSh, formatDate, isOverdue, isInPeriod, getPeriodRange, isInRange, COMMISSION_DEPARTMENTS, toDateInputValue, canRequestPurchases } from '../lib/helpers'
 import FieldVisits from './FieldVisits'
 import { analyzePlaces } from '../lib/visitsIntel'
+import { jobFilingGate } from '../lib/profileComplete'
 import { MapPin } from 'lucide-react'
 
 
@@ -32,6 +34,15 @@ export default function MemberDashboard({ extras, currentUser, jobs, raisedJobs,
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
+
+  // Update 50: until every field of the profile is filled in, a banner says so and a new job cannot be filed. The bank details come
+  // from extras.header.bank (bankKnown is false while they have not been read yet, so nothing is reported wrongly in the meantime).
+  const headerExtras = (extras && extras.header) || {}
+  const profileGate = useMemo(
+    () => jobFilingGate(currentUser, headerExtras.bank, { bankKnown: headerExtras.bankKnown !== false }),
+    [currentUser, headerExtras.bank, headerExtras.bankKnown],
+  )
+  const openProfile = () => setProfileRequest({ tab: 'profile', n: Date.now() })
 
   const isSales = currentUser.department === 'sales'
   const visitStats = useMemo(() => (isSales ? analyzePlaces({ places: places || [], visits: visits || [], customers, today: toDateInputValue(new Date()) }) : []), [isSales, places, visits, customers])
@@ -99,6 +110,8 @@ export default function MemberDashboard({ extras, currentUser, jobs, raisedJobs,
     <div className="sns-shell">
       <Header currentUser={currentUser} onLogout={onLogout} onUpdateProfile={onUpdateProfile} subtitle="Ticketing System" profileExtras={extras && extras.header} profileRequest={profileRequest} />
       <main className="max-w-6xl mx-auto px-4 sm:px-6" style={{ paddingTop: '1.5rem', paddingBottom: '3rem' }}>
+
+        <ProfileBanner missing={profileGate.missing} onOpen={openProfile} />
 
         {stats.overdue > 0 && (
           <div className="sns-alert-banner" style={{ marginBottom: '1.25rem' }}>
@@ -281,10 +294,17 @@ export default function MemberDashboard({ extras, currentUser, jobs, raisedJobs,
           allMembers={memberList}
           currentUserId={currentUser.id}
           filerDepartment={currentUser.department}
+          profileGate={profileGate}
+          onOpenProfile={openProfile}
           onClose={() => { setShowForm(false); setEditingJob(null) }}
           onSave={async (data) => {
             if (editingJob) await onUpdateJob(editingJob.id, data)
-            else await onAddJob(data)
+            else {
+              const result = await onAddJob(data)
+              // The database refused the job because the profile is not complete: keep the form open (what was typed stays) so it
+              // can show why. Any other outcome closes the form as before.
+              if (result && result.profileIncomplete) return result
+            }
             setShowForm(false); setEditingJob(null)
           }}
         />

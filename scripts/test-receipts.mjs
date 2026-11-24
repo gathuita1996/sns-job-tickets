@@ -933,9 +933,9 @@ const rebuild = read('supabase/job-card-rebuild.sql')
 const schema = read('supabase/schema.sql')
 const section = (text, from, to) => { const a = text.indexOf(from); assert.ok(a >= 0, `missing: ${from}`); const b = to ? text.indexOf(to, a + from.length) : text.length; return text.slice(a, b < 0 ? text.length : b) }
 
-await ok('the full set-up scripts end with this update, and still carry the ones before it', () => {
+await ok('the full set-up scripts are one file, and still carry the updates before it', () => {
   assert.equal(rebuild, schema)
-  assert.ok(rebuild.endsWith(mig49), 'the full script ends with update 49')
+  assert.ok(rebuild.includes(mig49), 'and carries update 49')              // (the last update to the full script is checked in test-profile.mjs)
   assert.ok(rebuild.includes(mig), 'and carries update 48')
   assert.ok(rebuild.includes(read('supabase/update-47-migration.sql')), 'and carries update 47')
   assert.ok(rebuild.indexOf('create table if not exists public.customer_receipts') > rebuild.indexOf('public.customers'))

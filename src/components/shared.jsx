@@ -8,7 +8,7 @@ export function FormField({ label, children, hint, error, htmlFor }) {
       <label htmlFor={htmlFor} className="block" style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--ink-soft)', marginBottom: '0.35rem' }}>{label}</label>
       {children}
       {hint && !error && <p style={{ fontSize: '0.72rem', color: 'var(--ink-faint)', marginTop: '0.3rem' }}>{hint}</p>}
-      {error && <p style={{ fontSize: '0.72rem', color: 'var(--danger)', marginTop: '0.3rem' }}>{error}</p>}
+      {error && <p data-field-error="true" style={{ fontSize: '0.72rem', color: 'var(--danger)', marginTop: '0.3rem' }}>{error}</p>}
     </div>
   )
 }

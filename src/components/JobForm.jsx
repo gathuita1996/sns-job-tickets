@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Plus, Trash2, X } from 'lucide-react'
 import { FormField } from './shared'
 import GpsCapture from './GpsCapture'
 import { JOB_TYPES, SITE_SURVEY, LOCATIONS, TRANSPORT_LOCATIONS, STATUS_OPTIONS, PRIORITY_OPTIONS, defaultJobForm, isOverdue, resolveOtherField, toDateInputValue, formatDate, formatKSh } from '../lib/helpers'
+import { PROFILE_REQUIRED_MESSAGE, describeMissing } from '../lib/profileComplete'
 
 // assignableMembers is only passed when an admin opens this form (to assign
 // or reassign a job to a Technical or Sales & Marketing member) -- its
@@ -17,7 +18,11 @@ import { JOB_TYPES, SITE_SURVEY, LOCATIONS, TRANSPORT_LOCATIONS, STATUS_OPTIONS,
 // details of a customer this job is ALREADY linked to (they won't be in
 // availableCustomers anymore once linked, but the technician working the
 // job still needs to see what that customer actually wanted).
-export default function JobFormModal({ initialJob, assignableMembers, allMembers, availableCustomers, allCustomers, filerDepartment, currentUserId, reassignOnly, onClose, onSave }) {
+// profileGate ({ blocked, missing }, from jobFilingGate in lib/profileComplete.js) and onOpenProfile are for a member filing a NEW job
+// (Update 50): while the profile is not complete the job is not filed -- the form stays open, with what was typed, and shows
+// "Please update your profile to file this job." plus a button that opens the profile. onSave may return { profileIncomplete: true }
+// when the database refused the job for that reason (the screen's own check was out of date); the same message is shown.
+export default function JobFormModal({ initialJob, assignableMembers, allMembers, availableCustomers, allCustomers, filerDepartment, currentUserId, reassignOnly, profileGate, onOpenProfile, onClose, onSave }) {
   const adminMode = Boolean(assignableMembers)
   const isNewAdminAssignment = adminMode && !initialJob
   const editingOverdue = Boolean(initialJob) && isOverdue(initialJob)
@@ -51,6 +56,21 @@ export default function JobFormModal({ initialJob, assignableMembers, allMembers
   } : { ...defaultJobForm(), status: adminMode ? 'Pending' : '', assignedTo: '', raisedBy: '', customerId: null, coTechnicians: [], gps: null })
   const [errors, setErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
+
+  // Only filing a NEW job by a member is held back for an incomplete profile; changing a job that already exists never is.
+  //   profileNotice: null | 'form' (our own check stopped it; shows while the profile is still incomplete) | 'database' (the database refused it)
+  const holdsForProfile = !initialJob && !adminMode
+  const [profileNotice, setProfileNotice] = useState(null)
+  const profileMissing = (profileGate && profileGate.missing) || []
+  const showProfileNotice = holdsForProfile && ((profileNotice === 'form' && Boolean(profileGate && profileGate.blocked)) || profileNotice === 'database')
+  const noticeRef = useRef(null)
+  useEffect(() => {
+    if (showProfileNotice && noticeRef.current && noticeRef.current.scrollIntoView) noticeRef.current.scrollIntoView({ block: 'nearest' })
+  }, [showProfileNotice])
+  function openProfile() {
+    if (profileNotice === 'database') setProfileNotice(null)
+    if (onOpenProfile) onOpenProfile()
+  }
 
   // A site survey records where it was done, with the phone's GPS. A member records it when filing the job
   // (required). An admin handing a survey to someone is not at the site, so nothing is asked of them. When an
@@ -158,9 +178,12 @@ export default function JobFormModal({ initialJob, assignableMembers, allMembers
 
   async function handleSubmit(ev) {
     ev.preventDefault()
+    setProfileNotice(null)
+    // Asked first: the profile has to be complete whatever else is on the form, and the member keeps everything typed so far.
+    if (holdsForProfile && profileGate && profileGate.blocked) { setProfileNotice('form'); return }
     if (!validate()) return
     setSubmitting(true)
-    await onSave({
+    const result = await onSave({
       ...form,
       location: form.location === 'Other' ? form.locationOther.trim() : form.location,
       transportFrom: form.transportFrom === 'Other' ? form.transportFromOther.trim() : form.transportFrom,
@@ -169,6 +192,7 @@ export default function JobFormModal({ initialJob, assignableMembers, allMembers
       gps: form.jobType === SITE_SURVEY ? form.gps : null,        // a job that is not a site survey carries no location
     })
     setSubmitting(false)
+    if (result && result.profileIncomplete) setProfileNotice('database')
   }
 
   const jobTypeCls = `sns-input${form.jobType === '' ? ' sns-select-placeholder' : ''}`
@@ -387,6 +411,17 @@ export default function JobFormModal({ initialJob, assignableMembers, allMembers
           )}
 
           {showGps && <GpsCapture value={form.gps} onChange={(g) => update('gps', g)} error={errors.gps} required={gpsRequired} />}
+
+          {showProfileNotice && (
+            <div ref={noticeRef} role="alert" className="sns-profile-notice">
+              <p className="sns-profile-notice-title">{PROFILE_REQUIRED_MESSAGE}</p>
+              <p>
+                {profileMissing.length > 0 ? `Your profile is not complete. Still missing: ${describeMissing(profileMissing)}.` : 'Your profile is not complete. Open it and fill in every field.'}
+                {' '}Everything you typed here is kept.
+              </p>
+              {onOpenProfile && <button type="button" className="sns-btn-secondary" style={{ marginTop: '0.6rem' }} onClick={openProfile}>Update my profile</button>}
+            </div>
+          )}
 
           <div className="flex gap-3" style={{ paddingTop: '0.4rem', marginBottom: '2rem' }}>
             <button type="button" onClick={onClose} className="sns-btn-secondary" style={{ flex: 1 }}>Cancel</button>

@@ -4,10 +4,12 @@ import { FormField } from './shared'
 import Avatar from './Avatar'
 import { ACCOUNT_NUMBER_FORMAT, BANKS } from '../lib/helpers'
 import { validateAvatarFile } from '../lib/image'
+import { missingInForm } from '../lib/profileComplete'
 
 const NUMBER_FORMAT = /^SNS\d{3,}$/i
 
-function AvatarPicker({ profile, canUpload, onUpload, onRemove }) {
+// problem : the words to show when a picture is still needed (Update 50)
+function AvatarPicker({ profile, canUpload, onUpload, onRemove, problem }) {
   const input = useRef(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -39,21 +41,33 @@ function AvatarPicker({ profile, canUpload, onUpload, onRemove }) {
           {profile.avatarUrl && onRemove && <button type="button" className="sns-btn-secondary" style={{ fontSize: '0.8rem' }} disabled={busy} onClick={remove}><Trash2 size={14} /> Remove</button>}
         </div>
         {error && <p role="alert" style={{ color: 'var(--overdue)', fontSize: '0.78rem', marginTop: '0.4rem' }}>{error}</p>}
+        {!error && problem && <p data-field-error="true" style={{ color: 'var(--danger)', fontSize: '0.72rem', marginTop: '0.4rem' }}>{problem}</p>}
       </div>
     </div>
   )
 }
 
-function ProfileFields({ profile, bank, contract, canEditNumber, isSelf, onClose, onSave, onUploadAvatar, onRemoveAvatar }) {
-  const [form, setForm] = useState({
+// What the form starts with: the profile and the bank details as they are now.
+function startingForm(profile, bank) {
+  return {
     fullName: profile.fullName, username: profile.username, contact: profile.contact, title: profile.title || '',
     gender: profile.gender || '', dateOfBirth: profile.dateOfBirth || '',
     idNumber: profile.idNumber || '', kraPin: profile.kraPin || '', shaNumber: profile.shaNumber || '',
     employeeNumber: profile.employeeNumber || '',
     bankName: (bank && bank.bankName) || '', branch: (bank && bank.branch) || '', accountNumber: (bank && bank.accountNumber) || '', accountName: (bank && bank.accountName) || '',
-  })
-  const [errors, setErrors] = useState({})
+  }
+}
+
+function ProfileFields({ profile, bank, contract, canEditNumber, isSelf, onClose, onSave, onUploadAvatar, onRemoveAvatar }) {
+  // Update 50: a member filling in their OWN profile must fill in every field (Title is the one they may leave out; the employee
+  // number is given by the admin). An admin, and an admin editing someone else's profile, are not held to it.
+  const requireAll = Boolean(isSelf) && profile.role !== 'admin'
+  const formRef = useRef(null)
+  const [form, setForm] = useState(() => startingForm(profile, bank))
+  // What is empty when the window opens is marked straight away, so the member can see what is left to do.
+  const [errors, setErrors] = useState(() => (requireAll ? missingInForm(startingForm(profile, bank), profile.avatarUrl) : {}))
   const [submitting, setSubmitting] = useState(false)
+  const [tried, setTried] = useState(false)       // Save was pressed and something was still wrong
 
   function update(key, value) {
     setForm((f) => ({ ...f, [key]: value }))
@@ -71,13 +85,29 @@ function ProfileFields({ profile, bank, contract, canEditNumber, isSelf, onClose
     if (acct && !ACCOUNT_NUMBER_FORMAT.test(acct)) e.accountNumber = 'Use 4–30 letters, numbers, spaces or dashes.'
     if (acct && !bankName) e.bankName = 'Add the bank name'
     if (bankName && !acct) e.accountNumber = 'Add the account number'
+    if (requireAll) {
+      const empty = missingInForm(form, profile.avatarUrl)
+      for (const key of Object.keys(empty)) if (!e[key]) e[key] = empty[key]
+    }
     setErrors(e)
     return Object.keys(e).length === 0
   }
 
+  // The picture is saved the moment it is chosen (not with the form), so its note goes as soon as there is a picture.
+  const pictureProblem = profile.avatarUrl ? undefined : errors.avatarUrl
+  const hasProblems = Object.keys(errors).some((k) => errors[k] && !(k === 'avatarUrl' && profile.avatarUrl))
+
   async function handleSubmit(ev) {
     ev.preventDefault()
-    if (!validate()) return
+    if (!validate()) {
+      setTried(true)
+      // The form is long: take the member to the first thing that needs filling in.
+      setTimeout(() => {
+        const first = formRef.current && formRef.current.querySelector('[data-field-error]')
+        if (first && first.scrollIntoView) first.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      }, 0)
+      return
+    }
     setSubmitting(true)
     await onSave({
       full_name: form.fullName.trim(), username: form.username.trim(), contact: form.contact.trim(), title: form.title.trim() || null,
@@ -90,8 +120,9 @@ function ProfileFields({ profile, bank, contract, canEditNumber, isSelf, onClose
   }
 
   return (
-    <form onSubmit={handleSubmit} style={{ padding: '1.4rem' }} className="space-y-4">
-      <AvatarPicker profile={profile} canUpload={isSelf} onUpload={onUploadAvatar} onRemove={onRemoveAvatar} />
+    <form ref={formRef} onSubmit={handleSubmit} style={{ padding: '1.4rem' }} className="space-y-4">
+      {requireAll && <p className="sns-text-soft" style={{ fontSize: '0.82rem' }}>All fields are required, except Title. Your employee number is given to you by the admin.</p>}
+      <AvatarPicker profile={profile} canUpload={isSelf} onUpload={onUploadAvatar} onRemove={onRemoveAvatar} problem={pictureProblem} />
       <FormField label="Full name" error={errors.fullName}>
         <input className="sns-input" value={form.fullName} onChange={(e) => update('fullName', e.target.value)} />
       </FormField>
@@ -120,18 +151,19 @@ function ProfileFields({ profile, bank, contract, canEditNumber, isSelf, onClose
       {isSelf && contract ? <div className="sns-border-t sns-border-b" style={{ padding: '1rem 0' }}>{contract}</div> : null}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <FormField label="Gender">
+        <FormField label="Gender" error={errors.gender}>
           <select className="sns-input" value={form.gender} onChange={(e) => update('gender', e.target.value)}>
-            <option value="">Not specified</option><option value="Male">Male</option><option value="Female">Female</option>
+            {requireAll ? <option value="" disabled>Select</option> : <option value="">Not specified</option>}
+            <option value="Male">Male</option><option value="Female">Female</option>
           </select>
         </FormField>
-        <FormField label="Date of birth">
+        <FormField label="Date of birth" error={errors.dateOfBirth}>
           <input type="date" className="sns-input" value={form.dateOfBirth} onChange={(e) => update('dateOfBirth', e.target.value)} />
         </FormField>
       </div>
-      <FormField label="National ID number"><input className="sns-input" value={form.idNumber} onChange={(e) => update('idNumber', e.target.value)} placeholder="e.g. 12345678" /></FormField>
-      <FormField label="KRA PIN"><input className="sns-input" value={form.kraPin} onChange={(e) => update('kraPin', e.target.value)} placeholder="e.g. A012345678Z" /></FormField>
-      <FormField label="SHA number"><input className="sns-input" value={form.shaNumber} onChange={(e) => update('shaNumber', e.target.value)} /></FormField>
+      <FormField label="National ID number" error={errors.idNumber}><input className="sns-input" value={form.idNumber} onChange={(e) => update('idNumber', e.target.value)} placeholder="e.g. 12345678" /></FormField>
+      <FormField label="KRA PIN" error={errors.kraPin}><input className="sns-input" value={form.kraPin} onChange={(e) => update('kraPin', e.target.value)} placeholder="e.g. A012345678Z" /></FormField>
+      <FormField label="SHA number" error={errors.shaNumber}><input className="sns-input" value={form.shaNumber} onChange={(e) => update('shaNumber', e.target.value)} /></FormField>
 
       <div className="sns-border-t" style={{ paddingTop: '1rem' }}>
         <h4 className="sns-display" style={{ fontWeight: 700, fontSize: '0.92rem', marginBottom: '0.2rem' }}>Bank details</h4>
@@ -145,12 +177,13 @@ function ProfileFields({ profile, bank, contract, canEditNumber, isSelf, onClose
             <input className="sns-input sns-mono" inputMode="text" value={form.accountNumber} onChange={(e) => update('accountNumber', e.target.value)} placeholder="e.g. 0123456789012" />
           </FormField>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <FormField label="Account name (optional)"><input className="sns-input" value={form.accountName} onChange={(e) => update('accountName', e.target.value)} placeholder="Name on the account" /></FormField>
-            <FormField label="Branch (optional)"><input className="sns-input" value={form.branch} onChange={(e) => update('branch', e.target.value)} placeholder="e.g. Ukunda" /></FormField>
+            <FormField label={requireAll ? 'Account name' : 'Account name (optional)'} error={errors.accountName}><input className="sns-input" value={form.accountName} onChange={(e) => update('accountName', e.target.value)} placeholder="Name on the account" /></FormField>
+            <FormField label={requireAll ? 'Branch' : 'Branch (optional)'} error={errors.branch}><input className="sns-input" value={form.branch} onChange={(e) => update('branch', e.target.value)} placeholder="e.g. Ukunda" /></FormField>
           </div>
         </div>
       </div>
 
+      {requireAll && tried && hasProblems && <p role="alert" style={{ color: 'var(--danger)', fontSize: '0.82rem', fontWeight: 600 }}>Some fields need attention. Fill in or correct the ones marked, then save.</p>}
       <div className="flex gap-3" style={{ paddingTop: '0.4rem', marginBottom: '2rem' }}>
         <button type="button" onClick={onClose} className="sns-btn-secondary" style={{ flex: 1 }}>Cancel</button>
         <button type="submit" disabled={submitting} className="sns-btn-primary" style={{ flex: 1 }}>{submitting ? 'Saving…' : 'Save changes'}</button>
@@ -160,7 +193,8 @@ function ProfileFields({ profile, bank, contract, canEditNumber, isSelf, onClose
 }
 
 // "My profile": picture, details, bank details, and (for yourself) Leave. An admin also gets Settings.
-export default function ProfileFormModal({ profile, isSelf, canEditNumber, settings, leave, leaveBadge, data, contract, initialTab, bank, onClose, onSave, onUploadAvatar, onRemoveAvatar }) {
+// layer is the window's z-index: the header opens it at 55 so it sits above a job form that is open behind it (Update 50).
+export default function ProfileFormModal({ profile, isSelf, canEditNumber, settings, leave, leaveBadge, data, contract, initialTab, bank, layer = 50, onClose, onSave, onUploadAvatar, onRemoveAvatar }) {
   const tabs = [{ key: 'profile', label: isSelf ? 'My profile' : 'Profile' }]
   if (leave) tabs.push({ key: 'leave', label: 'Leave', badge: leaveBadge })
   if (data) tabs.push({ key: 'data', label: 'Data & Backup' })
@@ -168,7 +202,7 @@ export default function ProfileFormModal({ profile, isSelf, canEditNumber, setti
   const [tab, setTab] = useState(tabs.some((t) => t.key === initialTab) ? initialTab : 'profile')
   const title = settings ? 'Profile & settings' : isSelf ? 'My profile' : `Edit ${profile.fullName}`
   return (
-    <div className="no-print flex items-center justify-center p-4" style={{ position: 'fixed', inset: 0, background: 'rgba(27,36,48,0.55)', zIndex: 50 }}>
+    <div className="no-print flex items-center justify-center p-4" style={{ position: 'fixed', inset: 0, background: 'rgba(27,36,48,0.55)', zIndex: layer }}>
       <div className="sns-card sns-fade-in" role="dialog" aria-label={title} style={{ width: '100%', maxWidth: tab === 'data' ? '62rem' : tabs.length > 1 ? '40rem' : '30rem', maxHeight: '90vh', overflowY: 'auto' }}>
         <div className="flex items-center justify-between sns-border-b sns-bg-card" style={{ padding: '1.1rem 1.4rem', position: 'sticky', top: 0, zIndex: 1, borderRadius: '14px 14px 0 0' }}>
           <h3 className="sns-display" style={{ fontWeight: 700 }}>{title}</h3>
