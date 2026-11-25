@@ -1,14 +1,18 @@
 // Update 52: Custom mode, the third colour mode (Light mode, Dark mode, Custom mode).
+// Update 53: Custom mode is the DEFAULT mode: what every browser shows until a mode is chosen from the menu, whatever its device is
+// set to (the first-visit "follow the device" rule is gone), and only a CHOSEN mode is remembered, under a new key.
 // Plain logic and plain files only (no browser, no database):
-//   1. src/lib/theme.js: the list of modes, what is remembered, what happens when the browser will not remember anything;
-//   2. the few lines in index.html that put the saved mode on the page before it is first drawn, RUN here against every kind of
-//      browser (storage that works, that throws, that is blocked; a device set to dark, to light, or that cannot say) and compared
-//      with theme.js, so the two can never disagree (a disagreement is a flash of the wrong colours on every page load);
+//   1. src/lib/theme.js: the list of modes, the default, what is remembered (a choice, never a guess), what happens when the browser
+//      will not remember anything;
+//   2. the few lines in index.html that put the mode on the page before it is first drawn, RUN here against every kind of browser
+//      (storage that works, that throws, that is blocked; a device set to dark, to light, or that cannot say: it makes no difference)
+//      and compared with theme.js, so the two can never disagree (a disagreement is a flash of the wrong colours on every page load);
 //   3. src/styles/index.css: every colour name is set in every mode, Light and Dark keep the colours they had, Custom mode has the
 //      colours of the sign-in page's brand panel (the picture it was made from), the writing in it is easy to read (the contrast is
 //      worked out here, WCAG 2), the curved background is drawn only on a screen and never gets in the way of a click, and a printout
 //      is always the light colours;
-//   4. the screens: the header has the mode menu in place of the old two-way button, and the sign-in page's curves can be restyled.
+//   4. the screens: the header has the mode menu in place of the old two-way button and saves a mode only when one is chosen, and the
+//      sign-in page's curves can be restyled.
 // The behaviour of the menu itself (opening, the keys, choosing) is checked in a real browser by the maintainer's UI tests; those are
 // not part of the shipped app.
 import assert from 'node:assert/strict'
@@ -23,6 +27,7 @@ const read = (p) => readFileSync(fileURLToPath(new URL('../' + p, import.meta.ur
 
 const KEYS = ['light', 'dark', 'custom']
 const DARK_QUERY = '(prefers-color-scheme: dark)'
+const OLD_KEY = 'sns-theme'   // what updates 50 to 52 saved on EVERY visit, chosen or not: it is not read any more
 
 // ---- a browser that can be made to misbehave ---------------------------------------------------------------------------
 const memoryStorage = (initial = {}) => {
@@ -38,14 +43,19 @@ const device = (prefersDark) => { const asked = []; const f = (q) => { asked.pus
 // ======================================================================================================================
 // 1. The modes (src/lib/theme.js)
 // ======================================================================================================================
-await ok('there are three modes, with the names the person reads: Light mode, Dark mode and Custom mode', () => {
+await ok('there are three modes, with the names the person reads: Light mode, Dark mode and Custom mode; Custom mode is the default', () => {
   assert.deepEqual(THEMES.map((t) => t.key), KEYS)
   assert.deepEqual(THEMES.map((t) => t.label), ['Light mode', 'Dark mode', 'Custom mode'])
-  assert.equal(DEFAULT_THEME, 'light')
-  assert.equal(THEME_STORAGE_KEY, 'sns-theme', 'the key the earlier two-mode button used, so a saved Dark mode is still there after the update')
+  assert.equal(DEFAULT_THEME, 'custom')
+  assert.ok(isTheme(DEFAULT_THEME), 'the default is one of the modes')
   for (const k of KEYS) assert.equal(themeLabel(k), THEMES.find((t) => t.key === k).label)
-  assert.equal(themeLabel('nonsense'), 'Light mode', 'an unknown mode is shown as the default, never as an empty label')
-  assert.equal(themeLabel(undefined), 'Light mode')
+  assert.equal(themeLabel('nonsense'), 'Custom mode', 'an unknown mode is shown as the default, never as an empty label')
+  assert.equal(themeLabel(undefined), 'Custom mode')
+})
+
+await ok('the choice is saved under a NEW key, not the one updates 50 to 52 wrote on every visit (that would keep everybody in Light or Dark)', () => {
+  assert.equal(THEME_STORAGE_KEY, 'sns-theme-choice')
+  assert.notEqual(THEME_STORAGE_KEY, OLD_KEY)
 })
 
 await ok('only the three exact names are modes (no other case, no spaces, no look-alikes)', () => {
@@ -59,48 +69,51 @@ await ok('a saved mode is read back; anything else, or a browser that will not a
   assert.equal(readSavedTheme(memoryStorage({ [THEME_STORAGE_KEY]: 'blue' })), null)
   assert.equal(readSavedTheme(memoryStorage({ [THEME_STORAGE_KEY]: 'Dark' })), null)
   assert.equal(readSavedTheme(memoryStorage({ [THEME_STORAGE_KEY]: '' })), null)
-  assert.equal(readSavedTheme(memoryStorage({ other: 'dark' })), null, 'only the key sns-theme counts')
+  assert.equal(readSavedTheme(memoryStorage({ other: 'dark' })), null, 'only the key sns-theme-choice counts')
+  for (const k of KEYS) assert.equal(readSavedTheme(memoryStorage({ [OLD_KEY]: k })), null, `the earlier key holding "${k}" is not a choice`)
   assert.equal(readSavedTheme(brokenStorage('get')), null)
   assert.equal(readSavedTheme(brokenStorage('both')), null)
   assert.equal(readSavedTheme(null), null)
 })
 
-await ok('the first visit follows the device (dark if the device is set to dark, otherwise light); a saved mode always wins', () => {
-  assert.equal(initialTheme({ storage: memoryStorage(), matchMedia: device(true) }), 'dark')
-  assert.equal(initialTheme({ storage: memoryStorage(), matchMedia: device(false) }), 'light')
-  const m = device(true)
-  initialTheme({ storage: memoryStorage(), matchMedia: m })
-  assert.deepEqual(m.asked, [DARK_QUERY], 'it asks the device only whether it prefers dark')
+await ok('Custom mode is what a browser shows until a mode is chosen: on any device, and whatever the earlier versions saved', () => {
+  for (const dark of [true, false]) {
+    const asked = device(dark)
+    assert.equal(initialTheme({ storage: memoryStorage(), matchMedia: asked }), 'custom', `a device set to ${dark ? 'dark' : 'light'}`)
+    assert.deepEqual(asked.asked, [], 'the device is not even asked')
+  }
+  assert.equal(initialTheme({ storage: memoryStorage() }), 'custom')
+  // what the earlier versions left behind: a mode saved on every visit (the device's guess), which is not a choice
+  for (const old of KEYS) for (const dark of [true, false]) assert.equal(initialTheme({ storage: memoryStorage({ [OLD_KEY]: old }), matchMedia: device(dark) }), 'custom', `the earlier key holding "${old}"`)
+  // saved text that is not a mode is ignored
+  for (const v of ['blue', 'Dark', '', 'null', 'Custom mode']) assert.equal(initialTheme({ storage: memoryStorage({ [THEME_STORAGE_KEY]: v }) }), 'custom', JSON.stringify(v))
+})
+
+await ok('a mode the person chose always wins, on every kind of device, and next to the earlier key', () => {
   for (const saved of KEYS) {
     for (const dark of [true, false]) {
       const asked = device(dark)
       assert.equal(initialTheme({ storage: memoryStorage({ [THEME_STORAGE_KEY]: saved }), matchMedia: asked }), saved, `${saved} on a ${dark ? 'dark' : 'light'} device`)
-      assert.deepEqual(asked.asked, [], 'a saved mode does not even ask the device')
+      assert.deepEqual(asked.asked, [], 'the device is not asked')
     }
   }
-  // saved text that is not a mode is ignored, so the device decides
-  assert.equal(initialTheme({ storage: memoryStorage({ [THEME_STORAGE_KEY]: 'blue' }), matchMedia: device(true) }), 'dark')
-  assert.equal(initialTheme({ storage: memoryStorage({ [THEME_STORAGE_KEY]: 'blue' }), matchMedia: device(false) }), 'light')
+  for (const [old, chosen] of [['dark', 'light'], ['light', 'dark'], ['custom', 'light'], ['dark', 'custom']]) assert.equal(initialTheme({ storage: memoryStorage({ [OLD_KEY]: old, [THEME_STORAGE_KEY]: chosen }) }), chosen, `${old} saved earlier, ${chosen} chosen`)
 })
 
-await ok('a device that cannot say, or storage that cannot be read, gives Light mode and never an error', () => {
-  const throwing = () => { throw new Error('no') }
-  const noMatches = () => ({})
-  assert.equal(initialTheme({ storage: memoryStorage(), matchMedia: null }), 'light')
-  assert.equal(initialTheme({ storage: memoryStorage(), matchMedia: throwing }), 'light')
-  assert.equal(initialTheme({ storage: memoryStorage(), matchMedia: noMatches }), 'light')
-  assert.equal(initialTheme({ storage: brokenStorage('get'), matchMedia: device(true) }), 'dark', 'a blocked store falls back to the device')
-  assert.equal(initialTheme({ storage: null, matchMedia: device(false) }), 'light')
-  assert.equal(initialTheme({ storage: brokenStorage('both'), matchMedia: throwing }), 'light')
+await ok('storage that cannot be read, or none at all, gives Custom mode and never an error', () => {
+  assert.equal(initialTheme({ storage: brokenStorage('get') }), 'custom', 'a blocked store')
+  assert.equal(initialTheme({ storage: brokenStorage('both') }), 'custom')
+  assert.equal(initialTheme({ storage: null }), 'custom')
   // called with nothing at all in a plain Node (no window, no document): still an answer
-  assert.equal(initialTheme({ storage: null, matchMedia: null }), 'light')
+  assert.equal(initialTheme(), 'custom')
+  assert.equal(initialTheme({}), 'custom')
 })
 
 await ok('a chosen mode is remembered, and only a real mode is', () => {
   for (const k of KEYS) {
     const s = memoryStorage()
     assert.equal(saveTheme(k, s), true, k)
-    assert.deepEqual(s.data, { [THEME_STORAGE_KEY]: k })
+    assert.deepEqual(s.data, { [THEME_STORAGE_KEY]: k }, 'one value, under the new key')
     assert.equal(readSavedTheme(s), k)
     // the next visit starts where the person left off, whichever way the device leans
     assert.equal(initialTheme({ storage: s, matchMedia: device(k !== 'dark') }), k)
@@ -118,7 +131,7 @@ await ok('a browser that will not keep the choice just forgets it (the page stil
   assert.equal(saveTheme('custom', null), false)
 })
 
-await ok('choosing a mode puts it on the page as data-theme; anything else becomes Light mode; no page at all is fine', () => {
+await ok('choosing a mode puts it on the page as data-theme; anything else becomes the default, Custom mode; no page at all is fine', () => {
   for (const k of KEYS) {
     const root = { attrs: {}, setAttribute(a, v) { this.attrs[a] = v } }
     assert.equal(applyTheme(k, root), k)
@@ -126,10 +139,11 @@ await ok('choosing a mode puts it on the page as data-theme; anything else becom
   }
   for (const v of ['', null, undefined, 'Dark', 'blue', 0, {}]) {
     const root = { attrs: {}, setAttribute(a, val) { this.attrs[a] = val } }
-    assert.equal(applyTheme(v, root), 'light', JSON.stringify(v))
-    assert.deepEqual(root.attrs, { 'data-theme': 'light' }, 'the page is never left with colours that do not exist')
+    assert.equal(applyTheme(v, root), 'custom', JSON.stringify(v))
+    assert.deepEqual(root.attrs, { 'data-theme': 'custom' }, 'the page is never left with colours that do not exist')
   }
   assert.equal(applyTheme('custom', null), 'custom')
+  assert.equal(applyTheme('dark', null), 'dark')
 })
 
 // ======================================================================================================================
@@ -138,7 +152,7 @@ await ok('choosing a mode puts it on the page as data-theme; anything else becom
 const html = read('index.html')
 const head = html.slice(html.indexOf('<head>'), html.indexOf('</head>'))
 
-await ok('index.html puts the saved mode on the page from a plain script in the head, before the stylesheet and before the app', () => {
+await ok('index.html puts the chosen mode on the page from a plain script in the head, before the stylesheet and before the app', () => {
   const scripts = [...head.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)]
   assert.equal(scripts.length, 1, 'one inline script in the head')
   assert.equal(scripts[0][1].trim(), '', 'a plain script: no type=module, no defer, no async (those would run after the first paint)')
@@ -147,48 +161,54 @@ await ok('index.html puts the saved mode on the page from a plain script in the 
   assert.ok(at('<script>') < at('<link'), 'before any stylesheet or font link')
   assert.ok(at('<script>') < at('<body>'), 'before the page body')
   assert.ok(at('<script>') < at('src="/src/main.jsx"'), 'before the app starts')
-  const code = scripts[0][2]
+  const code = scripts[0][2].replace(/^\s*\/\/.*$/gm, '')   // the code, without its comments
   assert.ok(code.includes(`'${THEME_STORAGE_KEY}'`), 'it reads the same key theme.js saves under')
+  assert.equal(code.includes(`'${OLD_KEY}'`), false, 'and not the key the earlier versions saved on every visit')
   for (const k of KEYS) assert.ok(code.includes(`'${k}'`), `it knows the mode "${k}"`)
-  assert.ok(code.includes(DARK_QUERY), 'and asks the device the same question')
+  assert.ok(code.includes(`'${DEFAULT_THEME}'`), 'and falls back to the default')
+  assert.equal(/matchMedia|prefers-color-scheme/.test(code), false, 'it does not ask the device what it prefers')
   assert.ok(code.includes('data-theme'), 'and sets the same attribute')
+})
+
+await ok('the page itself starts as Custom mode: data-theme="custom" is on <html> before any script runs', () => {
+  const tag = /<html\b([^>]*)>/.exec(html)
+  assert.ok(tag, 'an <html> tag')
+  const attr = /\bdata-theme="([^"]*)"/.exec(tag[1])
+  assert.ok(attr, 'data-theme is on <html> from the start')
+  assert.equal(attr[1], DEFAULT_THEME, 'the same as the default theme.js names')
+  assert.equal(attr[1], 'custom')
 })
 
 // the inline script, run for real
 const inlineCode = (/<script\b[^>]*>([\s\S]*?)<\/script>/.exec(head) || [null, ''])[1]
-function runInline({ saved, storage, device: dev }) {
+function runInline({ saved, storage, device: dev = 'missing', extra = {} }) {
   const attrs = {}
+  let asked = 0
   const sandbox = { document: { documentElement: { setAttribute: (k, v) => { attrs[k] = v } } } }
   sandbox.window = sandbox
+  const data = { ...(saved === null || saved === undefined ? {} : { [THEME_STORAGE_KEY]: saved }), ...extra }
   if (storage === 'blocked') Object.defineProperty(sandbox, 'localStorage', { get() { throw new Error('SecurityError: access is denied') } })
-  else sandbox.localStorage = { getItem: (key) => { if (storage === 'throws') throw new Error('boom'); return key === THEME_STORAGE_KEY ? saved : null } }
-  if (dev === 'dark' || dev === 'light') sandbox.matchMedia = (q) => ({ matches: q === DARK_QUERY && dev === 'dark' })
-  else if (dev === 'throws') sandbox.matchMedia = () => { throw new Error('boom') }
-  // dev === 'missing': no matchMedia at all
+  else sandbox.localStorage = { getItem: (key) => { if (storage === 'throws') throw new Error('boom'); return key in data ? data[key] : null } }
+  // the device: the lines must never ask it anything
+  if (dev !== 'missing') sandbox.matchMedia = (q) => { asked++; if (dev === 'throws') throw new Error('boom'); return { matches: q === DARK_QUERY && dev === 'dark' } }
   vm.runInContext(inlineCode, vm.createContext(sandbox))
-  return attrs['data-theme']
+  return { mode: attrs['data-theme'], asked, attrs }
 }
 
-await ok('the lines in index.html and theme.js give the same mode in every kind of browser (180 combinations)', () => {
+await ok('the lines in index.html and theme.js give the same mode in every kind of browser (180 combinations), and never ask the device', () => {
   const SAVED = [null, 'light', 'dark', 'custom', '', 'Dark', 'CUSTOM', 'Light mode', ' dark', 'dark ', 'blue', 'auto', 'null', 'undefined', '{"theme":"dark"}']
   let compared = 0
   for (const storage of ['works', 'throws', 'blocked']) {
     for (const dev of ['dark', 'light', 'throws', 'missing']) {
       for (const saved of SAVED) {
         const fake = storage === 'works' ? memoryStorage(saved === null ? {} : { [THEME_STORAGE_KEY]: saved }) : storage === 'throws' ? brokenStorage('get') : null
-        const mm = dev === 'dark' ? device(true) : dev === 'light' ? device(false) : dev === 'throws' ? () => { throw new Error('boom') } : null
-        const expected = initialTheme({ storage: fake, matchMedia: mm })
+        const expected = initialTheme({ storage: fake })
         const got = runInline({ saved, storage, device: dev })
         const label = `saved=${JSON.stringify(saved)} storage=${storage} device=${dev}`
-        if (got === undefined) {
-          // The one case the lines leave the page unmarked: no usable saved mode and a device that cannot say. An unmarked page is
-          // drawn with the plain :root colours, which ARE Light mode, so it is the same answer; theme.js marks it once the app starts.
-          assert.equal(expected, 'light', label)
-          assert.ok(dev === 'throws' || dev === 'missing', label)
-          assert.ok(!KEYS.includes(storage === 'works' ? saved : null), label)
-        } else {
-          assert.equal(got, expected, label)
-        }
+        assert.equal(got.mode, expected, label)
+        assert.ok(isTheme(got.mode), `${label}: the page is always marked with a real mode`)
+        assert.deepEqual(Object.keys(got.attrs), ['data-theme'], label)
+        assert.equal(got.asked, 0, `${label}: the device is not asked`)
         compared++
       }
     }
@@ -196,11 +216,12 @@ await ok('the lines in index.html and theme.js give the same mode in every kind 
   assert.equal(compared, 180)
 })
 
-await ok('...and a saved mode really wins over the device, in the lines that run first', () => {
-  for (const k of KEYS) for (const dev of ['dark', 'light', 'throws', 'missing']) assert.equal(runInline({ saved: k, storage: 'works', device: dev }), k, `${k} / ${dev}`)
-  assert.equal(runInline({ saved: null, storage: 'works', device: 'dark' }), 'dark')
-  assert.equal(runInline({ saved: null, storage: 'works', device: 'light' }), 'light')
-  assert.equal(runInline({ saved: 'blue', storage: 'blocked', device: 'dark' }), 'dark')
+await ok('...a chosen mode wins in the lines that run first; the device and the earlier key decide nothing', () => {
+  for (const k of KEYS) for (const dev of ['dark', 'light', 'throws', 'missing']) assert.equal(runInline({ saved: k, storage: 'works', device: dev }).mode, k, `${k} / ${dev}`)
+  for (const dev of ['dark', 'light']) assert.equal(runInline({ saved: null, storage: 'works', device: dev }).mode, 'custom', `nothing chosen, a ${dev} device`)
+  for (const old of KEYS) for (const dev of ['dark', 'light']) assert.equal(runInline({ saved: null, storage: 'works', device: dev, extra: { [OLD_KEY]: old } }).mode, 'custom', `the earlier key holding ${old}, a ${dev} device`)
+  assert.equal(runInline({ saved: 'light', storage: 'works', device: 'dark', extra: { [OLD_KEY]: 'dark' } }).mode, 'light', 'a choice beside the earlier key is the choice')
+  assert.equal(runInline({ saved: 'blue', storage: 'blocked', device: 'dark' }).mode, 'custom')
 })
 
 // ======================================================================================================================
@@ -330,11 +351,12 @@ await ok('...and so are the buttons: white on the blue, the darker blue on hover
   assert.ok(r(danger[1], dangerHover[1]) >= 4.5, `writing on the danger hover ${r(danger[1], dangerHover[1]).toFixed(2)}`)
 })
 
-await ok('every data-theme in the stylesheet is a real mode, and every mode except the default has its colours', () => {
+await ok('every data-theme in the stylesheet is a real mode; Dark and Custom have their colours, and Light mode is still the plain :root (the default is Custom, which is keyed to its attribute)', () => {
   const used = new Set([...css.matchAll(/data-theme="([^"]*)"/g)].map((m) => m[1]))
   for (const u of used) assert.ok(KEYS.includes(u), `the stylesheet styles a mode that does not exist: "${u}"`)
-  for (const k of KEYS.filter((x) => x !== DEFAULT_THEME)) assert.ok(used.has(k), `no colours for the mode "${k}"`)
+  for (const k of KEYS.filter((x) => x !== 'light')) assert.ok(used.has(k), `no colours for the mode "${k}"`)
   assert.equal(css.includes('data-theme="light"'), false, 'Light mode is the plain :root colours; nothing is keyed to data-theme="light"')
+  assert.ok(used.has(DEFAULT_THEME), 'the default mode has its colours under its own data-theme (the page always carries it, see index.html)')
 })
 
 await ok('Custom mode\'s curved background is drawn on a screen only, behind everything, and never takes a click', () => {
@@ -394,13 +416,21 @@ await ok('the sign-in page\'s two curves can be restyled: the other modes keep t
 await ok('the header has the mode menu in place of the old two-way button, and the menu is built from the one list of modes', () => {
   const header = read('src/components/Header.jsx')
   assert.match(header, /import ThemeMenu from '\.\/ThemeMenu'/)
-  assert.match(header, /<ThemeMenu theme=\{theme\} onChange=\{setTheme\} \/>/)
+  assert.match(header, /<ThemeMenu theme=\{theme\} onChange=\{chooseTheme\} \/>/)
   assert.match(header, /import \{ applyTheme, initialTheme, saveTheme \} from '\.\.\/lib\/theme'/)
   assert.match(header, /useState\(\(\) => initialTheme\(\)\)/)
-  assert.match(header, /applyTheme\(theme\)[\s\S]*saveTheme\(theme\)/)
+  // Update 53: only a CHOICE is saved. The effect puts the mode on the page and saves nothing (it used to save on every visit, which is
+  // why a browser that had only opened the app was stuck on the mode it had guessed); the save is in the handler the menu calls.
+  assert.match(header, /useEffect\(\(\) => \{ applyTheme\(theme\) \}, \[theme\]\)/)
+  assert.match(header, /const choose = \(next\) => \{ setTheme\(next\); saveTheme\(next\) \}/)
+  const headerCode = header.replace(/^\s*\/\/.*$/gm, '')
+  assert.equal((headerCode.match(/saveTheme\(/g) || []).length, 1, 'saveTheme is called in one place only: when a mode is chosen')
+  assert.equal(/saveTheme\(theme\)/.test(headerCode), false, 'opening the app (the mode in use) is never saved')
+  assert.equal(/\buseEffect\([^)]*saveTheme/.test(headerCode), false, 'no effect saves the mode')
   assert.equal(/\b(Moon|Sun)\b/.test(header), false, 'the old sun/moon toggle is gone from the header')
   const menu = read('src/components/ThemeMenu.jsx')
-  assert.match(menu, /import \{ THEMES, themeLabel \} from '\.\.\/lib\/theme'/)
+  assert.match(menu, /import \{ DEFAULT_THEME, THEMES, themeLabel \} from '\.\.\/lib\/theme'/)
+  assert.match(menu, /const CurrentIcon = ICONS\[theme\] \|\| ICONS\[DEFAULT_THEME\]/, 'a mode it does not know gets the default\'s icon, so the label and the icon always agree')
   assert.match(menu, /THEMES\.map\(/, 'one entry per mode in the list, so a fourth mode needs no change here beyond its icon')
   const icons = /const ICONS = \{([^}]*)\}/.exec(menu)
   assert.ok(icons, 'an icon for each mode')
@@ -418,6 +448,10 @@ await ok('the test chain runs this file, and the guide for the update says where
   assert.match(readme, /Custom mode/)
   assert.match(readme, /theme\.js/)
   assert.match(readme, /ThemeMenu\.jsx/)
+  assert.match(readme, /## Update 53/)
+  assert.match(readme, /Custom mode is the default/, 'update 53 says what the default is')
+  assert.ok(readme.includes(THEME_STORAGE_KEY), 'and the name the choice is kept under')
+  assert.match(readme, /Only a mode someone chooses is remembered/)
 })
 
 console.log(`\n${n} colour-mode checks passed`)

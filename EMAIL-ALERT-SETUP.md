@@ -1,8 +1,8 @@
-# The 5:31 pm late-payment email (Update 52)
+# The 5:31 pm late-payment email (Updates 52 and 53)
 
-Every working evening, one minute after the **5:30 pm** closing hour, the server checks whether any **transport** or **expense / purchase** payment is still unpaid. If something is, the **Director gets one short email**. If everything has been paid, nothing is sent.
+Every evening, one minute after the **5:30 pm** closing hour, the server checks whether any **transport** or **expense / purchase** payment is still unpaid. If something is, the **Director gets one short email**. If everything has been paid, nothing is sent. It does this on **every day of the week, Sundays and public holidays included** (since Update 53).
 
-You do not have to set this up to use update 52. Until you do, no email is sent and nothing else is affected, and you can set it up on any day.
+You do not have to set this up to use updates 52 and 53. Until you do, no email is sent and nothing else is affected, and you can set it up on any day.
 
 **Time needed:** about 15 minutes (plus a little more if you verify your own domain with Resend).
 
@@ -45,8 +45,7 @@ Money that has been waiting since an earlier day is still unpaid, so it appears 
 
 ## When it is sent
 
-- At **5:31 pm Nairobi time, Monday to Saturday**. Not on Sundays (the app never counts Sundays as working days).
-- Not on a **non-working day**: a public holiday that the Director has added under **Staff → Leave → Policy & holidays**. (The button there that adds the Kenyan public holidays for the year fills most of them in.)
+- At **5:31 pm Nairobi time, every day of the week**. **Sundays and public holidays are not skipped**: a technician can be called out on any day, so a payment can be late on any day. The public holidays the Director adds under **Staff → Leave → Policy & holidays** are only for counting leave; they do not stop this email.
 - Netlify reads schedules in UTC, and Nairobi is three hours ahead all year, so the schedule is **14:31 UTC**. Netlify starts the function at that minute and the email then takes a few seconds to arrive. Netlify does not promise the exact second, so "5:31 pm" means the 5:31 minute, not 5:31:00.
 - Only the **live (published) site** runs it on its schedule. A deploy preview or a branch deploy does not.
 - The same email is never sent twice in one minute, even if Netlify or the network repeats the request.
@@ -118,9 +117,8 @@ Open the function's log. Each problem says what to do:
 | *Resend answered 403: You can only send testing emails to your own email address* | The domain is not verified in Resend. Verify it (Step 1, point 3) and set `ALERT_EMAIL_FROM`, or send to the email address your Resend account was opened with. |
 | *Resend answered 401 / 400 ...* | The key is wrong, was removed in Resend, or is a key without Sending access. Make a new one and replace `RESEND_API_KEY`. |
 | *Could not read jobs / expenses: the database answered 401* | `SUPABASE_SERVICE_ROLE_KEY` is wrong. Copy it again from Supabase. |
-| *... is a non-working day* | The Director marked the day as a public holiday. No email is sent on those days. |
 | *nothing is unpaid, so no email* | Everything has been paid. Nothing to do. |
-| No log line at all at 5:31 pm | Only the live site runs it, and only Monday to Saturday. Check the function still shows its schedule in Step 3. |
+| No log line at all at 5:31 pm | Only the live (published) site runs it on its schedule. Check the function still shows its schedule in Step 3. |
 
 A passing problem (the database or Resend not answering for a moment) is tried again by itself, up to three times, and the email is never sent twice.
 

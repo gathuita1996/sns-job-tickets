@@ -1,18 +1,19 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="custom">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Swahili Net Solution — Job Cards</title>
     <script>
-      // Update 52: put the saved colour mode (light, dark or custom) on the page before it is first drawn, so it never flashes the wrong
-      // colours. The same rule, and the list of modes, is in src/lib/theme.js (a test checks they agree).
+      // Update 52: put the colour mode (light, dark or custom) on the page before it is first drawn, so it never flashes the wrong colours.
+      // Update 53: Custom mode is the default. The page starts as Custom (data-theme="custom" on <html> above); only a mode the person
+      // CHOSE from the menu, kept under 'sns-theme-choice', changes that. The device's own light / dark setting is not asked, and the
+      // key the earlier versions saved on every visit ('sns-theme') is not read. The same rule, and the list of modes, is in
+      // src/lib/theme.js (a test checks they agree).
       var t = null;
-      try { t = localStorage.getItem('sns-theme'); } catch (e) {}
-      try {
-        if (t !== 'light' && t !== 'dark' && t !== 'custom') t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-        document.documentElement.setAttribute('data-theme', t);
-      } catch (e) {}
+      try { t = localStorage.getItem('sns-theme-choice'); } catch (e) {}
+      if (t !== 'light' && t !== 'dark' && t !== 'custom') t = 'custom';
+      try { document.documentElement.setAttribute('data-theme', t); } catch (e) {}
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

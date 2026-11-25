@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { Check, Moon, Palette, Sun } from 'lucide-react'
-import { THEMES, themeLabel } from '../lib/theme'
+import { DEFAULT_THEME, THEMES, themeLabel } from '../lib/theme'
 
 // Update 52: one small button at the top of every page that shows the mode in use (a sun, a moon or a palette) and opens a menu to
-// choose between Light mode, Dark mode and Custom mode. The choice is made by the page (Header), which saves it.
+// choose between Light mode, Dark mode and Custom mode. The choice is made by the page (Header), which saves it (Update 53: only a
+// choice made here is saved, and Custom mode, the default, is what the button shows until one is made).
 // Keyboard: Enter / Space opens it, the arrow keys, Home and End move between the three, Enter chooses, Escape closes and puts the
 // focus back on the button. A click or touch anywhere else closes it too.
 const ICONS = { light: Sun, dark: Moon, custom: Palette }
@@ -12,7 +13,7 @@ export default function ThemeMenu({ theme, onChange }) {
   const [open, setOpen] = useState(false)
   const wrapRef = useRef(null)
   const buttonRef = useRef(null)
-  const CurrentIcon = ICONS[theme] || Sun
+  const CurrentIcon = ICONS[theme] || ICONS[DEFAULT_THEME]      // a mode it does not know is shown as the default (label and icon agree)
 
   useEffect(() => {
     if (!open) return undefined

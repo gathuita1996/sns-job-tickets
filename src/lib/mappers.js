@@ -114,8 +114,9 @@ export function jobToDbFields(data) {
     // The job's text (Update 52). Like the GPS below, a field is only touched when the caller says something about it:
     //   * "Job details" (notes) is saved when it is given. A job that asks for the reported fault and how it was solved leaves
     //     it out, so details written earlier (an older job, or an admin's guidance) stay exactly as they are;
-    //   * the two fault fields are saved when either is given (text, or null to clear). A job that keeps "Job details" passes
-    //     null for both, so a job whose type was changed does not keep a fault report that no longer applies.
+    //   * the two fault fields are saved when either is given (text, or null to clear). Only the form for a job that asks for them
+    //     gives them; every other form (a type that keeps "Job details", the admin's guidance form) leaves them out, so a fault
+    //     report that was written is never wiped, whatever the job's type becomes (Update 53).
     ...(data.notes !== undefined ? { notes: data.notes || null } : {}),
     ...(data.reportedFault !== undefined || data.resolution !== undefined ? {
       reported_fault: cleanText(data.reportedFault),

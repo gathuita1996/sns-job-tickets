@@ -75,7 +75,6 @@ globalThis.fetch = async (url, init = {}) => {
   if (u === 'https://graph.facebook.com/v24.0/1055555555/messages') return json({ messaging_product: 'whatsapp', messages: [{ id: 'wamid.TESTID' }] })
   if (u.startsWith('https://graph.facebook.com/v24.0/1055555555?')) return json({ display_phone_number: '+254 700 000 000', verified_name: 'Swahili Net Solution', quality_rating: 'GREEN' })
   if (u.startsWith('https://graph.facebook.com/v24.0/2066666666/message_templates')) return json({ data: [{ name: 'sns_payment_receipt', status: 'APPROVED', language: 'en', category: 'UTILITY' }] })
-  if (u.startsWith('https://proj.supabase.co/rest/v1/non_working_days?')) return json([])
   if (u.startsWith('https://proj.supabase.co/rest/v1/jobs?select=id,member_id,transport_amount')) return json(ALERT_JOBS)
   if (u.startsWith('https://proj.supabase.co/rest/v1/expenses?select=id,entry_type,status,amount')) return json(ALERT_EXPENSES)
   if (u.startsWith('https://proj.supabase.co/rest/v1/profiles?select=full_name,email')) return json([{ full_name: 'Naibei Gathuita', email: 'naibei@example.com' }])
@@ -174,9 +173,9 @@ const captureLog = async (fn) => {
   console.log = (...args) => lines.push(args.join(' '))
   try { return { value: await fn(), lines } } finally { console.log = saved }
 }
-await ok('late payments: Netlify reads the schedule from the built function: 14:31 UTC, which is 5:31 pm in Nairobi, Monday to Saturday', async () => {
+await ok('late payments: Netlify reads the schedule from the built function: 14:31 UTC, which is 5:31 pm in Nairobi, every day of the week', async () => {
   const mod = await load('late-payments-alert.mjs')
-  assert.deepEqual(mod.config, { schedule: '31 14 * * 1-6' })
+  assert.deepEqual(mod.config, { schedule: '31 14 * * *' })
   assert.equal(typeof mod.default, 'function')
 })
 await ok('late payments: when it runs, the Director is emailed through Resend with what is unpaid, and the answer holds no secret', async () => {
@@ -196,7 +195,9 @@ await ok('late payments: when it runs, the Director is emailed through Resend wi
   assert.match(payload.text, /Hello Naibei,\n\nThese payments are still unpaid after the 5:30 pm closing time:\n\n- Transport: KSh 1,200 \(2 staff members\)\n- Expenses \/ purchases: KSh 3,500 \(1 request\)\n\nOpen Job Cards to pay: https:\/\/snsjobcard\.netlify\.app\n/)
   assert.equal(mail[0].headers.Authorization, `Bearer ${ENV.RESEND_API_KEY}`)
   const database = calls.filter((c) => c.url.startsWith('https://proj.supabase.co/rest/v1/'))
-  assert.ok(database.length >= 4 && database.every((c) => c.headers.apikey === ENV.SUPABASE_SERVICE_ROLE_KEY), 'what is unpaid is read with the server key')
+  assert.equal(database.length, 3, 'the jobs, the expenses and the Director: nothing else is asked (the holiday list is not)')
+  assert.ok(database.every((c) => c.headers.apikey === ENV.SUPABASE_SERVICE_ROLE_KEY), 'what is unpaid is read with the server key')
+  assert.ok(!calls.some((c) => c.url.includes('non_working_days')), 'a Sunday or a public holiday is not a reason to stay quiet')
   assert.ok(!calls.some((c) => c.url.startsWith('https://graph.facebook.com')), 'the email never touches WhatsApp')
   for (const secret of [ENV.SUPABASE_SERVICE_ROLE_KEY, ENV.RESEND_API_KEY, ENV.WHATSAPP_ACCESS_TOKEN]) assert.ok(!text.includes(secret), secret)
 })

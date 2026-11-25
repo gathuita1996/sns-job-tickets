@@ -23,11 +23,12 @@ import { FAULT_REPORT_FIELDS, FAULT_REPORT_MESSAGE, jobDetailLines, jobDetailsPl
 // (Update 50): while the profile is not complete the job is not filed -- the form stays open, with what was typed, and shows
 // "Please update your profile to file this job." plus a button that opens the profile. onSave may return { profileIncomplete: true }
 // when the database refused the job for that reason (the screen's own check was out of date); the same message is shown.
-// Update 52: what the form asks about the work done depends on the job type (jobDetailsPlan in lib/faultReport.js). New Installation and
-// Site Survey keep the "Job details" box. Every other type asks, instead, for the reported fault and how it was solved (both required).
-// Details an older job already has (or an admin's guidance) stay visible, read-only. The admin's own form (assignableMembers) is the
-// admin's guidance box, as before. onSave may also return { faultReport: true } when the database refused a new job because either
-// box was empty; the form then stays open and says so.
+// Update 52: what the form asks about the work done depends on the job type (jobDetailsPlan in lib/faultReport.js). New Installation,
+// Site Survey and Other (Update 53) keep the "Job details" box. Every other type asks, instead, for the reported fault and how it was
+// solved (both required). Details an older job already has (or an admin's guidance) stay visible, read-only; so does a fault report a
+// job already has when its type keeps "Job details" (it is never wiped, and never asked for again). The admin's own form
+// (assignableMembers) is the admin's guidance box, as before. onSave may also return { faultReport: true } when the database refused a
+// new job because either box was empty; the form then stays open and says so.
 export default function JobFormModal({ initialJob, assignableMembers, allMembers, availableCustomers, allCustomers, filerDepartment, currentUserId, reassignOnly, profileGate, onOpenProfile, onClose, onSave }) {
   const adminMode = Boolean(assignableMembers)
   const isNewAdminAssignment = adminMode && !initialJob
@@ -67,7 +68,8 @@ export default function JobFormModal({ initialJob, assignableMembers, allMembers
 
   // What the form asks about the work done, for the job type chosen right now.
   const hasEarlierDetails = Boolean(initialJob) && !isBlank(initialJob.notes)
-  const plan = jobDetailsPlan({ jobType: form.jobType, adminMode, hasNotes: hasEarlierDetails })
+  const hasEarlierFault = Boolean(initialJob) && (!isBlank(initialJob.reportedFault) || !isBlank(initialJob.resolution))
+  const plan = jobDetailsPlan({ jobType: form.jobType, adminMode, hasNotes: hasEarlierDetails, hasFault: hasEarlierFault })
 
   // Only filing a NEW job by a member is held back for an incomplete profile; changing a job that already exists never is.
   //   profileNotice: null | 'form' (our own check stopped it; shows while the profile is still incomplete) | 'database' (the database refused it)
@@ -204,11 +206,11 @@ export default function JobFormModal({ initialJob, assignableMembers, allMembers
     const result = await onSave({
       ...form,
       // What is said about the work done goes with the job type. "Job details" is only sent when the form has a box for it, so
-      // details an older job has are never wiped by a form that does not show them. The two fault boxes are sent when shown,
-      // cleared (null) for a type that keeps "Job details", and left alone (not sent) on the admin's form.
+      // details an older job has are never wiped by a form that does not show them. The two fault boxes are only sent when they are
+      // shown; any other form leaves them as they are, so a fault report that was written is never wiped either.
       notes: plan.notes === 'editor' ? form.notes : undefined,
-      reportedFault: plan.fault ? form.reportedFault : (plan.kind === 'guidance' ? undefined : null),
-      resolution: plan.fault ? form.resolution : (plan.kind === 'guidance' ? undefined : null),
+      reportedFault: plan.fault ? form.reportedFault : undefined,
+      resolution: plan.fault ? form.resolution : undefined,
       location: form.location === 'Other' ? form.locationOther.trim() : form.location,
       transportFrom: form.transportFrom === 'Other' ? form.transportFromOther.trim() : form.transportFrom,
       transportTo: form.transportStops.map((stop) => (stop.selected === 'Other' ? stop.other.trim() : stop.selected)),
@@ -425,6 +427,17 @@ export default function JobFormModal({ initialJob, assignableMembers, allMembers
                 {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
             </FormField>
+          )}
+
+          {plan.earlierFault && (
+            <div className="sns-card" data-testid="earlier-fault" style={{ padding: '0.8rem 1rem', background: 'var(--paper)' }}>
+              {FAULT_REPORT_FIELDS.filter((f) => !isBlank(initialJob[f.field])).map((f, i) => (
+                <div key={f.key} style={{ marginTop: i === 0 ? 0 : '0.6rem' }}>
+                  <p className="sns-eyebrow sns-text-faint" style={{ marginBottom: '0.25rem' }}>{f.label} (as first written)</p>
+                  <p style={{ fontSize: '0.85rem', whiteSpace: 'pre-wrap' }}>{initialJob[f.field]}</p>
+                </div>
+              ))}
+            </div>
           )}
 
           {plan.notes === 'editor' && (

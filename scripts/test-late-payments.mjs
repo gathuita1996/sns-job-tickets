@@ -1,7 +1,8 @@
-// Update 52: the Director's late-payment email, sent at 5:31 pm Nairobi time (one minute after the 5:30 pm closing hour) when a transport
-// payment or an expense / purchase payment is still unpaid.
+// Update 52 (every day since Update 53): the Director's late-payment email, sent at 5:31 pm Nairobi time (one minute after the 5:30 pm
+// closing hour) when a transport payment or an expense / purchase payment is still unpaid.
 // Plain logic and pretend servers only (no real database, no real Resend, no real clock):
-//   * the schedule says 17:31 in Nairobi, Monday to Saturday, and the function file holds that same text (Netlify reads it from there);
+//   * the schedule says 17:31 in Nairobi, on every day of the week (Sundays too), and the function file holds that same text (Netlify
+//     reads it from there); a public holiday or a Sunday changes nothing, and the holiday list is never even read;
 //   * what counts as "still unpaid" is the same as on the Transport tab and the Expenses screen (checked against their own code);
 //   * the email text is exactly what the setup guide shows, and short;
 //   * the whole run is played against a small stand-in for the database (which refuses any column that is not in supabase/schema.sql)
@@ -16,8 +17,9 @@ import { transportReport } from '../src/lib/reportsCore.js'
 import { DEFAULT_SENDER, EMAIL_ADDRESS, readAlertConfig } from '../netlify/lib/alertConfig.mjs'
 import {
   ALERT_CRON, ALERT_MINUTE, AlertError, CLOSING_MINUTE, CLOSING_TIME, DIRECTOR_PATH, EXPENSES_PATH, JOBS_PATH, RESEND_URL,
-  buildEmail, holidayPath, isExpenseOwed, isTransportOwed, ksh, latePayments, runLateAlert, sendEmail,
+  buildEmail, isExpenseOwed, isTransportOwed, ksh, latePayments, runLateAlert, sendEmail,
 } from '../netlify/lib/lateAlert.mjs'
+import * as lateAlertModule from '../netlify/lib/lateAlert.mjs'
 
 let n = 0
 const ok = async (name, fn) => { try { await fn(); n++ } catch (e) { console.error('FAIL', name, '\n', e && e.stack ? e.stack : e); process.exitCode = 1 } }
@@ -134,24 +136,26 @@ const sentEmail = (w) => { const [c] = w.resendCalls(); assert.ok(c, 'an email w
 // ======================================================================================================================
 // 1. The schedule
 // ======================================================================================================================
-await ok('the schedule is 17:31 in Nairobi (14:31 UTC), Monday to Saturday, one minute after the 5:30 pm closing hour', () => {
+await ok('the schedule is 17:31 in Nairobi (14:31 UTC) on every day of the week, one minute after the 5:30 pm closing hour', () => {
   assert.equal(CLOSING_TIME, '5:30 pm'); assert.equal(CLOSING_MINUTE, 17 * 60 + 30); assert.equal(ALERT_MINUTE, 17 * 60 + 31)
   const [minute, hour, dayOfMonth, month, dayOfWeek, ...rest] = ALERT_CRON.split(' ')
   assert.equal(rest.length, 0, 'five fields')
-  assert.deepEqual([dayOfMonth, month], ['*', '*']); assert.equal(dayOfWeek, '1-6')
+  assert.deepEqual([dayOfMonth, month, dayOfWeek], ['*', '*', '*'], 'every day of the month, every month and every day of the week: no Sunday and no weekday is left out')
+  assert.equal(ALERT_CRON, '31 14 * * *')
   assert.equal((Number(hour) * 60 + Number(minute) + 180) % 1440, ALERT_MINUTE, 'Netlify reads UTC, Nairobi is three hours ahead')
-  assert.equal(Number(hour) * 60 + Number(minute) + 180 < 1440, true, 'the Nairobi evening is still the same UTC day, so the weekday is the same')
+  assert.equal(Number(hour) * 60 + Number(minute) + 180 < 1440, true, 'the Nairobi evening is still the same UTC day, so the date is the same')
 })
-await ok('every day the schedule fires in 2026 and 2027 it is 17:31 on that same Nairobi date, and never on a Sunday', () => {
+await ok('every day of 2026 and 2027, Sundays included, the schedule fires at 17:31 on that same Nairobi date', () => {
   let fired = 0, sundays = 0
   for (let t = Date.UTC(2026, 0, 1); t < Date.UTC(2028, 0, 1); t += DAY_MS) {
-    const utc = new Date(t); const dow = utc.getUTCDay()
-    if (dow === 0) { sundays++; continue }
+    const utc = new Date(t)
+    if (utc.getUTCDay() === 0) sundays++
     const fire = new Date(Date.UTC(utc.getUTCFullYear(), utc.getUTCMonth(), utc.getUTCDate(), 14, 31))
     assert.equal(Math.floor(((fire.getTime() + EAT_OFFSET_MS) % DAY_MS) / 60000), ALERT_MINUTE)
     assert.equal(eatDateKey(fire), fire.toISOString().slice(0, 10)); fired++
   }
-  assert.ok(sundays >= 104 && fired >= 626, `${fired} runs, ${sundays} Sundays skipped`)
+  assert.equal(fired, 730, 'all 365 + 365 days')
+  assert.equal(sundays, 104, 'and that includes every one of the 104 Sundays')
 })
 await ok('the Netlify function file holds the same schedule as plain text, hands the real environment to the lib, and is the only scheduled one', () => {
   const file = read('netlify/functions/late-payments-alert.mjs')
@@ -341,7 +345,7 @@ await ok('it reads only what it needs, as the server (with the service key), by 
   const w = world(OWED)
   await run(w)
   const paths = w.dbCalls().map((c) => c.url.slice(`${SUPA}/rest/v1/`.length))
-  assert.deepEqual(paths, [holidayPath('2026-11-24'), `${JOBS_PATH}&limit=1000&offset=0`, `${EXPENSES_PATH}&limit=1000&offset=0`, DIRECTOR_PATH])
+  assert.deepEqual(paths, [`${JOBS_PATH}&limit=1000&offset=0`, `${EXPENSES_PATH}&limit=1000&offset=0`, DIRECTOR_PATH])
   assert.ok(JOBS_PATH.includes('transport_paid_at=is.null') && JOBS_PATH.includes('transport_amount=gt.0'))
   assert.ok(EXPENSES_PATH.includes('paid_at=is.null') && EXPENSES_PATH.includes('status=in.(Approved,Purchased)'))
   assert.ok(DIRECTOR_PATH.includes('is_director=eq.true') && DIRECTOR_PATH.includes('role=eq.admin'))
@@ -365,7 +369,7 @@ await ok('the Resend key goes only to Resend and the database key only to the da
 await ok('every call has a time limit of its own, so one slow answer cannot use up the whole run', async () => {
   const w = world(OWED)
   await run(w)
-  assert.equal(w.calls.length, 5)
+  assert.equal(w.calls.length, 4, 'the jobs, the expenses, the Director, and Resend')
   for (const c of w.calls) assert.ok(c.signal instanceof AbortSignal, c.url)
 })
 await ok('nothing unpaid: nothing is sent and the Director is not even looked up', async () => {
@@ -376,27 +380,39 @@ await ok('nothing unpaid: nothing is sent and the Director is not even looked up
   assert.deepEqual(logs, ['late-payments-alert: nothing is unpaid, so no email.'])
   assert.equal((await run(world({}))).result.sent, false, 'empty tables')
 })
-await ok('on a public holiday the Director added in the app nothing is read and nothing is sent', async () => {
+await ok('a public holiday the Director added in the app changes nothing: the email goes out that day like any other, and the holiday list is never read', async () => {
   const w = world({ ...OWED, holidays: [{ day: '2026-11-24', name: 'Test Holiday' }, { day: '2026-12-25', name: 'Christmas Day' }] })
   const { result, logs } = await run(w)
-  assert.deepEqual(result, { ok: true, sent: false, reason: 'non_working_day', day: '2026-11-24' })
-  assert.equal(w.resendCalls().length, 0); assert.equal(w.dbCalls().length, 1)
-  assert.match(logs[0], /2026-11-24 is a non-working day \(Test Holiday\)/)
-  // another day's holiday does not matter
-  assert.equal((await run(world({ ...OWED, holidays: [{ day: '2026-12-25', name: 'Christmas Day' }] }))).result.sent, true)
+  assert.equal(result.ok, true); assert.equal(result.sent, true); assert.equal(w.resendCalls().length, 1)
+  assert.ok(!w.calls.some((c) => c.url.includes('non_working_days')), 'the holiday list is not even asked for')
+  assert.ok(!logs.some((line) => /non-working|holiday/i.test(line)), 'and nothing is logged about a holiday')
+  assert.equal(sentEmail(w).payload.subject, 'Late payments: KSh 4,700 unpaid after closing')
+  // nothing of the old holiday check is left in the code
+  assert.equal(lateAlertModule.holidayPath, undefined, 'no holiday lookup is exported any more')
+  assert.ok(!read('netlify/lib/lateAlert.mjs').includes('non_working_days'), 'and the table is not mentioned in the code that reads the database')
+  assert.ok(!Object.values(result).includes('non_working_day'))
 })
-await ok('if the holiday list cannot be read the email goes out anyway (better one on a holiday than a missed alert)', async () => {
-  for (const trouble of [[500, 500, 500], [404], ['network', 'network', 'network']]) {
-    const w = world({ ...OWED, db: { non_working_days: trouble } })
-    assert.equal((await run(w)).result.sent, true, JSON.stringify(trouble))
+await ok('Sundays, Saturdays and every public holiday are sent like any other evening, even when the day is marked in the holiday list; only money still unpaid decides', async () => {
+  const days = ['2026-11-29', '2026-11-28', '2026-12-25', '2026-12-12', '2027-01-01', '2027-01-03', '2026-12-27']
+  const weekday = (day) => new Date(`${day}T12:00:00+03:00`).getUTCDay()
+  assert.ok(days.filter((day) => weekday(day) === 0).length >= 3, 'the list has several Sundays')
+  assert.ok(days.some((day) => weekday(day) === 6), 'and a Saturday')
+  for (const day of days) {
+    const w = world({ ...OWED, holidays: [{ day, name: 'Marked as a holiday' }] })
+    const { result } = await run(w, { now: at('17:31', day) })
+    assert.equal(result.sent, true, day)
+    assert.equal(sentEmail(w).headers['Idempotency-Key'], `sns-late-payments-${day}-1731`, day)
+    const nothing = world({ jobs: [], expenses: [], holidays: [{ day, name: 'Marked as a holiday' }] })
+    assert.equal((await run(nothing, { now: at('17:31', day) })).result.sent, false, `${day}: nothing unpaid, so nothing is sent`)
   }
 })
-await ok('the date it asks about is the Nairobi date, even when it is already the next day in UTC', async () => {
-  const w = world({ ...OWED, holidays: [{ day: '2026-11-25', name: 'Next day' }] })
-  assert.equal((await run(w, { now: at('00:20', '2026-11-25') })).result.sent, false, '00:20 Nairobi on the 25th is still the 24th in UTC')
-  assert.equal(w.dbCalls()[0].url.endsWith(holidayPath('2026-11-25')), true)
-  const w2 = world({ ...OWED, holidays: [{ day: '2026-11-24', name: 'Today' }] })
-  assert.equal((await run(w2, { now: new Date('2026-11-24T21:30:00Z') })).result.sent, true, '21:30 UTC on the 24th is 00:30 on the 25th in Nairobi')
+await ok('the date in the Idempotency-Key is the Nairobi date, even when it is already the next day in UTC', async () => {
+  const w = world(OWED)
+  await run(w, { now: at('00:20', '2026-11-25') })
+  assert.equal(sentEmail(w).headers['Idempotency-Key'], 'sns-late-payments-2026-11-25-0020', '00:20 Nairobi on the 25th is still the 24th in UTC')
+  const w2 = world(OWED)
+  await run(w2, { now: new Date('2026-11-24T21:30:00Z') })
+  assert.equal(sentEmail(w2).headers['Idempotency-Key'], 'sns-late-payments-2026-11-25-0030', '21:30 UTC on the 24th is 00:30 on the 25th in Nairobi')
 })
 await ok('more than one page of unpaid rows is read page by page and added up', async () => {
   const jobs = Array.from({ length: 2350 }, (_, i) => job({ id: i + 1, member_id: `m${i % 7}`, transport_amount: 100 }))
@@ -412,7 +428,7 @@ await ok('more than one page of unpaid rows is read page by page and added up', 
   assert.equal(exact.dbCalls().filter((c) => c.url.includes('/jobs?')).length, 2)
 })
 await ok('a database hiccup is tried again (three tries in all) and the run still succeeds; a database that stays down stops the run with the reason', async () => {
-  for (const [table, trouble] of [['jobs', [503]], ['expenses', [500, 502]], ['profiles', ['network']], ['non_working_days', [503, 503]]]) {
+  for (const [table, trouble] of [['jobs', [503]], ['expenses', [500, 502]], ['profiles', ['network']]]) {
     const w = world({ ...OWED, db: { [table]: trouble } })
     const { result, sleeps } = await run(w)
     assert.equal(result.sent, true, table); assert.deepEqual(sleeps, [1000, 3000].slice(0, trouble.length), table)
@@ -552,7 +568,21 @@ await ok('the setup guide shows the very email the code sends, and says when and
   assert.ok(subject && body, 'the guide has the subject and the message in code blocks')
   const sample = buildEmail({ late: LATE, name: 'Naibei', appUrl: 'https://snsjobcard.netlify.app' })
   assert.equal(subject[1], sample.subject); assert.equal(body[1] + '\n', sample.text)
-  for (const word of ['5:31 pm', '5:30 pm', 'Monday', 'Saturday', 'Run now', 'Resend', 'RESEND_API_KEY', 'Make Director', 'non-working', '14:31']) assert.ok(guide.includes(word), `the guide should mention "${word}"`)
+  for (const word of ['5:31 pm', '5:30 pm', 'every day of the week', 'Sundays and public holidays are not skipped', 'press **Run now**', 'Resend', 'RESEND_API_KEY', 'Make Director', '14:31',
+    'only for counting leave; they do not stop this email']) assert.ok(guide.includes(word), `the guide should mention "${word}"`)
+  assert.equal((guide.match(/\*\*Run now\*\*/g) || []).length, 2, 'both places that tell the reader to press Run now still do')
+  // the guide no longer promises the old rule anywhere (in any capitals)
+  const lower = guide.toLowerCase()
+  for (const old of ['monday to saturday', 'not on sundays', 'non-working day', 'no email is sent on those days', 'holidays are skipped', 'sundays are skipped', 'not sent on sundays', 'except sundays', 'weekdays only']) assert.ok(!lower.includes(old), `the guide still says "${old}"`)
+})
+await ok('nothing else around the code (netlify.toml, .env.example, the function files) still promises the old Monday-to-Saturday rule', () => {
+  // The words, with the comment marks and line breaks of a wrapped comment taken out, so "every day of the\n# week" is still found.
+  const flat = (f) => read(f).replace(/\s*\n\s*(#|\/\/)?\s*/g, ' ').toLowerCase()
+  const OLD = ['monday to saturday', 'monday-saturday', 'mon-sat', 'not on sundays', 'except sundays', 'sundays are skipped', 'holidays are skipped', 'skips sundays', 'weekdays only', 'no email is sent on those days']
+  for (const f of ['netlify.toml', '.env.example', 'netlify/functions/late-payments-alert.mjs', 'netlify/lib/lateAlert.mjs', 'netlify/lib/alertConfig.mjs']) {
+    for (const old of OLD) assert.ok(!flat(f).includes(old), `${f} still says "${old}"`)
+  }
+  for (const f of ['netlify.toml', '.env.example']) assert.ok(flat(f).includes('every day of the week'), `${f} should say that the email goes every day of the week`)
 })
 await ok('the README and the test chain know about it', () => {
   const readme = read('README.md')

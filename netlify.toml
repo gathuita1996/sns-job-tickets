@@ -5,9 +5,10 @@
 # Update 49: the two functions behind automatic WhatsApp sending (netlify/functions). Netlify builds them with esbuild,
 # which also pulls in the shared code from netlify/lib and src/lib. They only do something once the settings in
 # WHATSAPP-SETUP.md are in place; until then the app opens WhatsApp for you to press Send.
-# Update 52: a third function, late-payments-alert, runs by itself at 5:31 pm Nairobi time (Monday to Saturday) and emails the
-# Director when a transport or expense / purchase payment is still unpaid after closing. Its schedule is written in the function
-# file itself (Netlify reads it from there); the settings are in EMAIL-ALERT-SETUP.md.
+# Update 52: a third function, late-payments-alert, runs by itself at 5:31 pm Nairobi time (every day of the week since Update 53:
+# Sundays and public holidays are not skipped) and emails the Director when a transport or expense / purchase payment is still
+# unpaid after closing. Its schedule is written in the function file itself (Netlify reads it from there); the settings are in
+# EMAIL-ALERT-SETUP.md.
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"

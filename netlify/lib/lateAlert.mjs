@@ -1,5 +1,8 @@
-// The Director's late-payment email. Every working evening at 5:31 pm (Nairobi time), one minute after the 5:30 pm closing
-// hour, this looks for money that is still waiting to be paid and, only if there is some, sends the Director one short email.
+// The Director's late-payment email. Every evening at 5:31 pm (Nairobi time), one minute after the 5:30 pm closing hour, this
+// looks for money that is still waiting to be paid and, only if there is some, sends the Director one short email.
+//
+// Update 53: it runs on EVERY day of the week. Sundays and public holidays are not skipped (the leave rules' non-working days play
+// no part here at all): a technician can be called out on any day, and a payment can be late on any day.
 //
 //   transport   a job's transport that has not been marked paid (the Transport tab's "unpaid")
 //   expenses    a purchase whose receipt is in and is waiting for payment, or an approved service not yet paid
@@ -14,8 +17,8 @@ import { supabaseApi } from './supabaseRest.mjs'
 export const CLOSING_TIME = '5:30 pm'
 export const CLOSING_MINUTE = 17 * 60 + 30            // 17:30, as minutes since midnight in Nairobi
 // Netlify reads a schedule in UTC. Nairobi is UTC+3 all year (Kenya has no daylight saving), so 17:31 there is 14:31 UTC.
-// Monday to Saturday: Sundays are never working days in this app (the leave rules say the same).
-export const ALERT_CRON = '31 14 * * 1-6'
+// Every day of the week (the last field is the day of the week, and * means all seven).
+export const ALERT_CRON = '31 14 * * *'
 export const ALERT_MINUTE = CLOSING_MINUTE + 1        // 17:31
 
 export const RESEND_URL = 'https://api.resend.com/emails'
@@ -29,7 +32,6 @@ const WAITS_MS = [1000, 3000]      // between the (up to) three tries of a call 
 export const JOBS_PATH = 'jobs?select=id,member_id,transport_amount,transport_paid_at&transport_paid_at=is.null&transport_amount=gt.0&order=id.asc'
 export const EXPENSES_PATH = 'expenses?select=id,entry_type,status,amount,paid_at&paid_at=is.null&status=in.(Approved,Purchased)&order=id.asc'
 export const DIRECTOR_PATH = 'profiles?select=full_name,email&role=eq.admin&is_director=eq.true&order=created_at.asc'
-export const holidayPath = (dayKey) => `non_working_days?select=day,name&day=eq.${dayKey}&limit=1`
 
 export class AlertError extends Error {}
 
@@ -162,14 +164,8 @@ export async function runLateAlert(deps) {
   const today = eatDateKey(at)
   const minute = Math.floor(((at.getTime() + EAT_OFFSET_MS) % DAY_MS) / 60000)
 
-  // A public holiday the Director has added in the app: the office is closed, nobody is paid, so nothing is sent. If the list
-  // cannot be read the email goes out anyway: one email on a holiday is better than a missed alert.
-  const holiday = await retrying(() => db.serviceGet(holidayPath(today)), sleep)
-  if (holiday.ok && Array.isArray(holiday.data) && holiday.data.length > 0) {
-    log(`late-payments-alert: ${today} is a non-working day (${holiday.data[0].name}), so no email.`)
-    return { ok: true, sent: false, reason: 'non_working_day', day: today }
-  }
-
+  // Nothing about the day decides whether it is sent: not a Sunday, not a public holiday the Director has added in the app.
+  // Only money that is still unpaid does.
   const jobs = await readAll(db, JOBS_PATH, sleep)
   const expenses = await readAll(db, EXPENSES_PATH, sleep)
   const late = latePayments({ jobs, expenses })

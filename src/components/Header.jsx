@@ -6,23 +6,22 @@ import Avatar from './Avatar'
 import logoIcon from '../assets/logo-icon.png'
 import { applyTheme, initialTheme, saveTheme } from '../lib/theme'
 
-// Self-contained: starts in the saved mode (or the device's default on the first visit), and keeps the browser's storage + the
-// document's data-theme attribute in sync whenever it changes. Update 52: three modes (light, dark, custom), chosen from a menu
-// (ThemeMenu); the list of modes and how they are saved is in lib/theme.js.
+// Self-contained: starts in the mode this browser's person chose, and in Custom mode (the default, Update 53) when nobody has chosen,
+// and keeps the document's data-theme attribute in sync whenever it changes. Update 52: three modes (light, dark, custom), chosen from
+// a menu (ThemeMenu); the list of modes and how a choice is saved is in lib/theme.js. Only a choice made in the menu is saved:
+// merely opening the app never writes anything, so a browser that has not been asked keeps following the default.
 function useTheme() {
   const [theme, setTheme] = useState(() => initialTheme())
-  useEffect(() => {
-    applyTheme(theme)
-    saveTheme(theme)
-  }, [theme])
-  return [theme, setTheme]
+  useEffect(() => { applyTheme(theme) }, [theme])
+  const choose = (next) => { setTheme(next); saveTheme(next) }
+  return [theme, choose]
 }
 
 // profileExtras = { bank, leave, leaveBadge, onUploadAvatar, onRemoveAvatar }; profileRequest = { tab, n } opens the window on a tab
 // (the dashboard's "My leave" card uses it).
 export default function Header({ currentUser, onLogout, onUpdateProfile, subtitle, settings, profileExtras = {}, profileRequest }) {
   const [openTab, setOpenTab] = useState(null)
-  const [theme, setTheme] = useTheme()
+  const [theme, chooseTheme] = useTheme()
   useEffect(() => { if (profileRequest && profileRequest.n) setOpenTab(profileRequest.tab || 'profile') }, [profileRequest && profileRequest.n]) // eslint-disable-line react-hooks/exhaustive-deps
   const open = () => setOpenTab('profile')
 
@@ -51,7 +50,7 @@ export default function Header({ currentUser, onLogout, onUpdateProfile, subtitl
           <button onClick={open} title={settings ? 'My profile & settings' : 'My profile'} aria-label="My profile" className="sm:hidden" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
             <Avatar name={currentUser.fullName} url={currentUser.avatarUrl} size={32} />
           </button>
-          <ThemeMenu theme={theme} onChange={setTheme} />
+          <ThemeMenu theme={theme} onChange={chooseTheme} />
           <button onClick={onLogout} title="Log out" className="sns-btn-secondary" style={{ padding: '0.5rem' }}><LogOut size={16} /></button>
         </div>
       </div>

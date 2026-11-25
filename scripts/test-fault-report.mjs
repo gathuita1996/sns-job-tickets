@@ -1,9 +1,11 @@
-// Update 52: a job card says what the customer reported and how it was solved.
-// A member who files a job of any type except New Installation and Site Survey writes two short things (the reported fault, and how it
-// was solved) instead of "Job details", and both are required. New Installation and Site Survey keep "Job details".
+// Update 52 (changed by Update 53): a job card says what the customer reported and how it was solved.
+// A member who files a job of any type except New Installation, Site Survey and Other (Update 53: "Other" moved to the first group)
+// writes two short things (the reported fault, and how it was solved) instead of "Job details", and both are required. New
+// Installation, Site Survey and Other keep "Job details" and never show the two boxes.
 // Plain logic only (no browser, no database): the ONE rule for the screens (src/lib/faultReport.js), the way the app reads and writes
 // the two new columns (src/lib/mappers.js), the SQL file that carries the same rule to the real database
-// (supabase/update-52-migration.sql) checked against that rule so the two can never drift apart, and the way the screens use it.
+// (supabase/update-53-migration.sql, which replaced the rule of update 52) checked against that rule so the two can never drift apart,
+// and the way the screens use it.
 // The same rule is also run against a real PostgreSQL by the maintainer's database tests; those are not part of the shipped app.
 // Also here: the two cards that were taken out of the members' portal ("Retrieved routers" and "Jobs I raised").
 import assert from 'node:assert/strict'
@@ -22,22 +24,23 @@ const ok = async (name, fn) => { try { await fn(); n++ } catch (e) { console.err
 const read = (p) => readFileSync(fileURLToPath(new URL('../' + p, import.meta.url)), 'utf8')
 const section = (text, from, to) => { const a = text.indexOf(from); assert.ok(a >= 0, `missing: ${from}`); const b = to ? text.indexOf(to, a + from.length) : text.length; return text.slice(a, b < 0 ? text.length : b) }
 
-const WITH_DETAILS = ['New Installation', 'Site Survey']
-const OTHER_TYPES = ['Network Troubleshooting', 'Router / Equipment Repair', 'Routine Maintenance', 'Fibre / Cable Repair', 'Equipment Upgrade', 'Other']
+const WITH_DETAILS = ['New Installation', 'Site Survey', 'Other']
+const REPORT_TYPES = ['Network Troubleshooting', 'Router / Equipment Repair', 'Routine Maintenance', 'Fibre / Cable Repair', 'Equipment Upgrade']
 const FAULT = 'No internet - the router is on but will not connect'
 const FIX = 'Replaced the damaged patch cord and restarted the router'
 
 // ======================================================================================================================
 // 1. The rule
 // ======================================================================================================================
-await ok('two job types keep "Job details"; the other six ask for the reported fault and how it was solved', () => {
+await ok('three job types keep "Job details" (New Installation, Site Survey and Other); the other five ask for the reported fault and how it was solved', () => {
   assert.deepEqual(JOB_TYPES_WITH_DETAILS, WITH_DETAILS)
   assert.equal(SITE_SURVEY, 'Site Survey')
-  assert.deepEqual([...JOB_TYPES].sort(), [...WITH_DETAILS, ...OTHER_TYPES].sort(), 'these are all the job types the form offers')
+  assert.deepEqual([...JOB_TYPES].sort(), [...WITH_DETAILS, ...REPORT_TYPES].sort(), 'these are all the job types the form offers')
   for (const t of WITH_DETAILS) assert.equal(needsFaultReport(t), false, t)
-  for (const t of OTHER_TYPES) assert.equal(needsFaultReport(t), true, t)
-  // strict, like the database: an unknown, empty or differently written type is not one of the two
-  for (const t of ['', null, undefined, 'new installation', 'NEW INSTALLATION', ' New Installation', 'Site survey', 'Installation', 'x']) assert.equal(needsFaultReport(t), true, JSON.stringify(t))
+  for (const t of REPORT_TYPES) assert.equal(needsFaultReport(t), true, t)
+  assert.equal(needsFaultReport('Other'), false, '"Other" shows no fault boxes')
+  // strict, like the database: an unknown, empty or differently written type is not one of the three
+  for (const t of ['', null, undefined, 'new installation', 'NEW INSTALLATION', ' New Installation', 'Site survey', 'Installation', 'x', 'other', 'OTHER', ' Other', 'Other ', 'Others']) assert.equal(needsFaultReport(t), true, JSON.stringify(t))
 })
 
 await ok('the words are the ones asked for, and the two boxes have their own names', () => {
@@ -49,14 +52,14 @@ await ok('the words are the ones asked for, and the two boxes have their own nam
   ])
 })
 
-await ok('what is missing: nothing for the two types that keep "Job details", and the empty ones, fault first, for every other type', () => {
+await ok('what is missing: nothing for the three types that keep "Job details", and the empty ones, fault first, for every other type', () => {
   for (const t of WITH_DETAILS) {
     assert.deepEqual(missingFaultReport(t, {}), [], t)
     assert.deepEqual(missingFaultReport(t, { reportedFault: '', resolution: '' }), [], t)
     assert.deepEqual(missingFaultReport(t, undefined), [], t)
     assert.deepEqual(missingFaultReport(t, { reportedFault: FAULT, resolution: FIX }), [], t)
   }
-  for (const t of OTHER_TYPES) {
+  for (const t of REPORT_TYPES) {
     assert.deepEqual(missingFaultReport(t, { reportedFault: FAULT, resolution: FIX }), [], t)
     assert.deepEqual(missingFaultReport(t, { reportedFault: '', resolution: FIX }), ['reported_fault'], t)
     assert.deepEqual(missingFaultReport(t, { reportedFault: FAULT, resolution: '' }), ['resolution'], t)
@@ -70,38 +73,46 @@ await ok('what is missing: nothing for the two types that keep "Job details", an
 
 await ok('"empty" is the same as in the profile rule: nothing but spaces, tabs and line breaks', () => {
   for (const blank of ['', ' ', '   ', '\t', '\r\n', ' \t\r\n ', '\n\n', null, undefined]) {
-    assert.deepEqual(missingFaultReport('Other', { reportedFault: blank, resolution: FIX }), ['reported_fault'], JSON.stringify(blank))
-    assert.deepEqual(missingFaultReport('Other', { reportedFault: FAULT, resolution: blank }), ['resolution'], JSON.stringify(blank))
+    assert.deepEqual(missingFaultReport('Routine Maintenance', { reportedFault: blank, resolution: FIX }), ['reported_fault'], JSON.stringify(blank))
+    assert.deepEqual(missingFaultReport('Routine Maintenance', { reportedFault: FAULT, resolution: blank }), ['resolution'], JSON.stringify(blank))
   }
   for (const real of ['x', ' x ', '0', '.', '-', '\u00a0', '\u200b', '\u2003', '\u2028', '\u3000', '\ufeff', '\f', '\v', '\u0085']) {
-    assert.deepEqual(missingFaultReport('Other', { reportedFault: real, resolution: real }), [], JSON.stringify(real))
+    assert.deepEqual(missingFaultReport('Routine Maintenance', { reportedFault: real, resolution: real }), [], JSON.stringify(real))
     assert.equal(isBlank(real), false, JSON.stringify(real))
   }
 })
 
-await ok('what the form shows, for every job type, with and without an admin\'s hand on it, and with and without details already saved', () => {
+await ok('what the form shows, for every job type, with and without an admin\'s hand on it, and with and without details or a fault report already saved', () => {
   for (const jobType of ['', ...JOB_TYPES]) {
     for (const adminMode of [false, true]) {
       for (const hasNotes of [false, true]) {
-        const p = jobDetailsPlan({ jobType, adminMode, hasNotes })
-        const label = JSON.stringify({ jobType, adminMode, hasNotes })
-        if (adminMode) {
-          // the admin's form is the guidance box for the member, whatever the type; it never touches the two fault boxes
-          assert.deepEqual(p, { kind: 'guidance', notes: 'editor', notesRequired: true, fault: false, faultRequired: false }, label)
-        } else if (jobType === '') {
-          assert.deepEqual(p, { kind: 'none', notes: 'none', notesRequired: false, fault: false, faultRequired: false }, label)
-        } else if (WITH_DETAILS.includes(jobType)) {
-          assert.deepEqual(p, { kind: 'details', notes: 'editor', notesRequired: true, fault: false, faultRequired: false }, label)
-        } else {
-          // never the details box; the earlier details stay in view (read-only) when there are some
-          assert.deepEqual(p, { kind: 'report', notes: hasNotes ? 'readonly' : 'none', notesRequired: false, fault: true, faultRequired: true }, label)
+        for (const hasFault of [false, true]) {
+          const p = jobDetailsPlan({ jobType, adminMode, hasNotes, hasFault })
+          const label = JSON.stringify({ jobType, adminMode, hasNotes, hasFault })
+          if (adminMode) {
+            // the admin's form is the guidance box for the member, whatever the type; it never touches the two fault boxes
+            assert.deepEqual(p, { kind: 'guidance', notes: 'editor', notesRequired: true, fault: false, faultRequired: false, earlierFault: false }, label)
+          } else if (jobType === '') {
+            assert.deepEqual(p, { kind: 'none', notes: 'none', notesRequired: false, fault: false, faultRequired: false, earlierFault: false }, label)
+          } else if (WITH_DETAILS.includes(jobType)) {
+            // "Job details" (New Installation, Site Survey, Other), never the two boxes. A fault report the job already has is shown
+            // read-only, and then "Job details" is no longer required (the job already says what happened).
+            assert.deepEqual(p, { kind: 'details', notes: 'editor', notesRequired: !hasFault, fault: false, faultRequired: false, earlierFault: hasFault }, label)
+          } else {
+            // never the details box; the earlier details stay in view (read-only) when there are some
+            assert.deepEqual(p, { kind: 'report', notes: hasNotes ? 'readonly' : 'none', notesRequired: false, fault: true, faultRequired: true, earlierFault: false }, label)
+          }
+          // whatever else, "Job details" and the two fault boxes are never both asked for
+          assert.ok(!(p.notesRequired && p.faultRequired), label)
+          assert.ok(!(p.notes === 'editor' && p.fault), label)
+          // and the two boxes are never shown for the three types that keep "Job details"
+          if (WITH_DETAILS.includes(jobType)) assert.equal(p.fault, false, label)
         }
-        // whatever else, "Job details" and the two fault boxes are never both asked for
-        assert.ok(!(p.notesRequired && p.faultRequired), label)
-        assert.ok(!(p.notes === 'editor' && p.fault), label)
       }
     }
   }
+  // a plan asked for without hasFault (older callers) is the same as a job with none
+  assert.deepEqual(jobDetailsPlan({ jobType: 'Other', adminMode: false, hasNotes: false }), jobDetailsPlan({ jobType: 'Other', adminMode: false, hasNotes: false, hasFault: false }))
 })
 
 await ok('how a saved job is shown (print view, admin\'s hand-over form): what was ever written never disappears', () => {
@@ -113,9 +124,15 @@ await ok('how a saved job is shown (print view, admin\'s hand-over form): what w
   assert.deepEqual(lines({ jobType: 'Network Troubleshooting', reportedFault: FAULT, resolution: FIX, notes: 'Old details' }),
     [['reported_fault', 'Reported fault', FAULT], ['resolution', 'How it was solved', FIX], ['notes', 'Job details (as first written)', 'Old details']])
   // one of the two written: the other shows a dash
+  assert.deepEqual(lines({ jobType: 'Routine Maintenance', reportedFault: FAULT, resolution: '' }), [['reported_fault', 'Reported fault', FAULT], ['resolution', 'How it was solved', '—']])
+  assert.deepEqual(lines({ jobType: 'Routine Maintenance', reportedFault: '  ', resolution: FIX }), [['reported_fault', 'Reported fault', '—'], ['resolution', 'How it was solved', FIX]])
+  // an "Other" job filed under update 52 has a fault report and no details: the report is shown, nothing is lost by "Other" moving to Job details
+  assert.deepEqual(lines({ jobType: 'Other', jobTypeOther: 'Customer visit', reportedFault: FAULT, resolution: FIX, notes: '' }), [['reported_fault', 'Reported fault', FAULT], ['resolution', 'How it was solved', FIX]])
   assert.deepEqual(lines({ jobType: 'Other', reportedFault: FAULT, resolution: '' }), [['reported_fault', 'Reported fault', FAULT], ['resolution', 'How it was solved', '—']])
-  assert.deepEqual(lines({ jobType: 'Other', reportedFault: '  ', resolution: FIX }), [['reported_fault', 'Reported fault', '—'], ['resolution', 'How it was solved', FIX]])
-  // an installation or a survey: "Job Details", as before
+  // ...and when such a job (or an installation that was a repair before) also has details, they are plain "Job Details", not "as first written"
+  assert.deepEqual(lines({ jobType: 'Other', reportedFault: FAULT, resolution: FIX, notes: 'Added later' }), [['reported_fault', 'Reported fault', FAULT], ['resolution', 'How it was solved', FIX], ['notes', 'Job Details', 'Added later']])
+  assert.deepEqual(lines({ jobType: 'New Installation', reportedFault: FAULT, resolution: '', notes: 'Installed' }), [['reported_fault', 'Reported fault', FAULT], ['resolution', 'How it was solved', '—'], ['notes', 'Job Details', 'Installed']])
+  // an installation, a survey or an "Other" job: "Job Details", as before
   for (const jobType of WITH_DETAILS) {
     assert.deepEqual(lines({ jobType, notes: 'Installed 10 Mbps' }), [['notes', 'Job Details', 'Installed 10 Mbps']], jobType)
     assert.deepEqual(lines({ jobType, notes: '' }), [['notes', 'Job Details', '—']], jobType)
@@ -126,6 +143,8 @@ await ok('how a saved job is shown (print view, admin\'s hand-over form): what w
   assert.deepEqual(lines({ jobType: 'Routine Maintenance', notes: 'Cleaned the dish' }), [['notes', 'Job Details', 'Cleaned the dish']])
   // a repair with nothing at all yet (an admin's hand-over without guidance): the two lines, empty
   assert.deepEqual(lines({ jobType: 'Network Troubleshooting', notes: '' }), [['reported_fault', 'Reported fault', '—'], ['resolution', 'How it was solved', '—']])
+  // ...but not an "Other" job, which never asks for them
+  assert.deepEqual(lines({ jobType: 'Other', notes: '' }), [['notes', 'Job Details', '—']])
   assert.deepEqual(lines({ jobType: 'Network Troubleshooting', notes: '   ' }), [['reported_fault', 'Reported fault', '—'], ['resolution', 'How it was solved', '—']])
   // nothing to show, nothing to break
   assert.equal(jobDetailLines(null).length, 2)
@@ -179,11 +198,18 @@ await ok('what the app writes: the two texts, trimmed, for a job that asks for t
   assert.equal(out.reported_fault, FAULT)
   assert.equal(out.resolution, FIX)
   assert.ok(!('notes' in out), 'a repair does not send "Job details", so details written earlier are never wiped by it')
-  // an installation or survey: details, and the two texts cleared (a job whose type was changed keeps no fault report that no longer applies)
-  const inst = jobToDbFields({ ...base, jobType: 'New Installation', notes: 'Installed 10 Mbps', reportedFault: null, resolution: null })
-  assert.equal(inst.notes, 'Installed 10 Mbps')
-  assert.strictEqual(inst.reported_fault, null)
-  assert.strictEqual(inst.resolution, null)
+  // an installation, a survey or an "Other" job: details, and the two texts not mentioned at all, so a fault report that was written is
+  // never wiped (Update 53: that is what the form sends for these types)
+  for (const jobType of WITH_DETAILS) {
+    const inst = jobToDbFields({ ...base, jobType, jobTypeOther: jobType === 'Other' ? 'Customer visit' : '', notes: 'Installed 10 Mbps' })
+    assert.equal(inst.notes, 'Installed 10 Mbps', jobType)
+    assert.ok(!('reported_fault' in inst) && !('resolution' in inst), `${jobType}: the fault report is left as it is`)
+  }
+  assert.equal(jobToDbFields({ ...base, jobType: 'Other', jobTypeOther: 'Customer visit', notes: 'x' }).job_type_other, 'Customer visit')
+  // asking for the two to be cleared on purpose (null) still clears them
+  const cleared = jobToDbFields({ ...base, jobType: 'New Installation', notes: 'Installed 10 Mbps', reportedFault: null, resolution: null })
+  assert.strictEqual(cleared.reported_fault, null)
+  assert.strictEqual(cleared.resolution, null)
   // the admin's hand-over: guidance only, the two texts are not mentioned at all
   const admin = jobToDbFields({ ...base, notes: 'Check the splice at the pole' })
   assert.equal(admin.notes, 'Check the splice at the pole')
@@ -210,20 +236,22 @@ await ok('what the app writes: the two texts, trimmed, for a job that asks for t
 // ======================================================================================================================
 // 3. The SQL: the same rule in the real database
 // ======================================================================================================================
-const mig52 = read('supabase/update-52-migration.sql')
+const mig53 = read('supabase/update-53-migration.sql')                      // the rule as it is now
+const mig52 = read('supabase/update-52-migration.sql')                      // as delivered with update 52 (it still asked for the two texts on "Other")
 const mig51 = read('supabase/update-51-migration.sql')
 const mig50 = read('supabase/update-50-migration.sql')
-const code52 = mig52.split('\n').filter((l) => !l.trim().startsWith('--')).join('\n')
+const code53 = mig53.split('\n').filter((l) => !l.trim().startsWith('--')).join('\n')
 const rebuild = read('supabase/job-card-rebuild.sql')
 const schema = read('supabase/schema.sql')
-const fn = section(mig52, 'create or replace function public.job_fault_report_missing', '$$;')
-const guard = section(mig52, 'create or replace function public.require_fault_report', '$$;')
+const fn = section(mig53, 'create or replace function public.job_fault_report_missing', '$$;')
+const guard = section(mig53, 'create or replace function public.require_fault_report', '$$;')
 
-await ok('the database excuses the same two job types as the app', () => {
+await ok('the database excuses the same three job types as the app (New Installation, Site Survey and Other)', () => {
   const list = fn.match(/when p_job_type in \(([^)]*)\) then array\[\]::text\[\]/)
   assert.ok(list, 'the excused types are listed in one place in the function')
   const names = [...list[1].matchAll(/'([^']*)'/g)].map((m) => m[1])
   assert.deepEqual(names, JOB_TYPES_WITH_DETAILS)
+  assert.deepEqual(names, ['New Installation', 'Site Survey', 'Other'])
   assert.match(fn, /returns text\[\] language sql immutable as \$\$/)
   assert.match(fn, /create or replace function public\.job_fault_report_missing\(p_job_type text, p_fault text, p_resolution text\)/)
 })
@@ -237,7 +265,7 @@ await ok('the database reports the same two names as the screens, fault first, e
 })
 
 await ok('"empty" in the database is the same as "empty" on the screens, character for character', () => {
-  const literals = [...code52.matchAll(/~ '(\^\[ \\t\\r\\n\]\*\$)'/g)].map((m) => m[1])
+  const literals = [...code53.matchAll(/~ '(\^\[ \\t\\r\\n\]\*\$)'/g)].map((m) => m[1])
   assert.equal(literals.length, 2, 'the blank test is in the file, once per text')
   assert.equal(literals[0], literals[1])
   const sqlBlank = new RegExp(literals[0])                                    // PostgreSQL reads \t \r \n in a regular expression just as JavaScript does
@@ -257,40 +285,53 @@ await ok('the guard stops a member\'s NEW job when either text is empty, and nob
   assert.match(guard, /if auth\.uid\(\) is null or public\.is_admin\(\) then return new; end if;/)           // the server's own key, the SQL editor and admins pass
   assert.match(guard, /missing := public\.job_fault_report_missing\(new\.job_type, new\.reported_fault, new\.resolution\);/)
   assert.match(guard, /if coalesce\(array_length\(missing, 1\), 0\) > 0 then/)
-  assert.match(mig52, /drop trigger if exists trg_require_fault_report on public\.jobs;\s*create trigger trg_require_fault_report before insert on public\.jobs\s+for each row execute function public\.require_fault_report\(\);/)
-  assert.ok(!/before (insert or update|update)/i.test(code52), 'only a new job is held back: editing, completing or deleting one that exists is not')
-  assert.ok(!/after insert/i.test(code52))
-  assert.ok(!/for each statement/i.test(code52))
+  assert.match(mig53, /drop trigger if exists trg_require_fault_report on public\.jobs;\s*create trigger trg_require_fault_report before insert on public\.jobs\s+for each row execute function public\.require_fault_report\(\);/)
+  assert.ok(!/before (insert or update|update)/i.test(code53), 'only a new job is held back: editing, completing or deleting one that exists is not')
+  assert.ok(!/after insert/i.test(code53))
+  assert.ok(!/for each statement/i.test(code53))
 })
 
 await ok('the two functions are the database\'s own business', () => {
-  assert.match(mig52, /revoke all on function public\.job_fault_report_missing\(text, text, text\) from public, anon, authenticated;/)
-  assert.match(mig52, /grant execute on function public\.job_fault_report_missing\(text, text, text\) to service_role;/)
-  assert.match(mig52, /revoke all on function public\.require_fault_report\(\) from public, anon, authenticated;/)
-  assert.match(mig52, /notify pgrst, 'reload schema';/)
-  assert.ok(!/grant execute on function public\.require_fault_report/.test(mig52), 'the trigger function is never granted to anyone')
+  assert.match(mig53, /revoke all on function public\.job_fault_report_missing\(text, text, text\) from public, anon, authenticated;/)
+  assert.match(mig53, /grant execute on function public\.job_fault_report_missing\(text, text, text\) to service_role;/)
+  assert.match(mig53, /revoke all on function public\.require_fault_report\(\) from public, anon, authenticated;/)
+  assert.match(mig53, /notify pgrst, 'reload schema';/)
+  assert.ok(!/grant execute on function public\.require_fault_report/.test(mig53), 'the trigger function is never granted to anyone')
+})
+
+await ok('update 52\'s own file is as it was delivered (two types excused), and update 53 replaces its rule without touching it', () => {
+  const old = section(mig52, 'create or replace function public.job_fault_report_missing', '$$;')
+  assert.deepEqual([...old.match(/when p_job_type in \(([^)]*)\) then array\[\]::text\[\]/)[1].matchAll(/'([^']*)'/g)].map((m) => m[1]), ['New Installation', 'Site Survey'])
+  // the same two functions and the same trigger are created again by update 53 (create or replace / drop and create), so running it after update 52 swaps the rule
+  assert.match(mig53, /create or replace function public\.job_fault_report_missing\(p_job_type text, p_fault text, p_resolution text\)/)
+  assert.match(mig53, /create or replace function public\.require_fault_report\(\)/)
+  assert.match(mig53, /drop trigger if exists trg_require_fault_report on public\.jobs;/)
+  // apart from the list of types and the comments, the two files say the same thing: the rest of the rule did not change
+  const strip = (text) => text.split('\n').filter((l) => !l.trim().startsWith('--')).join('\n').replace("'New Installation', 'Site Survey', 'Other'", "'New Installation', 'Site Survey'")
+  assert.equal(strip(mig53), strip(mig52), 'only the list of job types differs')
 })
 
 await ok('it only adds: two optional text columns, two functions and one trigger, and it is safe to run again', () => {
-  assert.match(code52, /alter table public\.jobs add column if not exists reported_fault text;/)
-  assert.match(code52, /alter table public\.jobs add column if not exists resolution\s+text;/)
-  assert.equal((code52.match(/alter table/g) || []).length, 2, 'two columns and nothing else is altered')
-  assert.ok(!/\bnot null\b|\bdefault\b/i.test(code52.replace(/--.*$/gm, '')), 'the columns are optional and have no default')
-  assert.ok(!/\b(insert\s+into|delete\s+from|update\s+public\.|drop\s+table|drop\s+column|create\s+table|truncate|create\s+policy|drop\s+policy|disable\s+trigger|drop\s+function)\b/i.test(code52))
-  assert.ok(!/^\s*update\s/im.test(code52), 'no UPDATE statement anywhere: no existing job is changed')
-  assert.equal((code52.match(/create or replace function/g) || []).length, 2)
-  assert.equal((code52.match(/create trigger/g) || []).length, 1)
-  assert.equal((code52.match(/drop trigger if exists/g) || []).length, 1)
-  assert.ok(!/\b(commit|rollback|begin)\s*;/i.test(code52), 'it runs inside the SQL editor\'s own transaction')
+  assert.match(code53, /alter table public\.jobs add column if not exists reported_fault text;/)
+  assert.match(code53, /alter table public\.jobs add column if not exists resolution\s+text;/)
+  assert.equal((code53.match(/alter table/g) || []).length, 2, 'two columns and nothing else is altered')
+  assert.ok(!/\bnot null\b|\bdefault\b/i.test(code53.replace(/--.*$/gm, '')), 'the columns are optional and have no default')
+  assert.ok(!/\b(insert\s+into|delete\s+from|update\s+public\.|drop\s+table|drop\s+column|create\s+table|truncate|create\s+policy|drop\s+policy|disable\s+trigger|drop\s+function)\b/i.test(code53))
+  assert.ok(!/^\s*update\s/im.test(code53), 'no UPDATE statement anywhere: no existing job is changed')
+  assert.equal((code53.match(/create or replace function/g) || []).length, 2)
+  assert.equal((code53.match(/create trigger/g) || []).length, 1)
+  assert.equal((code53.match(/drop trigger if exists/g) || []).length, 1)
+  assert.ok(!/\b(commit|rollback|begin)\s*;/i.test(code53), 'it runs inside the SQL editor\'s own transaction')
 })
 
 await ok('the full set-up scripts are one file that ends with this update and still carries the ones before it', () => {
   assert.equal(rebuild, schema)
-  assert.ok(rebuild.endsWith(mig52), 'the full script ends with update 52')
-  assert.equal(rebuild.split(mig52).length - 1, 1, 'and carries it once')
-  assert.equal(rebuild.split(mig51).length - 1, 1, 'and carries update 51 once, before it')
+  assert.ok(rebuild.endsWith(mig53), 'the full script ends with update 53')
+  assert.equal(rebuild.split(mig53).length - 1, 1, 'and carries it once')
+  assert.equal(rebuild.split(mig52).length - 1, 1, 'and carries update 52 once, before it (a fresh install runs 52, then 53 replaces its rule)')
+  assert.equal(rebuild.split(mig51).length - 1, 1, 'and update 51')
   assert.equal(rebuild.split(mig50).length - 1, 1, 'and update 50')
-  assert.ok(rebuild.lastIndexOf(mig51) < rebuild.lastIndexOf(mig52))
+  assert.ok(rebuild.indexOf(mig50) < rebuild.indexOf(mig51) && rebuild.indexOf(mig51) < rebuild.indexOf(mig52) && rebuild.indexOf(mig52) < rebuild.indexOf(mig53), 'in the order they were made, so the last word on the rule is update 53\'s')
   assert.ok(rebuild.indexOf('create or replace function public.require_fault_report') > rebuild.indexOf('create or replace function public.is_admin'), 'after is_admin()')
   assert.ok(rebuild.indexOf('alter table public.jobs add column if not exists reported_fault') > rebuild.indexOf('create table public.jobs'), 'after the table it adds to')
 })
@@ -304,10 +345,11 @@ await ok('a new job meets the profile check, then this one, then the site-survey
 // ======================================================================================================================
 // 4. The screens carry it
 // ======================================================================================================================
-await ok('the job form asks for the two boxes instead of "Job details" for every type except the two, and both are required', () => {
+await ok('the job form asks for the two boxes instead of "Job details" for every type except the three, and both are required', () => {
   const form = read('src/components/JobForm.jsx')
   assert.match(form, /import \{ FAULT_REPORT_FIELDS, FAULT_REPORT_MESSAGE, jobDetailLines, jobDetailsPlan, missingFaultReport \} from '\.\.\/lib\/faultReport'/)
-  assert.match(form, /const plan = jobDetailsPlan\(\{ jobType: form\.jobType, adminMode, hasNotes: hasEarlierDetails \}\)/)
+  assert.match(form, /const plan = jobDetailsPlan\(\{ jobType: form\.jobType, adminMode, hasNotes: hasEarlierDetails, hasFault: hasEarlierFault \}\)/)
+  assert.match(form, /const hasEarlierFault = Boolean\(initialJob\) && \(!isBlank\(initialJob\.reportedFault\) \|\| !isBlank\(initialJob\.resolution\)\)/)
   // "Job details" is only in the page when the plan says so
   const editor = section(form, "{plan.notes === 'editor' && (", '\n          )}')
   assert.match(editor, /'Job details \(guidance for the assigned member\)' : 'Job details'/)
@@ -330,12 +372,17 @@ await ok('what the form sends follows what it showed: details only from the box,
   const form = read('src/components/JobForm.jsx')
   const send = section(form, 'const result = await onSave({', 'location: form.location')
   assert.match(send, /notes: plan\.notes === 'editor' \? form\.notes : undefined,/)
-  assert.match(send, /reportedFault: plan\.fault \? form\.reportedFault : \(plan\.kind === 'guidance' \? undefined : null\),/)
-  assert.match(send, /resolution: plan\.fault \? form\.resolution : \(plan\.kind === 'guidance' \? undefined : null\),/)
+  assert.match(send, /reportedFault: plan\.fault \? form\.reportedFault : undefined,/)
+  assert.match(send, /resolution: plan\.fault \? form\.resolution : undefined,/)
+  assert.ok(!/: null,/.test(send.replace(/transportAmount[^\n]*/g, '')), 'nothing is cleared on purpose by this form: a fault report that was written is never wiped')
   // earlier details stay in view, read-only, and are never edited
   assert.match(form, /const hasEarlierDetails = Boolean\(initialJob\) && !isBlank\(initialJob\.notes\)/)
   assert.match(form, /\{plan\.notes === 'readonly' && \(\s*<div className="sns-card" data-testid="earlier-details"/)
   assert.match(form, /initialJob\.assignedBy \? 'Job details from your admin' : 'Job details \(as first written\)'/)
+  // a fault report the job already has (an "Other" job filed under update 52) is shown, read-only, above the details box, and is never edited
+  assert.match(form, /\{plan\.earlierFault && \(\s*<div className="sns-card" data-testid="earlier-fault"/)
+  assert.match(form, /FAULT_REPORT_FIELDS\.filter\(\(f\) => !isBlank\(initialJob\[f\.field\]\)\)\.map/)
+  assert.ok(form.indexOf('data-testid="earlier-fault"') < form.indexOf("{plan.notes === 'editor' && ("), 'above the details box')
   // when the database refuses a new job for this reason the form stays open and says so
   assert.match(form, /if \(result && result\.faultReport\) setFaultNotice\(true\)/)
   assert.match(form, /\{faultNotice && <div role="alert"><ErrorBanner message=\{FAULT_REPORT_MESSAGE\} \/><\/div>\}/)
@@ -379,6 +426,8 @@ await ok('the test chain runs this file, and the guide for the update is in the 
   const readme = read('README.md')
   assert.match(readme, /## Update 52/)
   assert.match(readme, /supabase\/update-52-migration\.sql/)
+  assert.match(readme, /## Update 53/)
+  assert.match(readme, /supabase\/update-53-migration\.sql/)
   assert.match(readme, /Please describe the reported fault and how it was solved\./)
 })
 

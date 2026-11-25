@@ -204,6 +204,7 @@ await ok('a refusal from the database is recognised by its hint or by its words,
 const mig50 = read('supabase/update-50-migration.sql')                       // as delivered with update 50 (it still asked for 13)
 const mig51 = read('supabase/update-51-migration.sql')                       // the profile rule as it is now
 const mig52 = read('supabase/update-52-migration.sql')                       // the next update (the reported-fault guard); here it is only checked to come after
+const mig53 = read('supabase/update-53-migration.sql')                       // the update after that (the same guard in its latest form); the full script ends with it
 const code51 = mig51.split('\n').filter((l) => !l.trim().startsWith('--')).join('\n')
 const rebuild = read('supabase/job-card-rebuild.sql')
 const schema = read('supabase/schema.sql')
@@ -273,9 +274,11 @@ await ok('it is safe to run again and changes nobody\'s profile: only functions,
   assert.match(code51, /create trigger trg_require_complete_profile before insert on public\.jobs/)
 })
 
-await ok('the full set-up scripts are one file that carries this update once, after update 50 and before the later update 52', () => {
+await ok('the full set-up scripts are one file that carries this update once, after update 50 and before the later updates 52 and 53', () => {
   assert.equal(rebuild, schema)
-  assert.ok(rebuild.endsWith(mig52), 'the full script now ends with update 52 (the reported-fault guard), which only adds to this update')
+  assert.ok(rebuild.endsWith(mig53), 'the full script now ends with update 53 (the reported-fault guard in its latest form), which only adds to this update')
+  assert.equal(rebuild.split(mig52).length - 1, 1, 'it carries update 52 once, just before update 53')
+  assert.ok(rebuild.indexOf(mig52) < rebuild.indexOf(mig53), 'and update 53 comes after update 52')
   assert.equal(rebuild.split(mig51).length - 1, 1, 'it carries update 51 once')
   assert.equal(rebuild.split(mig50).length - 1, 1, 'and carries update 50 once, before it')
   assert.ok(rebuild.indexOf(mig50) < rebuild.indexOf(mig51), 'in the order they were made')
